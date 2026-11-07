@@ -7,12 +7,15 @@ let doc = { topics: [], messages: [], converted: {}, trash: [] };
 let view = '*';        // '*' 全部表示 / '' 未選択 / '__diary' 日記 / トピック名
 let replyTo = null;    // 続けて書く先（吹き出しのid）
 let ctxFrom = null;    // 文脈をつなぐ元（相手をこれから選ぶ）
+let viewMode = 'time'; // 時系列 | fz（folgezettel: 分岐の番号順）
+const openInfo = new Set(); // クリックで、分岐元・分岐・文脈を開いている吹き出し
 let draft = '';
 const DIARY = '__diary';
 
 export function init(docs) {
   const d = docs['C_チャット'] || {};
-  doc = { topics: d.topics || [], messages: d.messages || [], converted: d.converted || {}, trash: d.trash || [] };
+  doc = { topics: d.topics || [], messages: d.messages || [], converted: d.converted || {}, trash: d.trash || [], viewMode: d.viewMode || 'time' };
+  viewMode = doc.viewMode;
 }
 const save = () => ctx.later('doc:C', () => ctx.api.saveDoc('C_チャット', doc));
 const topic = name => doc.topics.find(t => t.name === name);
@@ -59,11 +62,12 @@ function entries() {
     return { kind: 'line', i, time: m ? m[1] : '', text: m ? m[2] : text };
   });
   const list = doc.messages.filter(m => view === '*' || m.topic === view).sort((a, b) => a.t - b.t);
-  // 続けて書いたものは、親の下に字下げして並べる
+  if (viewMode === 'time') return list.map(m => ({ kind: 'msg', m }));
+  // folgezettel: 分岐を番号順に（1, 1a, 1a1, 1b, 2 …）。字下げはせず、全部同じ位置に並べて、番号だけで示す
   const ordered = [], seen = new Set(), kids = m => list.filter(x => x.parent === m.id);
-  const place = (m, depth) => { if (seen.has(m.id)) return; seen.add(m.id); ordered.push({ kind: 'msg', m, depth }); kids(m).forEach(k => place(k, depth + 1)); };
-  list.filter(m => !m.parent || !list.some(x => x.id === m.parent)).forEach(m => place(m, 0));
-  list.forEach(m => place(m, 0));
+  const place = (m, fz) => { if (seen.has(m.id)) return; seen.add(m.id); ordered.push({ kind: 'msg', m, fz }); let prev = null; for (const k of kids(m)) { prev = prev ? L.sibling(prev) : L.child(fz); place(k, prev); } };
+  let n = 0; for (const m of list.filter(m => !m.parent || !list.some(x => x.id === m.parent))) place(m, String(++n));
+  for (const m of list) if (!seen.has(m.id)) place(m, String(++n));
   return ordered;
 }
 
@@ -80,11 +84,12 @@ function render() {
   const t = topic(view), be = backend();
   const title = view === '*' ? '全部表示' : view === '' ? 'トピック未選択' : view === DIARY ? '日記（今日）' : view;
   $('#pane').innerHTML = `
-    <div class="chat">
+    <div class="chat memo">
       <div class="row chat-head">
         <h2 style="margin:0">${esc(title)}</h2>
         <span class="sub">${view === '*' ? '書いたものは「未選択」に入ります' : t ? (t.type === 'whole' ? '全体で1つのノート' : '吹き出し1つ = 1つのノート（あとでIDを付ける）') : view === DIARY ? '今日の日記の本文に、時刻つきで入ります' : ''}</span>
         <span class="grow"></span>
+        ${be ? '' : `<span class="vseg"><button data-c="vtime" class="${viewMode === 'time' ? 'on' : ''}">時系列</button><button data-c="vfz" class="${viewMode === 'fz' ? 'on' : ''}">folgezettel</button></span>`}
         ${be ? '<button data-c="openbe">ノートを開く</button>' : ''}
         ${t ? '<button data-c="conf">⚙ 設定</button>' : ''}
       </div>
@@ -99,8 +104,8 @@ function render() {
 function fit(inp) { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 180) + 'px'; inp.style.overflowY = inp.scrollHeight > 180 ? 'auto' : 'hidden'; }
 function banner() {
   const b = $('#c-banner'); if (!b) return;
-  b.innerHTML = replyTo && msg(replyTo) ? `<span>↳ 続けて書く: ${esc(msg(replyTo).text.split('\n')[0].slice(0, 30))}</span><b data-c="cancel">×</b>`
-    : ctxFrom ? '<span>文脈につなぐ: つなぐ相手の吹き出しを押してください</span><b data-c="cancel">×</b>' : '';
+  b.innerHTML = replyTo && msg(replyTo) ? `<span>↳ 分岐: ${esc(msg(replyTo).text.split('\n')[0].slice(0, 30))}</span><b data-c="cancel">×</b>`
+    : ctxFrom ? '<span>文脈: つなぐ相手の吹き出しを押してください</span><b data-c="cancel">×</b>' : '';
   b.style.display = b.innerHTML ? 'flex' : 'none';
 }
 function paint() {
@@ -108,12 +113,23 @@ function paint() {
   const list = entries(), showTopic = view === '*';
   box.innerHTML = list.length ? list.map((e, k) => {
     if (e.kind === 'line') return `<div class="bub" data-i="${e.i}"><div class="b-meta">${e.time}</div><div class="b-body md">${renderMd(e.text)}</div></div>`;
-    const m = e.m, ctxs = (m.ctx || []).map(id => msg(id) ? `<span class="ctxchip" data-goto="${id}">↩ ${esc(msg(id).text.split('\n')[0].slice(0, 14))}</span>` : doc.converted[id] ? `<span class="ctxchip">↩ ノート ${esc(doc.converted[id])}</span>` : '').join('');
-    return `<div class="bub${ctxFrom ? ' pick' : ''}" data-m="${m.id}" style="margin-left:${Math.min(e.depth, 4) * 26}px">
-      <div class="b-meta">${e.depth ? '↳ ' : ''}${hm(m.t)}${showTopic && m.topic ? ` · ${esc(m.topic)}` : ''}${ctxs}</div>
-      <div class="b-body md">${renderMd(m.text)}</div></div>`;
+    const m = e.m, open = openInfo.has(m.id);
+    return `<div class="bub${ctxFrom ? ' pick' : ''}${open ? ' open' : ''}" data-m="${m.id}">
+      <div class="b-meta">${e.fz ? `<b class="fz">${esc(e.fz)}</b> ` : ''}${hm(m.t)}${showTopic && m.topic ? ` · ${esc(m.topic)}` : ''}</div>
+      <div class="b-body md">${renderMd(m.text)}</div>${open ? infoHtml(m) : ''}</div>`;
   }).join('') : '<div class="none">まだありません。下の欄に書くと、ここに並びます</div>';
   box.scrollTop = box.scrollHeight;
+}
+
+// クリックで開く: 分岐元・分岐・文脈（文脈は複数持てる）
+function infoHtml(m) {
+  const one = x => esc((x.text || '').split('\n')[0].slice(0, 28));
+  const row = (label, items) => items.length ? `<div class="ir"><span class="il">${label}</span>${items.join('')}</div>` : '';
+  const par = m.parent && msg(m.parent), kids = doc.messages.filter(x => x.parent === m.id).sort((a, b) => a.t - b.t);
+  const cx = (m.ctx || []).map(id => msg(id) ? `<span class="ctxchip" data-goto="${id}">↩ ${one(msg(id))}</span>` : doc.converted[id] ? `<span class="ctxchip">ノート ${esc(doc.converted[id])}</span>` : '').filter(Boolean);
+  const back = doc.messages.filter(x => (x.ctx || []).includes(m.id)).sort((a, b) => a.t - b.t).map(x => `<span class="ctxchip" data-goto="${x.id}">${one(x)}</span>`);
+  const html = row('分岐元', par ? [`<span class="ctxchip" data-goto="${par.id}">${one(par)}</span>`] : []) + row('分岐', kids.map(k => `<span class="ctxchip" data-goto="${k.id}">${one(k)}</span>`)) + row('文脈', cx) + row('文脈にされた', back);
+  return `<div class="binfo">${html || '<span class="sub">分岐も文脈も、まだありません（右クリックで「分岐」「文脈」）</span>'}</div>`;
 }
 
 // ===== 送る =====
@@ -137,8 +153,8 @@ function menuFor(e, bub) {
   if (bub.dataset.m) {
     const m = msg(bub.dataset.m);
     popMenu(e, [
-      ['続けて書く', () => { replyTo = m.id; ctxFrom = null; banner(); $('#c-in').focus(); }],
-      ['文脈につなぐ', () => { ctxFrom = m.id; replyTo = null; banner(); paint(); }],
+      ['分岐', () => { replyTo = m.id; ctxFrom = null; banner(); $('#c-in').focus(); }],
+      ['文脈', () => { ctxFrom = m.id; replyTo = null; banner(); paint(); }],
       ['IDを指定してノートにする', () => assignDialog(m)],
       ['書き直す', () => editMsg(bub, m)],
       ['トピックを変える', () => moveDialog(m)],
@@ -221,7 +237,7 @@ async function convert(m, id) {
   walk(m, id);
   for (const { m: x, id: nid } of subtree) { // 文脈でつないだ相手が、もうノートなら :ID のリンクにする
     const links = (x.ctx || []).map(c => map[c] || doc.converted[c]).filter(Boolean).map(n => `:${n}`);
-    const body = x.text + (links.length ? '\n\n' + links.join('\n') : '');
+    const body = (links.length ? links.join('\n') + '\n\n' : '') + x.text;   // 文脈の ID を、ノートの先頭に
     const note = await ctx.api.saveNote({ s: 'd', id: nid, created: L.now(new Date(x.t)), keywords: [], body });
     if (!ctx.get('d', nid)) ctx.notes().push(note);
     doc.converted[x.id] = nid;
@@ -229,7 +245,7 @@ async function convert(m, id) {
   const gone = new Set(subtree.map(s => s.m.id));
   doc.messages = doc.messages.filter(x => !gone.has(x.id));
   save(); await ctx.refreshDiaries();
-  toast(subtree.length > 1 ? `ノート ${id} と、続きの ${subtree.length - 1} 件をノートにしました` : `ノート ${id} にしました`);
+  toast(subtree.length > 1 ? `ノート ${id} と、分岐の ${subtree.length - 1} 件をノートにしました` : `ノート ${id} にしました`);
   paint(); ctx.renderList();
 }
 
@@ -298,6 +314,7 @@ document.addEventListener('click', e => {
     const a = c.dataset.c;
     if (a === 'send') send();
     if (a === 'cancel') { replyTo = null; ctxFrom = null; banner(); paint(); }
+    if (a === 'vtime' || a === 'vfz') { viewMode = a === 'vfz' ? 'fz' : 'time'; doc.viewMode = viewMode; save(); render(); }
     if (a === 'attach') ctx.pick(true, attach, '*');
     if (a === 'conf') confDialog();
     if (a === 'openbe') backend().open();
@@ -306,6 +323,7 @@ document.addEventListener('click', e => {
   const go = e.target.closest('[data-goto]'); if (go) { const el = document.querySelector(`[data-m="${go.dataset.goto}"]`); if (el) el.scrollIntoView({ block: 'center' }); return; }
   if (mdClick(e)) return;
   const bub = e.target.closest('.bub[data-m]');
+  if (bub && !ctxFrom && !window.getSelection().toString()) { const id = bub.dataset.m; openInfo.has(id) ? openInfo.delete(id) : openInfo.add(id); const box = $('#c-msgs'), top = box.scrollTop; paint(); box.scrollTop = top; return; }
   if (bub && ctxFrom && bub.dataset.m !== ctxFrom) { // 文脈につなぐ
     const from = msg(ctxFrom); from.ctx = [...new Set([...(from.ctx || []), bub.dataset.m])];
     ctxFrom = null; save(); banner(); paint();
