@@ -1,12 +1,16 @@
 {
   "name": "yuriikasten",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "YuriiKasten — 紙のPKM（ツェッテルカステン）をデジタルで",
   "main": "main.js",
   "scripts": {
     "build": "esbuild src/app.js --bundle --outfile=dist/app.js --format=iife",
     "start": "npm run build && electron .",
-    "test": "node --test test/"
+    "test": "node --test test/",
+    "dist": "npm run build && electron-builder --publish never",
+    "dist:linux": "npm run build && electron-builder --linux --publish never",
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "dist:mac": "npm run build && electron-builder --mac --publish never"
   },
   "license": "MIT",
   "devDependencies": {
@@ -14,12 +18,89 @@
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.15",
     "electron": "^45.2.3",
-    "esbuild": "^0.28.2"
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
+    "markdown-it": "^15.0.3",
+    "@codemirror/language": "^6.13.1"
   },
   "dependencies": {
-    "@codemirror/language": "^6.13.1",
-    "kuromoji": "^0.1.2",
-    "markdown-it": "^15.0.3"
+    "kuromoji": "^0.1.2"
   },
-  "productName": "YuriiKasten"
+  "productName": "YuriiKasten",
+  "homepage": "https://github.com/Yurii7812/YuriiKasten",
+  "author": "Yurii7812",
+  "build": {
+    "appId": "jp.yurii.yuriikasten",
+    "productName": "YuriiKasten",
+    "copyright": "YuriiKasten",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "store.js",
+      "lib.js",
+      "update.js",
+      "index.html",
+      "dist/app.js",
+      "build/icon.png",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/kuromoji/dict/**"
+    ],
+    "artifactName": "YuriiKasten-${version}-${os}-${arch}.${ext}",
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Office",
+      "icon": "build/icon.png",
+      "synopsis": "紙のPKM（ツェッテルカステン）をデジタルで"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "YuriiKasten",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png"
+    },
+    "dmg": {
+      "title": "YuriiKasten ${version}"
+    }
+  }
 }

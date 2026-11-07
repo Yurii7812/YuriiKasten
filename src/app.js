@@ -7,7 +7,7 @@ import { ctx } from './shared.js';
 import * as Chat from './chat.js';
 import * as RP from './roleplay.js';
 import * as CV from './canvas.js';
-import { dialog, popMenu } from './shared.js';
+import { dialog, popMenu, toast } from './shared.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -812,6 +812,29 @@ function loaded(st) {
     }
   } catch { tabs = []; active = -1; }
   show(active);
+}
+// 右上の「⋯」: 更新を確認（押したときだけ。自動では確認も更新もしない）・ショートカット・バージョン
+$('#more').onclick = async () => {
+  const info = await api.appInfo(), r = $('#more').getBoundingClientRect();
+  popMenu({ clientX: r.right - 190, clientY: r.bottom + 4 }, [
+    [`YuriiKasten ${info.version}`, () => { }],
+    ['更新を確認', () => checkUpdate(info)],
+    ...(info.platform !== 'win32' ? [[info.platform === 'darwin' ? 'デスクトップにショートカットを作る' : 'ショートカットを作る（デスクトップ・アプリ一覧）', async () => toast(await api.installShortcuts())]] : []),
+    ['GitHub を開く', () => api.openUrl('https://github.com/Yurii7812/YuriiKasten')]
+  ]);
+};
+async function checkUpdate(info) {
+  toast('更新を確認しています…');
+  const c = await api.checkUpdate();
+  if (!c.ok) return alert('確認できませんでした: ' + c.error);
+  if (c.none) return alert('まだ公開されたバージョンがありません。');
+  if (!c.newer) return alert(`最新です（${c.current}）`);
+  const what = info.mode === 'git' ? `新しい変更があります（${c.latest}）` : `新しいバージョンがあります: ${c.current} → ${c.latest}`;
+  const how = info.selfUpdate ? '今すぐ更新しますか？（更新したら、アプリを開き直してください）' : '最新のインストーラーのページを開きますか？（ダウンロードして実行すると更新されます）';
+  if (!confirm(`${what}\n\n${how}`)) return;
+  toast(info.selfUpdate ? '更新しています…（少し待ってください）' : 'ページを開きます…');
+  const r = await api.doUpdate();
+  alert(r.ok ? r.message : '更新できませんでした: ' + r.error);
 }
 $('#vault').onclick = async () => { const st = await api.chooseVault(); if (st) loaded(st); };
 api.load().then(loaded);

@@ -3,6 +3,29 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const store = require('./store');
+const upd = require('./update');
+
+// ===== コマンド: YuriiKasten --update / --check / --version / --install =====
+// 開発用のフォルダ（git）か、AppImage か。どちらでもなければ（Windows / Mac のインストーラー版）更新はページを開くだけ
+const argv = process.argv.slice(app.isPackaged ? 1 : 2);
+const info = () => ({
+  version: process.env.YURIIKASTEN_VERSION || app.getVersion(), platform: process.platform, arch: process.arch,
+  appImage: process.env.APPIMAGE || null, devDir: !app.isPackaged && fs.existsSync(path.join(__dirname, '.git')) ? __dirname : null
+});
+if (argv.includes('--version')) { console.log(`YuriiKasten ${app.getVersion()}`); app.exit(0); }
+else if (argv.includes('--update') || argv.includes('--check')) {
+  (async () => {
+    const i = info(), say = t => console.log(t);
+    try {
+      const c = await upd.check(i);
+      if (c.none) return say('まだ公開されたバージョンがありません。');
+      if (!c.newer) return say(`最新です（${c.current}）`);
+      say(i.devDir ? `新しい変更があります（${c.latest}）` : `新しいバージョンがあります: ${c.current} → ${c.latest}`);
+      if (argv.includes('--check')) return say('更新するには: YuriiKasten --update');
+      const r = await upd.apply(i, c, say); say(r.message); if (r.manual) say(r.url);
+    } catch (e) { console.error('更新できませんでした: ' + e.message); process.exitCode = 1; }
+  })().finally(() => app.exit(process.exitCode || 0));
+}
 
 const cfgFile = () => path.join(app.getPath('userData'), 'config.json');
 const readCfg = () => {
@@ -14,6 +37,7 @@ const writeCfg = c => { fs.mkdirSync(path.dirname(cfgFile()), { recursive: true 
 // 保存先: 環境変数 → 設定 → 昔の「PaperPKM」フォルダが残っていればそれ → 新しい ~/YuriiKasten
 const defaultVault = () => { const old = path.join(os.homedir(), 'PaperPKM'), now = path.join(os.homedir(), 'YuriiKasten'); return fs.existsSync(old) && !fs.existsSync(now) ? old : now; };
 let vault = process.env.YURIIKASTEN_VAULT || process.env.PAPER_PKM_VAULT || readCfg().vault || defaultVault();
+if (process.platform === 'linux' && process.env.APPIMAGE) app.commandLine.appendSwitch('no-sandbox'); // AppImage ではサンドボックス用の権限が付けられない
 let v = null;
 const open = () => { v = store.openVault(vault); return v.state(); };
 
@@ -45,7 +69,7 @@ ipcMain.handle('setReading', (_e, k, r) => v.setReading(k, r));
 // 読みの候補（kuromoji。最初の1回だけ辞書を読む）
 let tk = null;
 const tokenizer = () => tk || (tk = new Promise((ok, ng) => require('kuromoji')
-  .builder({ dicPath: path.join(path.dirname(require.resolve('kuromoji')), '..', 'dict') })
+  .builder({ dicPath: path.join(path.dirname(require.resolve('kuromoji')), '..', 'dict').replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep) })
   .build((e, t) => e ? ng(e) : ok(t))));
 ipcMain.handle('suggest', async (_e, text) => {
   const t = await tokenizer();
@@ -57,7 +81,66 @@ ipcMain.handle('chooseVault', async () => {
   vault = r.filePaths[0]; writeCfg({ vault }); return open();
 });
 
-app.whenReady().then(() => {
+// ===== ショートカット（デスクトップ）とコマンド =====
+//  Windows: インストーラーが、デスクトップとスタートメニューに作る
+//  Mac: アプリをデスクトップに置くショートカット（エイリアス）を作る
+//  Linux: AppImage を ~/.local/share/YuriiKasten に置き、アプリ一覧・デスクトップのショートカットと `YuriiKasten` コマンドを作る
+function installShortcuts() {
+  const home = os.homedir();
+  if (process.platform === 'darwin') {
+    const exe = app.getPath('exe'), bundle = exe.includes('.app/') ? exe.slice(0, exe.indexOf('.app/') + 4) : null;
+    if (!bundle) return '開発中は作れません';
+    const link = path.join(home, 'Desktop', 'YuriiKasten');
+    try { fs.rmSync(link, { force: true }); fs.symlinkSync(bundle, link); } catch (e) { return 'ショートカットを作れませんでした: ' + e.message; }
+    return `デスクトップに YuriiKasten のショートカットを作りました`;
+  }
+  if (process.platform === 'win32') return 'Windows は、インストーラーがデスクトップとスタートメニューに作ります';
+  const dir = path.join(home, '.local', 'share', 'YuriiKasten'), bin = path.join(home, '.local', 'bin');
+  fs.mkdirSync(dir, { recursive: true }); fs.mkdirSync(bin, { recursive: true });
+  let exec;
+  if (process.env.APPIMAGE) { // AppImage: 決まった場所へ置く
+    exec = path.join(dir, 'YuriiKasten.AppImage');
+    if (path.resolve(process.env.APPIMAGE) !== exec) { fs.copyFileSync(process.env.APPIMAGE, exec); fs.chmodSync(exec, 0o755); }
+    fs.copyFileSync(path.join(__dirname, 'update.js'), path.join(dir, 'update.js'));
+    fs.writeFileSync(path.join(dir, 'install.json'), JSON.stringify({ appImage: exec, version: app.getVersion() }));
+    fs.writeFileSync(path.join(bin, 'YuriiKasten'), `#!/bin/sh
+# YuriiKasten のコマンド。--update / --check / --version は、画面なしで動く
+case "$1" in
+  --update|--check|--version) exec env ELECTRON_RUN_AS_NODE=1 "${exec}" "${path.join(dir, 'update.js')}" "$@" ;;
+  *) exec "${exec}" "$@" ;;
+esac
+`, { mode: 0o755 });
+  } else { // 開発用のフォルダ: そのまま起動する
+    exec = path.join(__dirname, 'yuriikasten.sh');
+    fs.writeFileSync(path.join(bin, 'YuriiKasten'), `#!/bin/sh
+exec "${exec}" "$@"
+`, { mode: 0o755 });
+  }
+  const icon = path.join(dir, 'icon.png'); try { fs.copyFileSync(path.join(__dirname, 'build', 'icon.png'), icon); } catch { }
+  const entry = `[Desktop Entry]\nType=Application\nName=YuriiKasten\nComment=紙のPKM（ツェッテルカステン）をデジタルで\nExec="${exec}" %U\nIcon=${icon}\nTerminal=false\nCategories=Office;\n`.replace(/\\n/g, '\n');
+  const apps = path.join(home, '.local', 'share', 'applications'); fs.mkdirSync(apps, { recursive: true });
+  fs.writeFileSync(path.join(apps, 'YuriiKasten.desktop'), entry, { mode: 0o755 });
+  const desk = path.join(home, 'Desktop'); let onDesk = false;
+  if (fs.existsSync(desk)) { const f = path.join(desk, 'YuriiKasten.desktop'); fs.writeFileSync(f, entry, { mode: 0o755 }); onDesk = true; try { require('child_process').execFileSync('gio', ['set', f, 'metadata::trusted', 'true'], { stdio: 'ignore' }); } catch { } }
+  return `アプリ一覧${onDesk ? 'と、デスクトップ' : ''}にショートカットを作りました。端末では YuriiKasten で開けます（更新は YuriiKasten --update）`;
+}
+if (argv.includes('--install')) { app.whenReady().then(() => { console.log(installShortcuts()); app.exit(0); }); }
+
+// アプリの情報・更新（ユーザーが押したときだけ。自動では確認も更新もしない）
+ipcMain.handle('appInfo', () => ({ version: app.getVersion(), platform: process.platform, selfUpdate: !!(process.env.APPIMAGE || info().devDir), mode: info().devDir ? 'git' : process.env.APPIMAGE ? 'appimage' : 'installer' }));
+ipcMain.handle('checkUpdate', async () => { try { const c = await upd.check(info()); return { ok: true, ...c, release: undefined, asset: c.asset && c.asset.name }; } catch (e) { return { ok: false, error: e.message }; } });
+ipcMain.handle('doUpdate', async () => {
+  try {
+    const i = info(), c = await upd.check(i), r = await upd.apply(i, c);
+    if (r.manual) shell.openExternal(r.url);
+    return { ok: true, ...r };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
+ipcMain.handle('installShortcuts', () => installShortcuts());
+ipcMain.handle('openUrl', (_e, url) => /^https:\/\/github\.com\/Yurii7812\//.test(url) ? shell.openExternal(url) : null);
+
+if (!argv.some(a => ['--version', '--update', '--check', '--install'].includes(a))) app.whenReady().then(() => {
+  if (process.platform === 'win32') app.setAppUserModelId('jp.yurii.yuriikasten');
   Menu.setApplicationMenu(null);
   const w = new BrowserWindow({
     width: 1200, height: 800, title: 'YuriiKasten', backgroundColor: '#ffffff',

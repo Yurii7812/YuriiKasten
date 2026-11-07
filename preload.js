@@ -17,6 +17,11 @@ contextBridge.exposeInMainWorld('api', {
   addDiaryScan: (date, bytes) => r.invoke('addDiaryScan', date, bytes),
   saveDoc: (name, obj) => r.invoke('saveDoc', name, obj),
   deleteDoc: name => r.invoke('deleteDoc', name),
+  appInfo: () => r.invoke('appInfo'),
+  checkUpdate: () => r.invoke('checkUpdate'),
+  doUpdate: () => r.invoke('doUpdate'),
+  installShortcuts: () => r.invoke('installShortcuts'),
+  openUrl: u => r.invoke('openUrl', u),
   setReading: (k, yomi) => r.invoke('setReading', k, yomi),
   suggest: text => r.invoke('suggest', text),
   chooseVault: () => r.invoke('chooseVault')

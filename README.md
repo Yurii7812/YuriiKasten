@@ -3,8 +3,25 @@
 紙のPKM（ツェッテルカステン）をデジタルでやるアプリ。ノート・日記・チャットメモ・なりきりチャット・キャンバスを、1つのフォルダに平らに保存します。
 方法: https://yurii7812.github.io/homepage/ja/paper-pkm/
 
-## 起動（開発用）
-`npm install`（初回のみ）→ `./yuriikasten.sh`。試験は `npm test`。
+## インストール（ボタン一つ）
+**https://github.com/Yurii7812/YuriiKasten/releases/latest** から、お使いの OS のファイルをダウンロードして開くだけ。
+| OS | ファイル | インストール |
+|---|---|---|
+| Windows | `YuriiKasten-…-win-x64.exe` | ダブルクリック。**デスクトップとスタートメニューにショートカット**ができ、そのまま開く |
+| Mac | `YuriiKasten-…-mac-arm64.dmg`（M1 以降）/ `-mac-x64.dmg`（Intel） | 開いて、YuriiKasten を Applications へ。デスクトップのショートカットは、アプリの「⋯」→「デスクトップにショートカットを作る」 |
+| Linux | `YuriiKasten-…-linux-x86_64.AppImage` | `chmod +x` して開く。アプリの「⋯」→「ショートカットを作る」で、**デスクトップ・アプリ一覧のショートカット**と、端末の `YuriiKasten` コマンドができる（`./YuriiKasten-….AppImage --install` でも同じ） |
+
+署名はしていないので、初回に「提供元を確認できません」と出ることがある（Windows: 「詳細情報」→「実行」、Mac: アプリを右クリック →「開く」）。
+
+## 更新（自動では何もしません）
+確認も更新も、**自分で押したときだけ**。
+- **Linux**: アプリの「⋯」→「更新を確認」→ 新しいバージョンがあれば、確認のあとで更新（AppImage を最新のものに置き換え）。端末では **`YuriiKasten --update`**（確認だけなら `--check`、バージョンは `--version`）。更新したらアプリを開き直す
+- **Windows / Mac**: 「⋯」→「更新を確認」→ 新しければ、最新のインストーラーのページが開く。ダウンロードして実行すると更新される（データは別のフォルダなので、そのまま）
+- 開発用に git のフォルダで動かしているときは、`git pull`・`npm install`・ビルドまで行う
+
+## 開発
+`npm install`（初回のみ）→ `./yuriikasten.sh`。試験は `npm test`。インストーラーは `npm run dist`（動かしている OS 用）。
+**リリースの作り方**: `package.json` の version を上げて、`git tag v0.5.0 && git push --tags` → GitHub Actions が、Windows / Mac / Linux のインストーラーを作って、リリースに置く（`.github/workflows/release.yml`）。
 
 ## 画面
 - 左のタブ: **デジタル** / **紙** / **Index**（グローバルIndex）。検索結果はまとめて出る
