@@ -5,221 +5,99 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>紙PKM</title>
 <style>
-:root{--bg:#fff;--fg:#222;--sub:#777;--line:#e3e3e3;--acc:#2456c8;--red:#c0392b;--hl:#f5f7fb}
+:root{--bg:#fff;--fg:#222;--sub:#888;--line:#e4e4e4;--acc:#2456c8;--red:#c0392b;--paper:#8a5a20;--hl:#f3f6fb}
 *{box-sizing:border-box}
 body{margin:0;font:15px/1.6 system-ui,"Noto Sans JP",sans-serif;color:var(--fg);background:var(--bg);height:100vh;display:flex;flex-direction:column}
 header{display:flex;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line)}
 header input{flex:1;padding:6px 10px;border:1px solid var(--line);border-radius:6px;font:inherit}
-button{font:inherit;padding:5px 11px;border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer}
+button{font:inherit;padding:4px 11px;border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer;color:var(--fg)}
 button:hover{background:var(--hl)}button.p{background:var(--acc);color:#fff;border-color:var(--acc)}
 main{flex:1;display:flex;min-height:0}
-#list{width:250px;overflow:auto;border-right:1px solid var(--line)}
-#list div{padding:6px 12px;border-bottom:1px solid var(--line);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#list div:hover,#list div.on{background:var(--hl)}
-#list b{color:var(--acc);margin-right:8px}#list small{color:var(--sub)}
-#pane{flex:1;overflow:auto;padding:14px 20px}
+aside{width:290px;display:flex;flex-direction:column;border-right:1px solid var(--line)}
+#tabs{display:flex;border-bottom:1px solid var(--line)}
+#tabs button{flex:1;border:0;border-radius:0;padding:7px 0;color:var(--sub)}
+#tabs button.on{color:var(--acc);box-shadow:inset 0 -2px var(--acc);font-weight:600}
+#list{flex:1;overflow:auto}
+#list h4{margin:10px 12px 2px;font-size:12px;color:var(--sub);font-weight:600}
+.item,.ix{padding:5px 12px;border-bottom:1px solid #f2f2f2;cursor:pointer}
+.item{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item:hover,.item.on,.ix.on{background:var(--hl)}
+.item b{color:var(--acc);margin-right:7px}.item small{color:var(--sub)}
+.ix{cursor:default}.ix b{margin-right:6px}
+.tag{font-size:11px;color:var(--sub);border:1px solid var(--line);border-radius:8px;padding:0 6px;margin-left:3px}
+.sp{font-size:11px;border-radius:4px;padding:0 5px;margin-right:6px;color:#fff;background:var(--acc)}
+.sp.p{background:var(--paper)}
+.chip{display:inline-block;margin:1px 5px 1px 0;padding:0 8px;border:1px solid var(--line);border-radius:11px;color:var(--red);cursor:pointer;font-size:14px}
+.chip.p{color:var(--paper);border-color:#e6d6c0}.chip.t{color:var(--acc)}.chip.miss{opacity:.45}
+.chip:hover{background:var(--hl)}
+#pane{flex:1;overflow:auto;padding:14px 22px}
 .row{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
-.id{font-size:20px;font-weight:700;color:var(--acc);width:130px;border:1px solid var(--line);border-radius:6px;padding:3px 8px}
-input.t{padding:5px 8px;border:1px solid var(--line);border-radius:6px;font:inherit}
-textarea{width:100%;min-height:260px;padding:10px;border:1px solid var(--line);border-radius:6px;font:inherit;resize:vertical}
-img.scan{max-width:100%;border:1px solid var(--line);border-radius:6px;margin:8px 0}
-.chip{display:inline-block;margin:2px 6px 2px 0;padding:1px 9px;border:1px solid var(--line);border-radius:12px;color:var(--red);cursor:pointer}
-.sub{color:var(--sub);font-size:13px}
+.row h2{margin:0 8px 0 0;font-size:20px}.grow{flex:1}
+.id{font-size:20px;font-weight:700;color:var(--acc);width:120px;border:1px solid transparent;border-radius:6px;padding:2px 6px}
+.id:hover,.id:focus{border-color:var(--line)}
+.date{color:var(--sub);font-variant-numeric:tabular-nums}
+.kw{width:100%;padding:5px 9px;border:1px solid var(--line);border-radius:6px;font:inherit;margin-bottom:10px}
+.ed .cm-editor{border:1px solid var(--line);border-radius:6px;min-height:340px;font-size:15px}
+.ed .cm-editor.cm-focused{outline:none;border-color:#b9c8ea}
+.ed .cm-scroller{font-family:inherit;line-height:1.75;min-height:340px}
+.ed .cm-content{padding:10px 4px}
+.lk{color:var(--red);text-decoration:underline;text-decoration-color:#e8b4ae;text-underline-offset:3px;cursor:pointer}
+.mk{color:var(--red)}
+.lk.miss{color:#999;text-decoration-style:dotted}
+.paper{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
+.pic img{width:100%;border:1px solid var(--line);border-radius:6px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}.two h4{margin:6px 0;color:var(--sub);font-size:13px}
+table.ti{border-collapse:collapse;width:100%;margin-top:6px}
+.ti td{border-bottom:1px solid #f0f0f0;padding:5px 8px;vertical-align:top}.ti td:first-child{width:40%;font-weight:600}
+.star{margin-top:8px}
+.sub{color:var(--sub);font-size:13px}.none{color:var(--sub);padding:30px 12px;text-align:center}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.25);display:none;align-items:center;justify-content:center;z-index:10}
+.modal .box{background:#fff;border-radius:10px;padding:18px 20px;width:380px;display:flex;flex-direction:column;gap:8px}
+.modal h3{margin:0}.modal input{padding:6px 9px;border:1px solid var(--line);border-radius:6px;font:inherit}
+.m-add{margin:3px 4px 0 0}
 #scan{position:fixed;inset:0;background:#fff;display:none;flex-direction:column;z-index:9}
 #scan .top{padding:10px 16px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-#scan .view{flex:1;overflow:auto;text-align:center;background:#f6f6f6}
-#scan .view img{max-width:100%}
-.empty{color:var(--sub);margin-top:40px;text-align:center}
-@media(max-width:700px){main{flex-direction:column}#list{width:100%;height:35%;border-right:0;border-bottom:1px solid var(--line)}}
+#scan input{padding:5px 8px;border:1px solid var(--line);border-radius:6px;font:inherit}
+#scan .view{flex:1;overflow:auto;text-align:center;background:#f6f6f6}#scan .view img{max-width:100%}
+@media(max-width:800px){.paper,.two{grid-template-columns:1fr}aside{width:220px}}
 </style>
 </head>
 <body>
 <header>
-  <input id="q" placeholder="検索（ID・本文・キーワード）" autofocus>
+  <input id="q" placeholder="検索（キーワード・ID・本文）  Ctrl+F">
   <button id="new">＋ 新規</button>
-  <button id="imp" class="p">📷 スキャン取り込み</button>
-  <button id="exp" title="保存フォルダを変える">📁</button>
+  <button id="imp">📷 スキャン取り込み</button>
+  <button id="vault">📁</button>
 </header>
 <main>
-  <div id="list"></div>
-  <div id="pane"><div class="empty">左から選ぶか、「＋ 新規」で書き始めます。</div></div>
+  <aside>
+    <div id="tabs"><button data-tab="d">デジタル</button><button data-tab="p">紙</button><button data-tab="i">Index</button></div>
+    <div id="list"></div>
+  </aside>
+  <div id="pane"></div>
 </main>
+
+<div id="modal" class="modal"><div class="box">
+  <h3>トピックIndex を作る</h3>
+  <div class="sub">名前（ID-主題。例: 7-PKM）</div>
+  <input id="m-name">
+  <div class="row"><button id="m-ok" class="p">作る</button><button id="m-cancel">やめる</button></div>
+  <div id="m-list"></div>
+</div></div>
 
 <div id="scan">
   <div class="top">
     <b id="sc-n"></b>
-    <span>ID:</span><input id="sc-id" class="t" style="width:110px;font-size:18px">
-    <span class="sub">キーワード</span><input id="sc-kw" class="t" placeholder="任意（カンマ区切り）">
+    <span>紙のID</span><input id="sc-id" style="width:110px;font-size:18px">
+    <span class="sub">キーワード</span><input id="sc-kw" placeholder="任意（、で区切る）">
     <button id="sc-ok" class="p">決定して次へ (Enter)</button>
     <button id="sc-skip">飛ばす</button>
-    <button id="sc-prev">前のIDを入れる (Tab)</button>
+    <button id="sc-prev">前のID (Tab)</button>
     <button id="sc-close">閉じる (Esc)</button>
     <span id="sc-msg" class="sub"></span>
   </div>
   <div class="view"><img id="sc-img"></div>
 </div>
-<input type="file" id="files" accept="image/*" multiple hidden>
-
-<script>
-// ===== ID（紙のPKM: 1 → 1a → 1a1 → 1a1a …）=====
-const tok = id => id.match(/\d+|[a-z]+/g) || [];
-function cmpTok(a, b) {
-  const an = /\d/.test(a), bn = /\d/.test(b);
-  if (an && bn) return +a - +b;
-  if (!an && !bn) return a.length - b.length || (a < b ? -1 : a > b ? 1 : 0);
-  return an ? -1 : 1;
-}
-function cmpId(x, y) {
-  const a = tok(x), b = tok(y);
-  for (let i = 0; i < Math.min(a.length, b.length); i++) { const c = cmpTok(a[i], b[i]); if (c) return c; }
-  return a.length - b.length;
-}
-function incLetters(s) { // a→b, z→aa
-  const c = s.split(''); let i = c.length - 1;
-  while (i >= 0) { if (c[i] === 'z') { c[i] = 'a'; i--; } else { c[i] = String.fromCharCode(c[i].charCodeAt(0) + 1); return c.join(''); } }
-  return 'a' + c.join('');
-}
-function sibling(id) { // 広げる: 1a→1b, 1→2, 1a1→1a2
-  const t = tok(id); if (!t.length) return '1';
-  const l = t.pop(); t.push(/\d/.test(l) ? String(+l + 1) : incLetters(l)); return t.join('');
-}
-function child(id) { // 深掘り: 1→1a, 1a→1a1
-  const t = tok(id); if (!t.length) return '1';
-  return id + (/\d/.test(t[t.length - 1]) ? 'a' : '1');
-}
-const free = id => { while (byId(id)) id = sibling(id); return id; };
-const normId = s => (s || '').trim().toLowerCase().replace(/[^0-9a-z]/g, '');
-
-// ===== 保存（フォルダ: <ID>.md と <ID>.jpg）=====
-let notes = [];
-const byId = id => notes.find(n => n.id === id);
-const timers = {};
-const save = n => { clearTimeout(timers[n.id]); timers[n.id] = setTimeout(() => api.save(n), 300); };
-const saveNow = n => { clearTimeout(timers[n.id]); return api.save(n); };
-
-// ===== 画像（長辺2000pxのJPEGに縮小して保存）=====
-function shrink(file, max = 2000) {
-  return new Promise(ok => {
-    const u = URL.createObjectURL(file), im = new Image();
-    im.onload = () => {
-      const k = Math.min(1, max / Math.max(im.width, im.height));
-      const c = document.createElement('canvas'); c.width = im.width * k; c.height = im.height * k;
-      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
-      c.toBlob(async b => { URL.revokeObjectURL(u); ok(await b.arrayBuffer()); }, 'image/jpeg', .85);
-    };
-    im.src = u;
-  });
-}
-
-// ===== 画面 =====
-const $ = s => document.querySelector(s);
-const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-let cur = null;
-
-function renderList() {
-  const q = $('#q').value.trim().toLowerCase();
-  const hit = n => !q || [n.id, n.body, n.keywords].join('\n').toLowerCase().includes(q);
-  const items = notes.filter(hit).sort((a, b) => cmpId(a.id, b.id));
-  $('#list').innerHTML = items.map(n => {
-    const first = (n.body || n.keywords || (n.image ? '（スキャン）' : '')).split('\n')[0].slice(0, 40);
-    return `<div data-id="${n.id}" class="${n.id === cur ? 'on' : ''}"><b>${n.id}</b>${n.image ? '📷 ' : ''}<small>${esc(first)}</small></div>`;
-  }).join('') || '<div class="sub">該当なし</div>';
-}
-$('#list').onclick = e => { const d = e.target.closest('[data-id]'); if (d) open(d.dataset.id); };
-
-function linksOf(body) {
-  const s = new Set(), re = [/:([0-9][0-9a-z]*)/g, /\b([0-9][0-9a-z]*):/g, /\b([0-9][0-9a-z]*)\(\d+\)/g];
-  re.forEach(r => { let m; while ((m = r.exec(body || ''))) s.add(m[1]); });
-  return [...s].filter(i => byId(i));
-}
-
-function open(id) {
-  cur = id; const n = byId(id); if (!n) return;
-  const out = linksOf(n.body), back = notes.filter(m => m.id !== id && linksOf(m.body).includes(id)).map(m => m.id).sort(cmpId);
-  const chips = a => a.map(i => `<span class="chip" data-go="${i}">${i}</span>`).join('') || '<span class="sub">なし</span>';
-  $('#pane').innerHTML = `
-    <div class="row">
-      <input class="id" id="f-id" value="${n.id}" title="IDを変更">
-      <input class="t" id="f-date" value="${n.date}" title="日付（例: 2026 10 02）" style="width:130px">
-      <button data-act="sib">＋ 広げる ${sibling(n.id)}</button>
-      <button data-act="chi">＋ 深掘り ${child(n.id)}</button>
-      <button data-act="img">📎 画像</button>
-      <button data-act="del" style="margin-left:auto">削除</button>
-    </div>
-    <div class="row"><input class="t" id="f-kw" placeholder="キーワード（カンマ区切り・検索の索引になります）" value="${esc(n.keywords || '')}" style="flex:1"></div>
-    ${n.image ? `<img class="scan" id="f-img">` : ''}
-    <textarea id="f-body" placeholder="本文。続き:7a1　引用 7a(1)　全体 7a:">${esc(n.body || '')}</textarea>
-    <div class="sub">リンク先</div><div>${chips(out)}</div>
-    <div class="sub">このノートを参照</div><div>${chips(back)}</div>`;
-  if (n.image) $('#f-img').src = n.image;
-  const upd = () => { n.body = $('#f-body').value; n.keywords = $('#f-kw').value; n.date = $('#f-date').value; save(n); renderList(); };
-  ['#f-body', '#f-kw', '#f-date'].forEach(s => $(s).oninput = upd);
-  $('#f-id').onchange = async e => {
-    const v = normId(e.target.value);
-    if (!v || (v !== n.id && byId(v))) { alert('そのIDは使えません（空か、既にあります）'); e.target.value = n.id; return; }
-    await saveNow(n); if (v !== n.id) { if (!(await api.rename(n.id, v))) { alert('そのIDは使えません'); e.target.value = n.id; return; } n.id = v; } cur = v; renderList(); open(v);
-  };
-  renderList();
-}
-$('#pane').onclick = async e => {
-  const g = e.target.dataset.go; if (g) return open(g);
-  const a = e.target.dataset.act; if (!a) return;
-  const n = byId(cur);
-  if (a === 'sib') add(free(sibling(n.id)));
-  if (a === 'chi') add(free(child(n.id)));
-  if (a === 'del' && confirm(`${n.id} を削除しますか？`)) { await api.remove(n.id); notes = notes.filter(m => m !== n); cur = null; $('#pane').innerHTML = '<div class="empty">削除しました。</div>'; renderList(); }
-  if (a === 'img') { const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*'; f.onchange = async () => { n.image = await api.saveImage(n.id, await shrink(f.files[0])); open(n.id); }; f.click(); }
-};
-const today = () => { const d = new Date(); return `${d.getFullYear()} ${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getDate()).padStart(2, '0')}`; };
-async function add(id, extra = {}) {
-  const n = { id, date: today(), body: '', keywords: '', image: null, ...extra };
-  notes.push(n); await saveNow(n); open(id); if (!extra.image) $('#f-body').focus();
-}
-$('#new').onclick = () => {
-  const ids = notes.map(n => n.id).filter(i => /^\d+$/.test(i)).map(Number);
-  add(free(String((ids.length ? Math.max(...ids) : 0) + 1)));
-};
-$('#q').oninput = renderList;
-
-// ===== スキャン取り込み（番号付け）=====
-let queue = [], qi = 0, lastId = '', prevId = '';
-$('#imp').onclick = () => $('#files').click();
-$('#files').onchange = e => {
-  queue = [...e.target.files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  e.target.value = ''; if (!queue.length) return;
-  qi = 0; $('#scan').style.display = 'flex'; showScan();
-};
-function showScan() {
-  if (qi >= queue.length) return closeScan();
-  $('#sc-n').textContent = `${qi + 1} / ${queue.length}`;
-  $('#sc-img').src = URL.createObjectURL(queue[qi]);
-  $('#sc-id').value = free(lastId ? sibling(lastId) : '1');
-  $('#sc-kw').value = ''; $('#sc-msg').textContent = queue[qi].name;
-  $('#sc-id').focus(); $('#sc-id').select();
-}
-async function scanOk() {
-  const id = normId($('#sc-id').value);
-  if (!id) return;
-  if (byId(id)) { $('#sc-msg').textContent = `${id} は既にあります。別のIDにしてください`; return; }
-  const n = { id, date: today(), body: '', keywords: $('#sc-kw').value, image: null };
-  n.image = await api.saveImage(id, await shrink(queue[qi]));
-  notes.push(n); await saveNow(n); prevId = lastId; lastId = id; qi++; renderList(); showScan();
-}
-function closeScan() { $('#scan').style.display = 'none'; renderList(); if (lastId && byId(lastId)) open(lastId); }
-$('#sc-ok').onclick = scanOk;
-$('#sc-skip').onclick = () => { qi++; showScan(); };
-$('#sc-prev').onclick = () => { if (lastId) { $('#sc-id').value = lastId; $('#sc-id').focus(); } };
-$('#sc-close').onclick = closeScan;
-$('#scan').onkeydown = e => {
-  if (e.key === 'Enter') { e.preventDefault(); scanOk(); }
-  else if (e.key === 'Escape') closeScan();
-  else if (e.key === 'Tab') { e.preventDefault(); $('#sc-prev').click(); }
-};
-
-// ===== 保存フォルダ =====
-async function showVault() { $('#exp').title = await api.vault(); $('#exp').textContent = '📁 ' + (await api.vault()).split('/').pop(); }
-$('#exp').onclick = async () => { if (await api.chooseVault()) { notes = await api.list(); cur = null; renderList(); showVault(); } };
-(async () => { notes = await api.list(); renderList(); showVault(); })();
-</script>
+<script src="dist/app.js"></script>
 </body>
 </html>

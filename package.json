@@ -1,13 +1,19 @@
 {
   "name": "paper-pkm",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "紙のPKM（ツェッテルカステン）をデジタルで",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "build": "esbuild src/app.js --bundle --outfile=dist/app.js --format=iife",
+    "start": "npm run build && electron .",
+    "test": "node --test test/"
   },
   "license": "MIT",
   "devDependencies": {
-    "electron": "^45.2.3"
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.15",
+    "electron": "^45.2.3",
+    "esbuild": "^0.28.2"
   }
 }
