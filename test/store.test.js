@@ -23,7 +23,7 @@ test('保存フォルダ: 書き出しと読み直し', () => {
   assert.match(r('digital/1a.md'), /<a href="1.md">← 1<\/a>/);
   assert.match(r('paper/1.md'), /!\[1\]\(1\.jpg\)/);
   assert.doesNotMatch(r('paper/1.md'), /\d{4}-\d\d-\d\d \d\d:\d\d/); // 紙に日付は無い
-  assert.match(r('Index.md'), /\| <a id="k-[a-z0-9]+"><\/a>PKM \| \[1\]\(digital\/1\.md\) \[紙1\]\(paper\/1\.md\) \|/);
+  assert.match(r('Index.md'), /\| <a id="k-[a-z0-9]+"><\/a>PKM \| <a href="digital\/1\.md">1<\/a> <a href="paper\/1\.md">紙1<\/a> \|/);
   // 読みで並べ、行ごとに分ける
   v.setReading('紙', 'かみ'); v.setReading('PKM', 'ぴーけーえむ');
   assert.match(r('Index.md'), /## <a id="row0"><\/a>か[\s\S]*紙 <small style="color:#888">かみ<\/small>[\s\S]*## <a id="row1"><\/a>は[\s\S]*PKM/);
@@ -58,7 +58,9 @@ test('保存フォルダ: 書き出しと読み直し', () => {
   // キーワードのトピックIndex（赤い点）
   v.saveNote({ s: 'd', id: '9', keywords: ['PKM'], body: '上位' });
   v.saveTopic({ name: '9-PKM', entry: { s: 'd', id: '9' }, keyword: 'PKM', d: 'PKM 1 9', p: 'PKM 1' });
-  assert.match(r('Index.md'), /<a href="topic\/9-PKM.md"[^>]*>●<\/a> PKM/);
+  // 点は入口のID（9）の真上。キーワード PKM の ID の並びに 9 も入る
+  assert.match(r('Index.md'), /PKM[^\n]*<a href="topic\/9-PKM.md"[^>]*>●<\/a><br><a href="digital\/9.md">9<\/a>/);
+  assert.doesNotMatch(r('Index.md'), /●<\/a> PKM/);
   assert.match(r('topic/9-PKM.md'), /キーワード <a href="..\/Index.md#k-[a-z0-9]+">PKM<\/a>/);
   assert.strictEqual(openVault(dir).state().topics.find(t => t.name === '9-PKM').keyword, 'PKM');
   // 入口は1ノートに1つ

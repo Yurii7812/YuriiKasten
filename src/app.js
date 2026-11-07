@@ -21,10 +21,15 @@ const kwTopic = k => topics.find(t => t.keyword === k);
 // そのキーワードのトピックIndex があれば赤い点（押すと開く）。IDが2つ以上でまだ無ければ「作る」
 const ixRow = ([k, v]) => {
   const t = kwTopic(k), n = v.d.length + v.p.length;
-  const mark = t ? `<span class="dot" data-topic="${esc(t.name)}" title="トピックIndex ${esc(t.name)}">●</span>`
-    : n >= 2 ? `<button class="mini mk-topic" data-kw="${esc(k)}" title="このキーワードのトピックIndexを作る">📑 作る</button>` : '';
-  return `<div class="ix">${mark}<b>${esc(k)}</b>${yomi(k)} ${chips(v)}</div>`;
+  const mark = !t && n >= 2 ? `<button class="mini mk-topic" data-kw="${esc(k)}" title="このキーワードのトピックIndexを作る">📑 作る</button>` : '';
+  return `<div class="ix">${mark}<b>${esc(k)}</b>${yomi(k)} ${chips(v, t)}</div>`;
 };
+// 入口のノートに、そのキーワードを付ける（Index の ID の並びに入り、そこに赤い点が付く）
+async function ensureKeyword(sp, id, kw) {
+  const n = get(sp, id);
+  if (!kw || !n || n.keywords.includes(kw)) return;
+  n.keywords.push(kw); await api.saveNote(pubNote(n));
+}
 
 // ===== 保存（少し待ってまとめて）=====
 const timers = {};
@@ -104,8 +109,9 @@ function globalIndex() {
   for (const v of m.values()) { v.d.sort(L.cmpId); v.p.sort(L.cmpId); }
   return [...m].sort((a, b) => L.byReading(k => readings[k])(a[0], b[0]));
 }
-const chip = (s, id) => `<span class="chip ${s}${get(s, id) ? '' : ' miss'}" data-s="${s}" data-id="${esc(id)}">${s === 'p' ? '紙' : ''}${esc(id)}</span>`;
-const chips = v => v.d.map(x => chip('d', x)).join('') + v.p.map(x => chip('p', x)).join('');
+const chip = (s, id, topic) => `<span class="chip ${s}${get(s, id) ? '' : ' miss'}${topic ? ' dotted' : ''}" data-s="${s}" data-id="${esc(id)}">${topic ? `<i class="dotabove" data-topic="${esc(topic.name)}" title="トピックIndex ${esc(topic.name)}">●</i>` : ''}${s === 'p' ? '紙' : ''}${esc(id)}</span>`;
+// t があれば、その入口のIDだけ点を付ける
+const chips = (v, t) => [['d', v.d], ['p', v.p]].map(([s, l]) => l.map(x => chip(s, x, t && t.entry && t.entry.s === s && t.entry.id === x ? t : null)).join('')).join('');
 const tchip = name => `<span class="chip t" data-topic="${esc(name)}">${esc(name)}</span>`;
 const firstLine = n => (n.body.split('\n').find(x => x.trim()) || '').trim().slice(0, 40);
 const kwTags = n => n.keywords.length ? `<span class="tag">${n.keywords.map(esc).join('・')}</span>` : '';
@@ -386,7 +392,7 @@ function topicNewDialog(kw = '') {
     <h3>トピックIndexを作る</h3>
     <div class="sub">キーワード（任意）。同じキーワードのIDが2つ以上あるとき、それらをまとめます</div>
     <input id="tn-kw" list="tn-kws" value="${esc(kw)}" placeholder="例: GUI"><datalist id="tn-kws">${globalIndex().filter(([, v]) => v.d.length + v.p.length >= 2).map(([k]) => `<option value="${esc(k)}">`).join('')}</datalist>
-    <div class="sub">入口のノート（無いIDなら、新しいノートを作ります）</div>
+    <div class="sub">入口のノート（赤い点を付けるID）。無いIDなら、新しいノートを作ります。キーワードのIDの中から選べます</div>
     <div class="row"><select id="tn-s"><option value="d">デジタル</option><option value="p">紙</option></select><input id="tn-id" style="width:100px"><span id="tn-note" class="sub"></span></div>
     <div class="sub">名前</div>
     <input id="tn-name">
@@ -401,7 +407,7 @@ function topicNewDialog(kw = '') {
     $('#tn-note').textContent = !id ? '' : exists ? `既存のノート ${id} を入口にします` : `新しいノート ${id} を作ります`;
     if (!nameTouched) $('#tn-name').value = id + (k ? '-' + k : '-');
     const v = k ? idsOf(k) : null;
-    $('#tn-pre').textContent = v ? (v.d.length + v.p.length >= 2 ? `最初から入るID: ${[...v.d, ...v.p.map(x => '紙' + x)].join(' ')}　（Index に赤い点が付きます）` : 'このキーワードのIDは2つ未満です') : '';
+    $('#tn-pre').textContent = v ? (v.d.length + v.p.length >= 2 ? `${k} ${[...v.d, ...v.p.map(x => '紙' + x)].join(' ')}` + (exists && !(sp === 'd' ? v.d : v.p).includes(id) || !exists ? ` ${sp === 'p' ? '紙' : ''}${id}` : '') + `　→ ${sp === 'p' ? '紙' : ''}${id} の上に赤い点が付きます` : 'このキーワードのIDは2つ未満です') : '';
   };
   $('#tn-s').value = 'd'; $('#tn-id').value = rootFree('d');
   $('#tn-s').onchange = () => { $('#tn-id').value = rootFree($('#tn-s').value); refresh(); };
@@ -420,7 +426,8 @@ function topicNewDialog(kw = '') {
       if (v.d.length + v.p.length < 2) return alert('キーワードは、IDが2つ以上あるものだけです');
       if (kwTopic(k)) return alert(`「${k}」のトピックIndexは、もう「${kwTopic(k).name}」があります`);
     }
-    if (!get(sp, id)) notes.push(await api.saveNote({ s: sp, id, created: L.now(), keywords: [], body: '' }));
+    if (!get(sp, id)) notes.push(await api.saveNote({ s: sp, id, created: L.now(), keywords: k ? [k] : [], body: '' }));
+    else await ensureKeyword(sp, id, k);
     const t = { name, entry: { s: sp, id }, keyword: k, d: v && v.d.length ? k + ' ' + v.d.join(' ') : '', p: v && v.p.length ? k + ' ' + v.p.join(' ') : '' };
     if (!(await api.saveTopic(t))) return alert('保存できませんでした');
     topics.push(t); close(); renderList(); newTab = true; openTopic(name, 'edit');
@@ -441,8 +448,8 @@ function openTopic(name, mode = 'view', keep) {
       <label>名前 <input id="t-name" value="${esc(t.name)}"></label>
       <label>入口 <select id="t-s"><option value="d"${e && e.s === 'd' ? ' selected' : ''}>デジタル</option><option value="p"${e && e.s === 'p' ? ' selected' : ''}>紙</option></select>
         <input id="t-id" value="${e ? esc(e.id) : ''}" style="width:90px"></label>
-      <label>赤い点 <input id="t-kw" list="t-kws" value="${esc(t.keyword || '')}" placeholder="キーワード（空なら点なし）"><datalist id="t-kws">${globalIndex().filter(([, v]) => v.d.length + v.p.length >= 2).map(([k]) => `<option value="${esc(k)}">`).join('')}</datalist></label>
-      <div class="sub">Index のそのキーワードに赤い点が付き、押すとこのトピックIndex へ飛びます（IDが2つ以上のキーワードだけ。1つのキーワードに1つ）</div>
+      <label>点のキーワード <input id="t-kw" list="t-kws" value="${esc(t.keyword || '')}" placeholder="キーワード（空なら点なし）"><datalist id="t-kws">${globalIndex().filter(([, v]) => v.d.length + v.p.length >= 2).map(([k]) => `<option value="${esc(k)}">`).join('')}</datalist></label>
+      <div class="sub">そのキーワードの ID（GUI 1 2 3 …）のうち、上の入口のIDの真上に赤い点が付きます（押すとこのトピックIndex へ）。IDが2つ以上のキーワードだけ。1つのキーワードに1つ</div>
       <div class="row"><button data-act="tsave" class="p">決定</button><button data-act="tcancel">やめる</button>
         <span class="grow"></span><button data-act="tdel" class="danger">このトピックIndexを削除</button></div></div>`;
   else body = `<table class="ti">${rows.map(r => `<tr><td>${esc(r.kw)}</td><td>${chips(r)}</td></tr>`).join('') || '<tr><td class="none">まだ空です。「編集」で書きます</td></tr>'}</table>
@@ -490,6 +497,7 @@ async function topicAct(act) {
     }
     await flush();
     t.keyword = kw;
+    await ensureKeyword(s, id, kw);
     const old = t.name; t.name = name; t.entry = { s, id };
     await api.saveTopic(t, old);
     for (const x of tabs) if (x.k === 'topic' && x.name === old) x.name = name;

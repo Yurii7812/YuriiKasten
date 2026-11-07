@@ -132,11 +132,19 @@ function openVault(vault) {
     return [...m].sort((x, y) => L.byReading(rd)(x[0], y[0]));
   }
   const idLinks = (s, list, up) => list.slice().sort(L.cmpId).map(x => `[${label(s, x)}](${up}${DIR[s]}/${enc(x)}.md)`).join(' ');
-  const cell = v => [idLinks('d', v.d, ''), idLinks('p', v.p, '')].filter(Boolean).join(' ');
+  // k のトピックIndex があれば、その入口のIDの真上に赤い点（Index.md 用）
+  const cell = (v, k) => {
+    const t = k && [...topics.values()].find(x => x.keyword === k && x.entry);
+    const one = (sp, x) => {
+      const link = `<a href="${DIR[sp]}/${enc(x)}.md">${label(sp, x)}</a>`;
+      return t && t.entry.s === sp && t.entry.id === x
+        ? `<span style="display:inline-block;text-align:center;line-height:1.15"><a href="${topicHref(t.name, '')}" title="トピックIndex ${h(t.name)}" style="color:#c0392b;font-size:.7em;text-decoration:none">●</a><br>${link}</span>`
+        : link;
+    };
+    return [['d', v.d], ['p', v.p]].flatMap(([sp, l]) => l.slice().sort(L.cmpId).map(x => one(sp, x))).join(' ');
+  };
 
   // 読みのあいうえお順。行（あ・か・さ…）ごとに分ける
-  // そのキーワードのトピックIndex があるキーワードには赤い点（押すとそのトピックIndex へ）
-  const dot = k => { const t = [...topics.values()].find(x => x.keyword === k); return t ? `<a href="${topicHref(t.name, '')}" title="トピックIndex ${h(t.name)}" style="color:#c0392b;text-decoration:none">●</a> ` : ''; };
   function indexMd() {
     const out = [`<!-- pkm-index ${J({ readings: { ...readings } })} -->`, '# Index', '',
       `<p ${SUB}>${a(enc(LIST.d), 'デジタル一覧')}${sep}${a(enc(LIST.p), '紙一覧')}</p>`, ''];
@@ -150,7 +158,7 @@ function openVault(vault) {
     out.push([...groups.keys()].map((r, i) => `[${r}](#row${i})`).join('　'), '');
     [...groups].forEach(([r, list], i) => {
       out.push(`## <a id="row${i}"></a>${r}`, '', '| キーワード | ID |', '|---|---|');
-      for (const [k, v] of list) out.push(`| <a id="${L.kwAnchor(k)}"></a>${dot(k)}${esc(k)}${readings[k] && readings[k] !== k ? ` <small style="color:#888">${h(readings[k])}</small>` : ''} | ${cell(v)} |`);
+      for (const [k, v] of list) out.push(`| <a id="${L.kwAnchor(k)}"></a>${esc(k)}${readings[k] && readings[k] !== k ? ` <small style="color:#888">${h(readings[k])}</small>` : ''} | ${cell(v, k)} |`);
       out.push('');
     });
     return out.join('\n');
@@ -222,6 +230,8 @@ function openVault(vault) {
         if (topicPath(oldName) !== topicPath(t.name)) { if (fs.existsSync(abs(topicPath(oldName)))) fs.unlinkSync(abs(topicPath(oldName))); cache.delete(topicPath(oldName)); }
       }
       topics.set(t.name, { name: t.name, entry: t.entry || null, keyword: t.keyword || '', d: t.d || '', p: t.p || '' });
+      const en = t.keyword && t.entry && get(t.entry.s, t.entry.id); // 点を付けるIDは、そのキーワードの並びに入る
+      if (en && !en.keywords.includes(t.keyword)) en.keywords.push(t.keyword);
       rebuild(); return true;
     },
     // ノートを消す（ファイルは .trash へ）。入口だった索引は入口なしに、索引の行からも ID を外す
