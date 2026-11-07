@@ -86,6 +86,10 @@ button:disabled{opacity:.4;cursor:default}
 #pane{flex:1;min-height:0;overflow:auto;padding:0}
 #pane:not(:has(.stage)){padding:14px 24px}
 .stage{display:flex;align-items:flex-start;min-height:100%}
+.stage:has(#nbody){height:100%;align-items:stretch;min-height:0}
+.col:has(#nbody){display:flex;flex-direction:column;min-height:0;padding-bottom:0}
+.col:has(#nbody)>.idline,.col:has(#nbody)>.ntitle{flex:0 0 auto}
+.col:has(#nbody)>#nbody{flex:1 1 0}
 .col{width:660px;max-width:calc(100% - 290px);margin-left:auto;padding:30px 36px 0 12px;min-width:0}
 .col.wide{width:1000px}
 .mgn{width:260px;margin:0 auto 0 8px;padding:46px 14px 60px 20px;border-left:1px solid #f0f0f3;font-size:12.5px;color:#7a7f8e;position:sticky;top:0;min-height:100vh;align-self:stretch}

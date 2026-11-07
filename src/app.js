@@ -335,6 +335,8 @@ function go(dir) {
   target.fwd = dir < 0 ? [...(t.fwd || []), mine] : rest;
   tabs[active] = target; show(active);
 }
+$('#nav-back').onclick = () => go(-1);
+$('#nav-fwd').onclick = () => go(1);
 function renderNav() {
   const t = tabs[active], b = $('#nav-back'), f = $('#nav-fwd'); if (!b) return;
   b.disabled = !(t && (t.back || []).length); f.disabled = !(t && (t.fwd || []).length);
@@ -943,7 +945,7 @@ async function checkUpdate(info) {
 }
 $('#vault').onclick = async () => { const st = await api.chooseVault(); if (st) loaded(st); };
 api.load().then(loaded);
-window.__pkm = { scan: startScan, get diaries() { return diaries; }, get mode() { return mode; }, get cur() { return cur; }, get notes() { return notes; }, get topics() { return topics; }, get view() { return lastView; } };
+window.__pkm = { get tabs() { return tabs; }, scan: startScan, get diaries() { return diaries; }, get mode() { return mode; }, get cur() { return cur; }, get notes() { return notes; }, get topics() { return topics; }, get view() { return lastView; } };
 
 // ===== 削除・一括削除 =====
 const keyOf = n => n.s + ':' + n.id;
