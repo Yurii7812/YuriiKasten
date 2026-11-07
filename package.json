@@ -43,6 +43,7 @@
       "store.js",
       "lib.js",
       "update.js",
+      "sync.js",
       "index.html",
       "dist/app.js",
       "build/icon.png",

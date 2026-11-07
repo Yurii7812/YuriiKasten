@@ -1015,10 +1015,34 @@ $('#more').onclick = async () => {
     [`YuriiKasten ${info.version}`, () => { }],
     ['更新を確認', () => checkUpdate(info)],
     ...(info.platform !== 'win32' ? [[info.platform === 'darwin' ? 'デスクトップにショートカットを作る' : 'ショートカットを作る（デスクトップ・アプリ一覧）', async () => toast(await api.installShortcuts())]] : []),
+    [`同期の設定…（${syncStatus}）`, syncDialog],
     ['保存フォルダを変える…', () => $('#vault').click()],
     ['GitHub を開く', () => api.openUrl('https://github.com/Yurii7812/YuriiKasten')]
   ]);
 };
+// ===== 同期（ラズパイの同期サーバー）=====
+let syncStatus = '…';
+api.syncGet().then(c => { syncStatus = c.state ? c.state.status : '…'; });
+api.onSyncState(st => { syncStatus = st.status; if (st.error) toast(st.status); });
+api.onState(st => { // 同期で取り込んだ変更を、画面に反映
+  applyState(st);
+  tabs = tabs.filter(t => t.k !== 'note' || get(t.s, t.id)); active = Math.min(active, tabs.length - 1);
+  const t = tabs[active]; if (t && t.k !== 'empty') show(active); else renderTabs();
+});
+async function syncDialog() {
+  const c = await api.syncGet();
+  dialog(`<h3>同期（ラズパイ）</h3>
+    <div class="sub">ラズパイの同期サーバーとつなぐと、PC とスマホで同じノートが使えます。空にして保存すると、同期をやめます。</div>
+    <div class="sub">サーバーのアドレス（例: http://raspberrypi.local:8787）</div><input id="sy-url" value="${esc(c.url || '')}" placeholder="http://raspberrypi.local:8787">
+    <div class="sub">合言葉（サーバーを入れたときに表示されるもの）</div><input id="sy-token" type="password" value="${esc(c.token || '')}">
+    <div class="sub" id="sy-state">${esc(c.state ? c.state.status : '')}</div>
+    <div class="row"><button class="p" id="sy-ok">保存して同期</button><button id="sy-now">今すぐ同期</button><button id="sy-no">閉じる</button></div>`, close => {
+    $('#sy-no').onclick = close;
+    const show1 = st => { $('#sy-state').textContent = st.status; };
+    $('#sy-ok').onclick = async () => { $('#sy-state').textContent = '同期しています…'; const r = await api.syncSet({ url: $('#sy-url').value, token: $('#sy-token').value }); show1(r.state); };
+    $('#sy-now').onclick = async () => { $('#sy-state').textContent = '同期しています…'; show1(await api.syncNow()); };
+  });
+}
 async function checkUpdate(info) {
   toast('更新を確認しています…');
   const c = await api.checkUpdate();

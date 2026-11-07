@@ -27,5 +27,10 @@ contextBridge.exposeInMainWorld('api', {
   openUrl: u => r.invoke('openUrl', u),
   setReading: (k, yomi) => r.invoke('setReading', k, yomi),
   suggest: text => r.invoke('suggest', text),
-  chooseVault: () => r.invoke('chooseVault')
+  chooseVault: () => r.invoke('chooseVault'),
+  syncGet: () => r.invoke('syncGet'),
+  syncSet: c => r.invoke('syncSet', c),
+  syncNow: () => r.invoke('syncNow'),
+  onState: cb => r.on('state', (_e, st) => cb(st)),
+  onSyncState: cb => r.on('syncState', (_e, st) => cb(st))
 });

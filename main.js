@@ -42,6 +42,34 @@ let v = null;
 const open = () => { v = store.openVault(vault); return v.state(); };
 
 ipcMain.handle('load', () => open());
+
+// ===== 同期（ラズパイの同期サーバーと。設定が無ければ何もしない）=====
+const Sync = require('./sync');
+let mainWin = null, syncer = null, syncStop = null, syncTimer = null, syncState = { status: '同期はオフです', at: null };
+const syncCfg = () => readCfg().sync || {};
+async function runSync() {
+  const c = syncCfg(); if (!c.url || !c.token || !v) return syncState;
+  if (!syncer) return syncState;
+  try {
+    const r = await syncer.sync();
+    if (r.pulled.length || r.deleted.length) { v = store.openVault(vault); if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('state', v.state()); }
+    syncState = { status: r.conflicts.length ? `同期しました（競合 ${r.conflicts.length} 件を未整理に残しました）` : '同期しました', at: Date.now(), pulled: r.pulled.length, pushed: r.pushed.length, conflicts: r.conflicts.length };
+  } catch (e) { syncState = { status: '同期できません: ' + (e.message || e), at: Date.now(), error: true }; }
+  if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('syncState', syncState);
+  return syncState;
+}
+function startSync() {
+  if (syncStop) { syncStop(); syncStop = null; } clearInterval(syncTimer); syncer = null;
+  const c = syncCfg(); if (!c.url || !c.token) { syncState = { status: '同期はオフです', at: null }; return; }
+  syncer = Sync.create({ dir: vault, url: c.url, token: c.token });
+  let t = null; const soon = () => { clearTimeout(t); t = setTimeout(runSync, 1500); };
+  syncStop = syncer.watch(soon);                                   // サーバーが変わったら、すぐ取る
+  try { const w = fs.watch(vault, { persistent: false }, (_e, f) => { if (f && Sync.okName(String(f)) && f !== '.pkm-sync.json') soon(); }); const old = syncStop; syncStop = () => { old(); w.close(); }; } catch { }
+  syncTimer = setInterval(runSync, 60000); setTimeout(runSync, 800);
+}
+ipcMain.handle('syncGet', () => ({ ...syncCfg(), state: syncState }));
+ipcMain.handle('syncSet', (_e, c) => { const cfg = readCfg(); cfg.sync = c && c.url ? { url: String(c.url).trim(), token: String(c.token || '').trim() } : {}; writeCfg(cfg); startSync(); return runSync().then(() => ({ ...syncCfg(), state: syncState })); });
+ipcMain.handle('syncNow', () => runSync());
 ipcMain.handle('saveNote', (_e, n) => v.saveNote(n));
 ipcMain.handle('createNote', (_e, x) => v.createNote(x));
 ipcMain.handle('addPaperIndex', (_e, x) => v.addPaperIndex(x));
@@ -149,6 +177,6 @@ if (!argv.some(a => ['--version', '--update', '--check', '--install'].includes(a
     width: 1200, height: 800, title: 'YuriiKasten', backgroundColor: '#ffffff',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
   });
-  w.loadFile('index.html');
+  mainWin = w; w.loadFile('index.html'); w.webContents.once('did-finish-load', () => startSync());
 });
 app.on('window-all-closed', () => app.quit());
