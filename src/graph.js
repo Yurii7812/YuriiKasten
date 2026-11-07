@@ -82,6 +82,7 @@ export function attach(svg, onOpen) {
     const mx = vb[0] + (e.clientX - r.left) / r.width * vb[2], my = vb[1] + (e.clientY - r.top) / r.height * vb[3];
     vb = [mx - (mx - vb[0]) * f, my - (my - vb[1]) * f, vb[2] * f, vb[3] * f]; set();
   }, { passive: false });
+  svg.addEventListener('mousedown', e => e.preventDefault());   // ダブルクリック・ドラッグで文字が選択されない
   svg.addEventListener('pointerdown', e => { if (e.button !== 0) return; drag = { x: e.clientX, y: e.clientY, vb: [...vb] }; moved = false; });
   window.addEventListener('pointermove', e => {
     if (!drag || !svg.isConnected) return; const r = svg.getBoundingClientRect(), dx = e.clientX - drag.x, dy = e.clientY - drag.y;
