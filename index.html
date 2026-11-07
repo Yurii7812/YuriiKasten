@@ -38,8 +38,7 @@ img.scan{max-width:100%;border:1px solid var(--line);border-radius:6px;margin:8p
   <input id="q" placeholder="検索（ID・本文・キーワード）" autofocus>
   <button id="new">＋ 新規</button>
   <button id="imp" class="p">📷 スキャン取り込み</button>
-  <button id="exp" title="バックアップ（JSON）">書き出し</button>
-  <button id="rest" title="バックアップを読み込む">読み込み</button>
+  <button id="exp" title="保存フォルダを変える">📁</button>
 </header>
 <main>
   <div id="list"></div>
@@ -60,7 +59,6 @@ img.scan{max-width:100%;border:1px solid var(--line);border-radius:6px;margin:8p
   <div class="view"><img id="sc-img"></div>
 </div>
 <input type="file" id="files" accept="image/*" multiple hidden>
-<input type="file" id="rfile" accept=".json" hidden>
 
 <script>
 // ===== ID（紙のPKM: 1 → 1a → 1a1 → 1a1a …）=====
@@ -92,17 +90,12 @@ function child(id) { // 深掘り: 1→1a, 1a→1a1
 const free = id => { while (byId(id)) id = sibling(id); return id; };
 const normId = s => (s || '').trim().toLowerCase().replace(/[^0-9a-z]/g, '');
 
-// ===== 保存（IndexedDB）=====
-let db, notes = [];
+// ===== 保存（フォルダ: <ID>.md と <ID>.jpg）=====
+let notes = [];
 const byId = id => notes.find(n => n.id === id);
-const idb = () => new Promise((ok, ng) => {
-  const r = indexedDB.open('paper-pkm', 1);
-  r.onupgradeneeded = () => r.result.createObjectStore('notes', { keyPath: 'id' });
-  r.onsuccess = () => ok(r.result); r.onerror = () => ng(r.error);
-});
-const tx = (m, f) => new Promise((ok, ng) => { const t = db.transaction('notes', m); const r = f(t.objectStore('notes')); t.oncomplete = () => ok(r && r.result); t.onerror = () => ng(t.error); });
-const save = n => { n.updated = Date.now(); return tx('readwrite', s => s.put(n)); };
-const del = id => tx('readwrite', s => s.delete(id));
+const timers = {};
+const save = n => { clearTimeout(timers[n.id]); timers[n.id] = setTimeout(() => api.save(n), 300); };
+const saveNow = n => { clearTimeout(timers[n.id]); return api.save(n); };
 
 // ===== 画像（長辺2000pxのJPEGに縮小して保存）=====
 function shrink(file, max = 2000) {
@@ -112,7 +105,7 @@ function shrink(file, max = 2000) {
       const k = Math.min(1, max / Math.max(im.width, im.height));
       const c = document.createElement('canvas'); c.width = im.width * k; c.height = im.height * k;
       c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
-      c.toBlob(b => { URL.revokeObjectURL(u); ok(b); }, 'image/jpeg', .85);
+      c.toBlob(async b => { URL.revokeObjectURL(u); ok(await b.arrayBuffer()); }, 'image/jpeg', .85);
     };
     im.src = u;
   });
@@ -158,13 +151,13 @@ function open(id) {
     <textarea id="f-body" placeholder="本文。続き:7a1　引用 7a(1)　全体 7a:">${esc(n.body || '')}</textarea>
     <div class="sub">リンク先</div><div>${chips(out)}</div>
     <div class="sub">このノートを参照</div><div>${chips(back)}</div>`;
-  if (n.image) $('#f-img').src = URL.createObjectURL(n.image);
+  if (n.image) $('#f-img').src = n.image;
   const upd = () => { n.body = $('#f-body').value; n.keywords = $('#f-kw').value; n.date = $('#f-date').value; save(n); renderList(); };
   ['#f-body', '#f-kw', '#f-date'].forEach(s => $(s).oninput = upd);
   $('#f-id').onchange = async e => {
     const v = normId(e.target.value);
     if (!v || (v !== n.id && byId(v))) { alert('そのIDは使えません（空か、既にあります）'); e.target.value = n.id; return; }
-    await del(n.id); n.id = v; await save(n); cur = v; renderList(); open(v);
+    await saveNow(n); if (v !== n.id) { if (!(await api.rename(n.id, v))) { alert('そのIDは使えません'); e.target.value = n.id; return; } n.id = v; } cur = v; renderList(); open(v);
   };
   renderList();
 }
@@ -174,13 +167,13 @@ $('#pane').onclick = async e => {
   const n = byId(cur);
   if (a === 'sib') add(free(sibling(n.id)));
   if (a === 'chi') add(free(child(n.id)));
-  if (a === 'del' && confirm(`${n.id} を削除しますか？`)) { await del(n.id); notes = notes.filter(m => m !== n); cur = null; $('#pane').innerHTML = '<div class="empty">削除しました。</div>'; renderList(); }
-  if (a === 'img') { const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*'; f.onchange = async () => { n.image = await shrink(f.files[0]); await save(n); open(n.id); }; f.click(); }
+  if (a === 'del' && confirm(`${n.id} を削除しますか？`)) { await api.remove(n.id); notes = notes.filter(m => m !== n); cur = null; $('#pane').innerHTML = '<div class="empty">削除しました。</div>'; renderList(); }
+  if (a === 'img') { const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*'; f.onchange = async () => { n.image = await api.saveImage(n.id, await shrink(f.files[0])); open(n.id); }; f.click(); }
 };
 const today = () => { const d = new Date(); return `${d.getFullYear()} ${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getDate()).padStart(2, '0')}`; };
 async function add(id, extra = {}) {
   const n = { id, date: today(), body: '', keywords: '', image: null, ...extra };
-  notes.push(n); await save(n); open(id); if (!extra.image) $('#f-body').focus();
+  notes.push(n); await saveNow(n); open(id); if (!extra.image) $('#f-body').focus();
 }
 $('#new').onclick = () => {
   const ids = notes.map(n => n.id).filter(i => /^\d+$/.test(i)).map(Number);
@@ -208,9 +201,9 @@ async function scanOk() {
   const id = normId($('#sc-id').value);
   if (!id) return;
   if (byId(id)) { $('#sc-msg').textContent = `${id} は既にあります。別のIDにしてください`; return; }
-  const blob = await shrink(queue[qi]);
-  const n = { id, date: today(), body: '', keywords: $('#sc-kw').value, image: blob };
-  notes.push(n); await save(n); prevId = lastId; lastId = id; qi++; renderList(); showScan();
+  const n = { id, date: today(), body: '', keywords: $('#sc-kw').value, image: null };
+  n.image = await api.saveImage(id, await shrink(queue[qi]));
+  notes.push(n); await saveNow(n); prevId = lastId; lastId = id; qi++; renderList(); showScan();
 }
 function closeScan() { $('#scan').style.display = 'none'; renderList(); if (lastId && byId(lastId)) open(lastId); }
 $('#sc-ok').onclick = scanOk;
@@ -223,27 +216,10 @@ $('#scan').onkeydown = e => {
   else if (e.key === 'Tab') { e.preventDefault(); $('#sc-prev').click(); }
 };
 
-// ===== バックアップ =====
-const b2d = b => new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(b); });
-$('#exp').onclick = async () => {
-  const out = []; for (const n of notes) out.push({ ...n, image: n.image ? await b2d(n.image) : null });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([JSON.stringify(out)], { type: 'application/json' }));
-  a.download = `paper-pkm-${today().replace(/ /g, '')}.json`; a.click();
-};
-$('#rest').onclick = () => $('#rfile').click();
-$('#rfile').onchange = async e => {
-  const f = e.target.files[0]; if (!f) return;
-  const arr = JSON.parse(await f.text()); let c = 0;
-  for (const o of arr) {
-    if (byId(o.id)) continue;
-    const n = { ...o, image: o.image ? await (await fetch(o.image)).blob() : null };
-    notes.push(n); await save(n); c++;
-  }
-  e.target.value = ''; renderList(); alert(`${c} 件を読み込みました（同じIDは残しました）`);
-};
-
-idb().then(async d => { db = d; notes = await tx('readonly', s => s.getAll()); renderList(); });
+// ===== 保存フォルダ =====
+async function showVault() { $('#exp').title = await api.vault(); $('#exp').textContent = '📁 ' + (await api.vault()).split('/').pop(); }
+$('#exp').onclick = async () => { if (await api.chooseVault()) { notes = await api.list(); cur = null; renderList(); showVault(); } };
+(async () => { notes = await api.list(); renderList(); showVault(); })();
 </script>
 </body>
 </html>
