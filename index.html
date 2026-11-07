@@ -13,6 +13,14 @@ header input{flex:1;padding:6px 10px;border:1px solid var(--line);border-radius:
 button{font:inherit;padding:4px 11px;border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer;color:var(--fg)}
 button:hover{background:var(--hl)}button.p{background:var(--acc);color:#fff;border-color:var(--acc)}
 main{flex:1;display:flex;min-height:0}
+#rail{width:46px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;border-right:1px solid var(--line);background:#f6f7f9}
+#rail button{width:36px;height:36px;border:0;border-radius:8px;background:none;font-size:19px;padding:0;opacity:.55}
+#rail button:hover{background:#e9ecf2;opacity:1}#rail button.on{background:#dfe6f7;opacity:1}
+#dlist details{border-bottom:1px solid #f2f2f2}#dlist summary{padding:6px 12px;cursor:pointer;font-weight:600;color:#444}
+#dlist .day{padding:4px 12px 4px 26px;cursor:pointer;display:flex;gap:8px}#dlist .day:hover,#dlist .day.on{background:var(--hl)}
+#dlist .day small{color:var(--sub)}#dlist .dtop{padding:8px 10px;display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+#dlist .dtop input{font:inherit;font-size:13px;padding:2px 6px;border:1px solid var(--line);border-radius:6px}
+.sc-diary{margin-left:6px;color:var(--sub);font-size:13px}.sc-diary input{font-size:13px}
 aside{width:290px;display:flex;flex-direction:column;border-right:1px solid var(--line)}
 #tabs{display:flex;border-bottom:1px solid var(--line)}
 #tabs button{flex:1;border:0;border-radius:0;padding:7px 0;color:var(--sub)}
@@ -118,6 +126,7 @@ button.danger{color:var(--red);border-color:#efc9c4}
   <button id="vault">📁</button>
 </header>
 <main>
+  <nav id="rail"><button data-mode="notes" title="ノート">📝</button><button data-mode="diary" title="日記">📔</button></nav>
   <aside>
     <div id="tabs"><button data-tab="d">デジタル</button><button data-tab="p">紙</button><button data-tab="i">Index</button></div>
     <div id="selbar"></div>
@@ -135,6 +144,7 @@ button.danger{color:var(--red);border-color:#efc9c4}
     <span class="sub">キーワード</span><input id="sc-kw" placeholder="任意（、で区切る）">
     <button id="sc-ok" class="p">決定して次へ (Enter)</button>
     <button id="sc-skip">飛ばす</button>
+    <span class="sc-diary">｜ 紙の日記なら <input id="sc-date" type="date"><button id="sc-diary" title="Alt+D">日記として登録</button></span>
     <button id="sc-prev">前のID (Tab)</button>
     <button id="sc-close">閉じる (Esc)</button>
     <span id="sc-msg" class="sub"></span>

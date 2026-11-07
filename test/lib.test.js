@@ -67,3 +67,21 @@ test('読み', () => {
 test('トピックIndex から ID を外す', () => {
   assert.strictEqual(L.removeFromTopic('英雄伝 1 2\n漢字 1\n★ 3-x', ['1']), '英雄伝 2\n★ 3-x');
 });
+
+test('日記の日付・節・階層', () => {
+  assert.strictEqual(L.dayOf('2026-11-07 14:20'), '2026-11-07');
+  assert.strictEqual(L.dayOf('2026-11-07 03:30'), '2026-11-06'); // 5時までは前の日
+  assert.strictEqual(L.todayStr(new Date(2026, 10, 7, 4, 59)), '2026-11-06');
+  assert.strictEqual(L.todayStr(new Date(2026, 10, 7, 5, 0)), '2026-11-07');
+  assert.strictEqual(L.weekday('2026-11-07'), '土');
+  let b = '朝の話';
+  b = L.addToSection(b, '今日のノート', '- :1');
+  b = L.addToSection(b, '今日のノート', '- :2');
+  b = L.addToSection(b, '紙の日記', '![](P_2026-11-07.jpg)');
+  b = L.addToSection(b, '今日のノート', '- :3'); // 「紙の日記」より前の節に入る
+  b = L.addToSection(b, '紙の日記', '![](P_2026-11-07_2.jpg)');
+  assert.strictEqual(L.addToSection(b, '今日のノート', '- :1'), b); // 二重に入れない
+  assert.strictEqual(b, '朝の話\n\n## 今日のノート\n\n- :1\n- :2\n- :3\n\n## 紙の日記\n\n![](P_2026-11-07.jpg)\n![](P_2026-11-07_2.jpg)');
+  assert.deepStrictEqual(L.diaryTree(['2026-11-07', '2026-11-05', '2026-10-30']), [{ label: '2026-11', days: ['2026-11-07', '2026-11-05'] }, { label: '2026-10', days: ['2026-10-30'] }]);
+  assert.deepStrictEqual(L.diaryTree(['2027-01-02', '2026-12-31']).map(y => y.label), ['2027', '2026']);
+});

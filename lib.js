@@ -161,6 +161,44 @@ function removeFromTopic(text, ids) {
   }).join('\n');
 }
 
+// ===== 日記 =====
+// 日付が変わる時刻は朝5時（Gnosis と同じ）。夜中の3時のメモは前の日の日記に入る
+const DAY_START = 5, pad2 = x => String(x).padStart(2, '0');
+const ymd = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const todayStr = (now = new Date()) => { const d = new Date(now); d.setHours(d.getHours() - DAY_START); return ymd(d); };
+function dayOf(created) { // 'YYYY-MM-DD HH:MM' → 日記の日付
+  const m = (created || '').match(/^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2}))?/); if (!m) return '';
+  const d = new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 12), +(m[5] || 0)); d.setHours(d.getHours() - DAY_START); return ymd(d);
+}
+const WD = ['日', '月', '火', '水', '木', '金', '土'];
+const weekday = date => { const m = date.match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? WD[new Date(+m[1], +m[2] - 1, +m[3]).getDay()] : ''; };
+const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s);
+// 本文の「## 見出し」の節の最後に1行を足す。節が無ければ作る（「紙の日記」は必ず最後、ほかはその前）
+function addToSection(body, heading, line) {
+  const H = '## ' + heading, lines = body ? body.split('\n') : [];
+  if (lines.some(l => l.trim() === line.trim())) return body;
+  const i = lines.findIndex(l => l.trim() === H);
+  if (i < 0) {
+    const paper = lines.findIndex(l => l.trim() === '## 紙の日記');
+    if (heading !== '紙の日記' && paper >= 0) { lines.splice(paper, 0, H, '', line, ''); return lines.join('\n'); }
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    return (lines.length ? lines.join('\n') + '\n\n' : '') + H + '\n\n' + line;
+  }
+  let j = i + 1; while (j < lines.length && !/^##\s/.test(lines[j])) j++;
+  let k = j; while (k > i + 1 && !lines[k - 1].trim()) k--;
+  lines.splice(k, 0, line); return lines.join('\n');
+}
+// 年・月・日の階層（Gnosis 同様: 月はいつも、年は2つ以上の年にまたがってから）
+function diaryTree(dates) {
+  const sorted = [...dates].sort().reverse(), years = new Set(sorted.map(d => d.slice(0, 4)));
+  const months = new Map();
+  for (const d of sorted) { const m = d.slice(0, 7); if (!months.has(m)) months.set(m, []); months.get(m).push(d); }
+  if (years.size < 2) return [...months].map(([m, ds]) => ({ label: m, days: ds }));
+  const out = new Map();
+  for (const [m, ds] of months) { const y = m.slice(0, 4); if (!out.has(y)) out.set(y, []); out.get(y).push({ label: m, days: ds }); }
+  return [...out].map(([y, ms]) => ({ label: y, months: ms }));
+}
+
 const kwAnchor = k => { let h = 5381; for (const c of k) h = (h * 33 + c.codePointAt(0)) >>> 0; return 'k-' + h.toString(36); };
 const fileName = name => name.replace(/[\\/:*?"<>|#%]/g, '_');
 const splitKw = s => (s || '').split(/[,、，]/).map(x => x.trim()).filter(Boolean);
@@ -172,5 +210,5 @@ const now = (d = new Date()) => {
 module.exports = {
   MDLINK, ID, isId, tok, cmpId, sibling, child, parentIn, root,
   tokens, anchorPos, selfTarget, bodyToMd, mdToBody,
-  topicLine, mergeTopic, addToTopic, removeFromTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
+  DAY_START, todayStr, dayOf, weekday, isDate, addToSection, diaryTree, topicLine, mergeTopic, addToTopic, removeFromTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
 };

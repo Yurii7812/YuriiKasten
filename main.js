@@ -28,6 +28,13 @@ ipcMain.handle('openPath', (_e, rel) => {
   if (!full.startsWith(root + path.sep)) return 'blocked';
   return shell.openPath(full);
 });
+ipcMain.handle('diaryState', () => v.diaryState());
+ipcMain.handle('openDiary', (_e, date) => v.openDiary(date));
+ipcMain.handle('saveDiary', (_e, d) => v.saveDiary(d));
+ipcMain.handle('deleteDiary', (_e, date) => v.deleteDiary(date));
+ipcMain.handle('addDiaryScan', (_e, date, bytes) => v.addDiaryScan(date, Buffer.from(bytes)));
+ipcMain.handle('saveDoc', (_e, name, obj) => v.saveDoc(name, obj));
+ipcMain.handle('deleteDoc', (_e, name) => v.deleteDoc(name));
 ipcMain.handle('setReading', (_e, k, r) => v.setReading(k, r));
 // 読みの候補（kuromoji。最初の1回だけ辞書を読む）
 let tk = null;

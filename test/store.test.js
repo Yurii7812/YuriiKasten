@@ -15,7 +15,7 @@ test('全部が1つのフォルダに平らに置かれ、リンクは同じフ�
   v.saveNote({ s: 'p', id: '1', keywords: ['PKM', '紙'], body: '紙の文字 :1a' });
   v.saveTopic({ name: '1-PKM', entry: { s: 'd', id: '1' }, d: 'PKM 1 1a\n★ 2-x', p: 'PKM 1' });
 
-  assert.deepStrictEqual(ls(dir), ['.pkm-layout', 'D_1.md', 'D_1a.md', 'Index.md', 'P_1.jpg', 'P_1.md', 'T_1-PKM.md', 'デジタル.md', '紙.md'].sort());
+  assert.deepStrictEqual(ls(dir), ['.pkm-layout', 'D_1.md', 'D_1a.md', 'D_2026-10-10.md', 'Index.md', 'P_1.jpg', 'P_1.md', 'T_1-PKM.md', 'デジタル.md', '日記.md', '紙.md'].sort()); // 日記は作った日のものが自動で
   assert.ok(fs.readdirSync(dir).every(f => fs.statSync(path.join(dir, f)).isFile())); // サブフォルダなし
   const r = f => fs.readFileSync(path.join(dir, f), 'utf8');
   const d1 = r('D_1.md');
@@ -90,7 +90,7 @@ test('v2（digital/ paper/ topic/ files/）を平らに移す', () => {
   w('topic/1-X.md', '<!-- pkm-topic {"name":"1-X","entry":{"s":"d","id":"1b"},"d":"図 1b","p":""} -->\n# 1-X\n');
   w('Index.md', '<!-- pkm-index {"readings":{"図":"ず"}} -->\n# Index\n');
   const v = openVault(dir), body = id => v.state().notes.find(n => n.s === 'd' && n.id === id).body;
-  assert.deepStrictEqual(ls(dir), ['.pkm-layout', 'D_1b.md', 'D_2.md', 'Index.md', 'P_3.jpg', 'P_3.md', 'T_1-X.md', 'y.png', 'デジタル.md', '図(1)-1.html', '図(1).html', '紙.md'].sort());
+  assert.deepStrictEqual(ls(dir), ['.pkm-layout', 'D_1b.md', 'D_2.md', 'Index.md', 'P_3.jpg', 'P_3.md', 'T_1-X.md', 'y.png', 'デジタル.md', '図(1)-1.html', '図(1).html', '日記.md', '紙.md'].sort());
   assert.ok(fs.readdirSync(dir).every(f => fs.statSync(path.join(dir, f)).isFile()));
   assert.strictEqual(body('1b'), '[図(1).html](%E5%9B%B3%281%29.html)'); // リンクも平らに
   assert.strictEqual(body('2'), '![x](%E5%9B%B3%281%29-1.html)  \n![y](y.png)'.replace('  \n', '\n'));
@@ -114,3 +114,37 @@ test('v1（直下に <ID>.md / <ID>.jpg）も移す。添付の 5.png をノー�
   assert.ok(!again.state().notes.some(x => x.id === '7'));
   fs.rmSync(dir, { recursive: true });
 });
+
+test('日記: ノートを作ると作った日の日記に載り、紙の日記が最後に入る', () => {
+  const dir = tmp(), r = f => fs.readFileSync(path.join(dir, f), 'utf8');
+  const v = openVault(dir);
+  v.saveNote({ s: 'd', id: '1', created: '2026-11-07 14:20', keywords: [], body: 'x' });
+  v.saveNote({ s: 'd', id: '2', created: '2026-11-08 02:10', keywords: [], body: 'y' }); // 5時前 → 前の日
+  v.saveNote({ s: 'd', id: '3', created: '2026-11-09 10:00', keywords: [], body: 'z' });
+  assert.deepStrictEqual(v.state().diaries.map(d => d.date).sort(), ['2026-11-07', '2026-11-09']);
+  assert.strictEqual(v.state().diaries.find(d => d.date === '2026-11-07').body, '## 今日のノート\n\n- :1\n- :2');
+  // 過去の日記を開くと、その日のノートが足される。タイトルも付けられる
+  v.saveDiary({ date: '2026-11-07', title: '旅の話', body: '朝は晴れ\n\n## 今日のノート\n\n- :1\n- :2' });
+  assert.ok(fs.existsSync(path.join(dir, 'D_2026-11-07-旅の話.md')) && !fs.existsSync(path.join(dir, 'D_2026-11-07.md')));
+  // 紙の日記（スキャン）: 日記の最後に入る。2枚目は _2
+  v.addDiaryScan('2026-11-07', Buffer.from([0xff, 0xd8]));
+  const d = v.addDiaryScan('2026-11-07', Buffer.from([0xff, 0xd8, 1]));
+  assert.deepStrictEqual(d.pages, ['P_2026-11-07.jpg', 'P_2026-11-07_2.jpg']);
+  assert.match(d.body, /## 今日のノート[\s\S]*## 紙の日記\n\n!\[\]\(P_2026-11-07\.jpg\)\n!\[\]\(P_2026-11-07_2\.jpg\)$/);
+  assert.match(r('D_2026-11-07-旅の話.md'), /\[:1\]\(D_1\.md\)|\[:1\]/);
+  assert.match(r('D_2026-11-07-旅の話.md'), /!\[\]\(P_2026-11-07\.jpg\)/);
+  assert.match(r('日記.md'), /## 2026-11[\s\S]*\[2026-11-09（月）\]\(D_2026-11-09\.md\)[\s\S]*\[2026-11-07（土） 旅の話\]\(D_2026-11-07-%E6%97%85%E3%81%AE%E8%A9%B1\.md\)/);
+  // 読み直し（タイトルと本文と紙のページ）
+  const again = openVault(dir).state().diaries.find(x => x.date === '2026-11-07');
+  assert.strictEqual(again.title, '旅の話'); assert.ok(again.body.startsWith('朝は晴れ')); assert.strictEqual(again.pages.length, 2);
+  assert.ok(openVault(dir).state().notes.every(n => /^[0-9]/.test(n.id))); // 日記や紙のページをノートと取り違えない
+  // 過去の日付の日記を作る
+  assert.strictEqual(v.openDiary('2020-01-02').date, '2020-01-02');
+  assert.deepStrictEqual(L_tree(v), ['2026', '2020'].length ? ['2026', '2020'] : []);
+  // JSON の文書
+  assert.ok(v.saveDoc('R_会話', { title: '会話', messages: [{ text: 'やあ' }] }));
+  assert.ok(!v.saveDoc('../x', {}));
+  assert.deepStrictEqual(openVault(dir).state().docs['R_会話'].messages, [{ text: 'やあ' }]);
+  fs.rmSync(dir, { recursive: true });
+});
+function L_tree(v) { return require('../lib').diaryTree(v.state().diaries.map(d => d.date)).map(g => g.label); }
