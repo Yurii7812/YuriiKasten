@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>紙PKM</title>
+<style>
+:root{--bg:#fff;--fg:#222;--sub:#777;--line:#e3e3e3;--acc:#2456c8;--red:#c0392b;--hl:#f5f7fb}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.6 system-ui,"Noto Sans JP",sans-serif;color:var(--fg);background:var(--bg);height:100vh;display:flex;flex-direction:column}
+header{display:flex;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line)}
+header input{flex:1;padding:6px 10px;border:1px solid var(--line);border-radius:6px;font:inherit}
+button{font:inherit;padding:5px 11px;border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer}
+button:hover{background:var(--hl)}button.p{background:var(--acc);color:#fff;border-color:var(--acc)}
+main{flex:1;display:flex;min-height:0}
+#list{width:250px;overflow:auto;border-right:1px solid var(--line)}
+#list div{padding:6px 12px;border-bottom:1px solid var(--line);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#list div:hover,#list div.on{background:var(--hl)}
+#list b{color:var(--acc);margin-right:8px}#list small{color:var(--sub)}
+#pane{flex:1;overflow:auto;padding:14px 20px}
+.row{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.id{font-size:20px;font-weight:700;color:var(--acc);width:130px;border:1px solid var(--line);border-radius:6px;padding:3px 8px}
+input.t{padding:5px 8px;border:1px solid var(--line);border-radius:6px;font:inherit}
+textarea{width:100%;min-height:260px;padding:10px;border:1px solid var(--line);border-radius:6px;font:inherit;resize:vertical}
+img.scan{max-width:100%;border:1px solid var(--line);border-radius:6px;margin:8px 0}
+.chip{display:inline-block;margin:2px 6px 2px 0;padding:1px 9px;border:1px solid var(--line);border-radius:12px;color:var(--red);cursor:pointer}
+.sub{color:var(--sub);font-size:13px}
+#scan{position:fixed;inset:0;background:#fff;display:none;flex-direction:column;z-index:9}
+#scan .top{padding:10px 16px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#scan .view{flex:1;overflow:auto;text-align:center;background:#f6f6f6}
+#scan .view img{max-width:100%}
+.empty{color:var(--sub);margin-top:40px;text-align:center}
+@media(max-width:700px){main{flex-direction:column}#list{width:100%;height:35%;border-right:0;border-bottom:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<header>
+  <input id="q" placeholder="検索（ID・本文・キーワード）" autofocus>
+  <button id="new">＋ 新規</button>
+  <button id="imp" class="p">📷 スキャン取り込み</button>
+  <button id="exp" title="バックアップ（JSON）">書き出し</button>
+  <button id="rest" title="バックアップを読み込む">読み込み</button>
+</header>
+<main>
+  <div id="list"></div>
+  <div id="pane"><div class="empty">左から選ぶか、「＋ 新規」で書き始めます。</div></div>
+</main>
+
+<div id="scan">
+  <div class="top">
+    <b id="sc-n"></b>
+    <span>ID:</span><input id="sc-id" class="t" style="width:110px;font-size:18px">
+    <span class="sub">キーワード</span><input id="sc-kw" class="t" placeholder="任意（カンマ区切り）">
+    <button id="sc-ok" class="p">決定して次へ (Enter)</button>
+    <button id="sc-skip">飛ばす</button>
+    <button id="sc-prev">前のIDを入れる (Tab)</button>
+    <button id="sc-close">閉じる (Esc)</button>
+    <span id="sc-msg" class="sub"></span>
+  </div>
+  <div class="view"><img id="sc-img"></div>
+</div>
+<input type="file" id="files" accept="image/*" multiple hidden>
+<input type="file" id="rfile" accept=".json" hidden>
+
+<script>
+// ===== ID（紙のPKM: 1 → 1a → 1a1 → 1a1a …）=====
+const tok = id => id.match(/\d+|[a-z]+/g) || [];
+function cmpTok(a, b) {
+  const an = /\d/.test(a), bn = /\d/.test(b);
+  if (an && bn) return +a - +b;
+  if (!an && !bn) return a.length - b.length || (a < b ? -1 : a > b ? 1 : 0);
+  return an ? -1 : 1;
+}
+function cmpId(x, y) {
+  const a = tok(x), b = tok(y);
+  for (let i = 0; i < Math.min(a.length, b.length); i++) { const c = cmpTok(a[i], b[i]); if (c) return c; }
+  return a.length - b.length;
+}
+function incLetters(s) { // a→b, z→aa
+  const c = s.split(''); let i = c.length - 1;
+  while (i >= 0) { if (c[i] === 'z') { c[i] = 'a'; i--; } else { c[i] = String.fromCharCode(c[i].charCodeAt(0) + 1); return c.join(''); } }
+  return 'a' + c.join('');
+}
+function sibling(id) { // 広げる: 1a→1b, 1→2, 1a1→1a2
+  const t = tok(id); if (!t.length) return '1';
+  const l = t.pop(); t.push(/\d/.test(l) ? String(+l + 1) : incLetters(l)); return t.join('');
+}
+function child(id) { // 深掘り: 1→1a, 1a→1a1
+  const t = tok(id); if (!t.length) return '1';
+  return id + (/\d/.test(t[t.length - 1]) ? 'a' : '1');
+}
+const free = id => { while (byId(id)) id = sibling(id); return id; };
+const normId = s => (s || '').trim().toLowerCase().replace(/[^0-9a-z]/g, '');
+
+// ===== 保存（IndexedDB）=====
+let db, notes = [];
+const byId = id => notes.find(n => n.id === id);
+const idb = () => new Promise((ok, ng) => {
+  const r = indexedDB.open('paper-pkm', 1);
+  r.onupgradeneeded = () => r.result.createObjectStore('notes', { keyPath: 'id' });
+  r.onsuccess = () => ok(r.result); r.onerror = () => ng(r.error);
+});
+const tx = (m, f) => new Promise((ok, ng) => { const t = db.transaction('notes', m); const r = f(t.objectStore('notes')); t.oncomplete = () => ok(r && r.result); t.onerror = () => ng(t.error); });
+const save = n => { n.updated = Date.now(); return tx('readwrite', s => s.put(n)); };
+const del = id => tx('readwrite', s => s.delete(id));
+
+// ===== 画像（長辺2000pxのJPEGに縮小して保存）=====
+function shrink(file, max = 2000) {
+  return new Promise(ok => {
+    const u = URL.createObjectURL(file), im = new Image();
+    im.onload = () => {
+      const k = Math.min(1, max / Math.max(im.width, im.height));
+      const c = document.createElement('canvas'); c.width = im.width * k; c.height = im.height * k;
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+      c.toBlob(b => { URL.revokeObjectURL(u); ok(b); }, 'image/jpeg', .85);
+    };
+    im.src = u;
+  });
+}
+
+// ===== 画面 =====
+const $ = s => document.querySelector(s);
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+let cur = null;
+
+function renderList() {
+  const q = $('#q').value.trim().toLowerCase();
+  const hit = n => !q || [n.id, n.body, n.keywords].join('\n').toLowerCase().includes(q);
+  const items = notes.filter(hit).sort((a, b) => cmpId(a.id, b.id));
+  $('#list').innerHTML = items.map(n => {
+    const first = (n.body || n.keywords || (n.image ? '（スキャン）' : '')).split('\n')[0].slice(0, 40);
+    return `<div data-id="${n.id}" class="${n.id === cur ? 'on' : ''}"><b>${n.id}</b>${n.image ? '📷 ' : ''}<small>${esc(first)}</small></div>`;
+  }).join('') || '<div class="sub">該当なし</div>';
+}
+$('#list').onclick = e => { const d = e.target.closest('[data-id]'); if (d) open(d.dataset.id); };
+
+function linksOf(body) {
+  const s = new Set(), re = [/:([0-9][0-9a-z]*)/g, /\b([0-9][0-9a-z]*):/g, /\b([0-9][0-9a-z]*)\(\d+\)/g];
+  re.forEach(r => { let m; while ((m = r.exec(body || ''))) s.add(m[1]); });
+  return [...s].filter(i => byId(i));
+}
+
+function open(id) {
+  cur = id; const n = byId(id); if (!n) return;
+  const out = linksOf(n.body), back = notes.filter(m => m.id !== id && linksOf(m.body).includes(id)).map(m => m.id).sort(cmpId);
+  const chips = a => a.map(i => `<span class="chip" data-go="${i}">${i}</span>`).join('') || '<span class="sub">なし</span>';
+  $('#pane').innerHTML = `
+    <div class="row">
+      <input class="id" id="f-id" value="${n.id}" title="IDを変更">
+      <input class="t" id="f-date" value="${n.date}" title="日付（例: 2026 10 02）" style="width:130px">
+      <button data-act="sib">＋ 広げる ${sibling(n.id)}</button>
+      <button data-act="chi">＋ 深掘り ${child(n.id)}</button>
+      <button data-act="img">📎 画像</button>
+      <button data-act="del" style="margin-left:auto">削除</button>
+    </div>
+    <div class="row"><input class="t" id="f-kw" placeholder="キーワード（カンマ区切り・検索の索引になります）" value="${esc(n.keywords || '')}" style="flex:1"></div>
+    ${n.image ? `<img class="scan" id="f-img">` : ''}
+    <textarea id="f-body" placeholder="本文。続き:7a1　引用 7a(1)　全体 7a:">${esc(n.body || '')}</textarea>
+    <div class="sub">リンク先</div><div>${chips(out)}</div>
+    <div class="sub">このノートを参照</div><div>${chips(back)}</div>`;
+  if (n.image) $('#f-img').src = URL.createObjectURL(n.image);
+  const upd = () => { n.body = $('#f-body').value; n.keywords = $('#f-kw').value; n.date = $('#f-date').value; save(n); renderList(); };
+  ['#f-body', '#f-kw', '#f-date'].forEach(s => $(s).oninput = upd);
+  $('#f-id').onchange = async e => {
+    const v = normId(e.target.value);
+    if (!v || (v !== n.id && byId(v))) { alert('そのIDは使えません（空か、既にあります）'); e.target.value = n.id; return; }
+    await del(n.id); n.id = v; await save(n); cur = v; renderList(); open(v);
+  };
+  renderList();
+}
+$('#pane').onclick = async e => {
+  const g = e.target.dataset.go; if (g) return open(g);
+  const a = e.target.dataset.act; if (!a) return;
+  const n = byId(cur);
+  if (a === 'sib') add(free(sibling(n.id)));
+  if (a === 'chi') add(free(child(n.id)));
+  if (a === 'del' && confirm(`${n.id} を削除しますか？`)) { await del(n.id); notes = notes.filter(m => m !== n); cur = null; $('#pane').innerHTML = '<div class="empty">削除しました。</div>'; renderList(); }
+  if (a === 'img') { const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*'; f.onchange = async () => { n.image = await shrink(f.files[0]); await save(n); open(n.id); }; f.click(); }
+};
+const today = () => { const d = new Date(); return `${d.getFullYear()} ${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getDate()).padStart(2, '0')}`; };
+async function add(id, extra = {}) {
+  const n = { id, date: today(), body: '', keywords: '', image: null, ...extra };
+  notes.push(n); await save(n); open(id); if (!extra.image) $('#f-body').focus();
+}
+$('#new').onclick = () => {
+  const ids = notes.map(n => n.id).filter(i => /^\d+$/.test(i)).map(Number);
+  add(free(String((ids.length ? Math.max(...ids) : 0) + 1)));
+};
+$('#q').oninput = renderList;
+
+// ===== スキャン取り込み（番号付け）=====
+let queue = [], qi = 0, lastId = '', prevId = '';
+$('#imp').onclick = () => $('#files').click();
+$('#files').onchange = e => {
+  queue = [...e.target.files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  e.target.value = ''; if (!queue.length) return;
+  qi = 0; $('#scan').style.display = 'flex'; showScan();
+};
+function showScan() {
+  if (qi >= queue.length) return closeScan();
+  $('#sc-n').textContent = `${qi + 1} / ${queue.length}`;
+  $('#sc-img').src = URL.createObjectURL(queue[qi]);
+  $('#sc-id').value = free(lastId ? sibling(lastId) : '1');
+  $('#sc-kw').value = ''; $('#sc-msg').textContent = queue[qi].name;
+  $('#sc-id').focus(); $('#sc-id').select();
+}
+async function scanOk() {
+  const id = normId($('#sc-id').value);
+  if (!id) return;
+  if (byId(id)) { $('#sc-msg').textContent = `${id} は既にあります。別のIDにしてください`; return; }
+  const blob = await shrink(queue[qi]);
+  const n = { id, date: today(), body: '', keywords: $('#sc-kw').value, image: blob };
+  notes.push(n); await save(n); prevId = lastId; lastId = id; qi++; renderList(); showScan();
+}
+function closeScan() { $('#scan').style.display = 'none'; renderList(); if (lastId && byId(lastId)) open(lastId); }
+$('#sc-ok').onclick = scanOk;
+$('#sc-skip').onclick = () => { qi++; showScan(); };
+$('#sc-prev').onclick = () => { if (lastId) { $('#sc-id').value = lastId; $('#sc-id').focus(); } };
+$('#sc-close').onclick = closeScan;
+$('#scan').onkeydown = e => {
+  if (e.key === 'Enter') { e.preventDefault(); scanOk(); }
+  else if (e.key === 'Escape') closeScan();
+  else if (e.key === 'Tab') { e.preventDefault(); $('#sc-prev').click(); }
+};
+
+// ===== バックアップ =====
+const b2d = b => new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(b); });
+$('#exp').onclick = async () => {
+  const out = []; for (const n of notes) out.push({ ...n, image: n.image ? await b2d(n.image) : null });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(out)], { type: 'application/json' }));
+  a.download = `paper-pkm-${today().replace(/ /g, '')}.json`; a.click();
+};
+$('#rest').onclick = () => $('#rfile').click();
+$('#rfile').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const arr = JSON.parse(await f.text()); let c = 0;
+  for (const o of arr) {
+    if (byId(o.id)) continue;
+    const n = { ...o, image: o.image ? await (await fetch(o.image)).blob() : null };
+    notes.push(n); await save(n); c++;
+  }
+  e.target.value = ''; renderList(); alert(`${c} 件を読み込みました（同じIDは残しました）`);
+};
+
+idb().then(async d => { db = d; notes = await tx('readonly', s => s.getAll()); renderList(); });
+</script>
+</body>
+</html>
