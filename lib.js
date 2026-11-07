@@ -41,9 +41,11 @@ const root = id => tok(id)[0] || id;
 const C = '[:：]', LP = '[(（]', RP = '[)）]';
 const RE = `(?<![0-9A-Za-z])(?:(${C})?(${ID})?${LP}(\\d+)${RP}(${C})?|${C}(${ID})(?![0-9A-Za-z])|(${ID})${C}(?![0-9]))`;
 
+const MDLINK = /!?\[[^\]\n]*\]\([^)\s]*\)/g; // [名前](パス) と ![名前](パス)
 function tokens(text) {
-  const re = new RegExp(RE, 'g'), out = []; let m;
+  const re = new RegExp(RE, 'g'), out = [], skip = [...text.matchAll(MDLINK)].map(m => [m.index, m.index + m[0].length]); let m;
   while ((m = re.exec(text))) {
+    if (skip.some(([a, b]) => m.index < b && m.index + m[0].length > a)) continue;
     const [all, c1, id1, n, c2, idB, idC] = m; let t;
     if (n !== undefined) t = id1 ? { k: 'ref', id: id1, n } : { k: 'self', n, bare: !c1 && !c2 };
     else t = { k: 'ref', id: idB || idC };
@@ -168,7 +170,7 @@ const now = (d = new Date()) => {
 };
 
 module.exports = {
-  ID, isId, tok, cmpId, sibling, child, parentIn, root,
+  MDLINK, ID, isId, tok, cmpId, sibling, child, parentIn, root,
   tokens, anchorPos, selfTarget, bodyToMd, mdToBody,
   topicLine, mergeTopic, addToTopic, removeFromTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
 };

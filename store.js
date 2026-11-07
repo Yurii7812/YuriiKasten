@@ -11,6 +11,7 @@ const DIR = { d: 'digital', p: 'paper' };
 const LIST = { d: 'デジタル.md', p: '紙.md' };
 const SP = { d: 'デジタル', p: '紙' };
 const IMG = ['.jpg', '.jpeg', '.png', '.webp'];
+const PICS = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i; // 添付の中で画像として見せるもの
 const validId = s => L.isId(s) && !/^\d{8,}$/.test(s); // 日時名のファイルは除外
 const enc = s => encodeURIComponent(s);
 const esc = s => String(s).replace(/([\\`*_[\]<>|#])/g, '\\$1'); // Markdown の中
@@ -49,6 +50,10 @@ function openVault(vault) {
         n.body = L.mdToBody(i >= 0 ? text.slice(i + BODY.length, j > i ? j : undefined) : text);
       } else if (IMG.includes(e)) n.img = f;
     }
+  }
+  const filesDir = (s, id) => `${DIR[s]}/files/${id}`;
+  for (const d of Object.values(DIR)) { // ノートが無くても添付フォルダがあれば、ノートとして拾う
+    try { for (const id of fs.readdirSync(abs(`${d}/files`))) if (validId(id)) { const sp = d === DIR.d ? 'd' : 'p'; if (!get(sp, id)) notes.set(key(sp, id), { s: sp, id, created: '', keywords: [], body: '', img: null }); } } catch { }
   }
   for (const n of notes.values()) if (n.s === 'd' && !n.created) {
     const p = abs(notePath('d', n.id));
@@ -211,6 +216,7 @@ function openVault(vault) {
       if (!n || !validId(to) || get(s, to)) return false;
       notes.delete(key(s, from)); n.id = to; notes.set(key(s, to), n);
       if (n.img) { const img = to + path.extname(n.img); fs.renameSync(abs(`${DIR[s]}/${n.img}`), abs(`${DIR[s]}/${img}`)); n.img = img; }
+      if (fs.existsSync(abs(filesDir(s, from)))) { fs.mkdirSync(abs(`${DIR[s]}/files`), { recursive: true }); fs.renameSync(abs(filesDir(s, from)), abs(filesDir(s, to))); }
       if (fs.existsSync(abs(notePath(s, from)))) fs.unlinkSync(abs(notePath(s, from)));
       cache.delete(notePath(s, from));
       for (const t of topics.values()) if (t.entry && t.entry.s === s && t.entry.id === from) t.entry.id = to;
@@ -221,6 +227,20 @@ function openVault(vault) {
       for (const e of IMG) { const p = abs(`${DIR[s]}/${id}${e}`); if (fs.existsSync(p)) fs.unlinkSync(p); }
       n.img = id + '.jpg'; fs.writeFileSync(abs(`${DIR[s]}/${n.img}`), buf);
       notes.set(key(s, id), n); rebuild(); return pub(n);
+    },
+    // 添付をコピーする（同じ名前があれば -1, -2 …を付ける）。保存した名前を返す。リンクは本文に入れる（画面側）
+    addFiles(s, id, list) {
+      fs.mkdirSync(abs(filesDir(s, id)), { recursive: true });
+      const names = [];
+      for (const { name, bytes } of list) {
+        const base = path.basename(name).replace(/[\\/:*?"<>|]/g, '_') || 'file';
+        const ext = path.extname(base), stem = path.basename(base, ext);
+        let f = base, i = 0;
+        while (fs.existsSync(abs(`${filesDir(s, id)}/${f}`))) f = `${stem}-${++i}${ext}`;
+        fs.writeFileSync(abs(`${filesDir(s, id)}/${f}`), Buffer.from(bytes));
+        names.push(f);
+      }
+      return names;
     },
     // oldName があれば名前の変更
     saveTopic(t, oldName) {
@@ -240,6 +260,7 @@ function openVault(vault) {
         const n = get(s, id); if (!n) continue;
         removeFile(notePath(s, id));
         if (n.img) removeFile(`${DIR[s]}/${n.img}`);
+        if (fs.existsSync(abs(filesDir(s, id)))) removeFile(filesDir(s, id)); // 添付ごと .trash へ
         notes.delete(key(s, id));
       }
       for (const t of topics.values()) {

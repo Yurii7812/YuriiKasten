@@ -63,6 +63,16 @@ test('保存フォルダ: 書き出しと読み直し', () => {
   assert.doesNotMatch(r('Index.md'), /●<\/a> PKM/);
   assert.match(r('topic/9-PKM.md'), /キーワード <a href="..\/Index.md#k-[a-z0-9]+">PKM<\/a>/);
   assert.strictEqual(openVault(dir).state().topics.find(t => t.name === '9-PKM').keyword, 'PKM');
+  // 添付: files/<ID>/ にコピー。同名は -1。リンクは本文に書く（標準の Markdown）
+  assert.deepStrictEqual(v.addFiles('d', '9', [{ name: 'a.png', bytes: [1, 2, 3] }, { name: 'メモ.pdf', bytes: [4] }]), ['a.png', 'メモ.pdf']);
+  assert.deepStrictEqual(v.addFiles('d', '9', [{ name: 'a.png', bytes: [5] }]), ['a-1.png']);
+  assert.strictEqual(fs.readFileSync(path.join(dir, 'digital/files/9/a.png')).length, 3);
+  v.saveNote({ s: 'd', id: '9', keywords: ['PKM'], body: '上位\n![a](files/9/a.png)\n[メモ(1).pdf](files/9/%E3%83%A1%E3%83%A2%281%29.pdf)' });
+  assert.match(r('digital/9.md'), /!\[a\]\(files\/9\/a\.png\)/);
+  assert.match(r('digital/9.md'), /\[メモ\(1\)\.pdf\]\(files\/9\/%E3%83%A1%E3%83%A2%281%29\.pdf\)/); // (1) をリンクにしない
+  assert.ok(openVault(dir).state().notes.find(n => n.s === 'd' && n.id === '9').body.includes('![a](files/9/a.png)'));
+  assert.ok(v.rename('d', '9', '9x') && fs.existsSync(path.join(dir, 'digital/files/9x/a.png')));
+  v.rename('d', '9x', '9');
   // 入口は1ノートに1つ
   v.saveTopic({ name: 'A', entry: { s: 'd', id: '1' }, d: 'x 1 5', p: '' });
   assert.strictEqual(v.saveTopic({ name: 'B', entry: { s: 'd', id: '1' }, d: '', p: '' }), false);

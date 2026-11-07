@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('api', {
   saveTopic: (t, old) => r.invoke('saveTopic', t, old),
   deleteTopic: name => r.invoke('deleteTopic', name),
   deleteNotes: items => r.invoke('deleteNotes', items),
+  addFiles: (sp, id, list) => r.invoke('addFiles', sp, id, list),
+  openPath: (sp, rel) => r.invoke('openPath', sp, rel),
   setReading: (k, yomi) => r.invoke('setReading', k, yomi),
   suggest: text => r.invoke('suggest', text),
   chooseVault: () => r.invoke('chooseVault')

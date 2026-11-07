@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -19,6 +19,15 @@ ipcMain.handle('saveImage', (_e, s, id, bytes) => v.saveImage(s, id, Buffer.from
 ipcMain.handle('saveTopic', (_e, t, old) => v.saveTopic(t, old));
 ipcMain.handle('deleteTopic', (_e, name) => v.deleteTopic(name));
 ipcMain.handle('deleteNotes', (_e, items) => v.deleteNotes(items));
+ipcMain.handle('addFiles', (_e, sp, id, list) => v.addFiles(sp, id, list));
+// 本文のリンクを開く。ファイルは OS の既定のビューアーで、http(s) は既定のブラウザで
+ipcMain.handle('openPath', (_e, sp, rel) => {
+  if (process.env.PAPER_PKM_OPENLOG) { fs.appendFileSync(process.env.PAPER_PKM_OPENLOG, sp + ':' + decodeURIComponent(rel) + '\n'); return ''; } // 試験用: 開かず記録だけ
+  if (/^https?:\/\//.test(rel)) return shell.openExternal(rel);
+  const root = path.resolve(vault), full = path.resolve(root, sp === 'p' ? 'paper' : 'digital', decodeURIComponent(rel));
+  if (!full.startsWith(root + path.sep)) return 'blocked';
+  return shell.openPath(full);
+});
 ipcMain.handle('setReading', (_e, k, r) => v.setReading(k, r));
 // 読みの候補（kuromoji。最初の1回だけ辞書を読む）
 let tk = null;

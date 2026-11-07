@@ -1,5 +1,5 @@
-import { EditorView, Decoration, ViewPlugin, keymap, placeholder } from '@codemirror/view';
-import { EditorState, RangeSetBuilder } from '@codemirror/state';
+import { EditorView, Decoration, ViewPlugin, WidgetType, keymap, placeholder } from '@codemirror/view';
+import { EditorState, RangeSetBuilder, StateField } from '@codemirror/state';
 import { history, defaultKeymap, historyKeymap } from '@codemirror/commands';
 import L from '../lib.js';
 
@@ -49,11 +49,27 @@ function links(mode, space) {
     const b = new RangeSetBuilder(), text = view.state.doc.toString();
     const add = (from, to, data, ok) => b.add(from, to, Decoration.mark({ class: 'lk' + (ok ? '' : ' miss'), attributes: { 'data-l': JSON.stringify(data) } }));
     if (mode === 'note') {
+      const items = [];
       for (const t of L.tokens(text)) {
-        if (t.k === 'ref') add(t.from, t.to, { t: 'ref', s: space, id: t.id, n: t.n }, !!get(space, t.id));
-        else if (t.bare) b.add(t.from, t.to, Decoration.mark({ class: 'mk' })); // 素の (1) は赤いだけ
-        else add(t.from, t.to, { t: 'self', n: t.n, bare: t.bare }, L.selfTarget(text, t.n, t.bare) >= 0);
+        if (t.k === 'ref') items.push([t.from, t.to, { t: 'ref', s: space, id: t.id, n: t.n }, !!get(space, t.id)]);
+        else if (t.bare) items.push([t.from, t.to, 'mk']); // 素の (1) は赤いだけ
+        else items.push([t.from, t.to, { t: 'self', n: t.n, bare: t.bare }, L.selfTarget(text, t.n, t.bare) >= 0]);
       }
+      for (const m of text.matchAll(new RegExp(L.MDLINK.source, 'g'))) { // 添付・外部リンク。押すと既定のアプリで開く
+        const rel = m[0].slice(m[0].lastIndexOf('](') + 2, -1);
+        items.push([m.index, m.index + m[0].length, { t: 'file', s: space, rel }, true, 'file']);
+      }
+      // カーソルが外にあるとき、リンクは名前だけを見せる（![ や ](パス) を隠す）。カーソルを置くと元の記述が出る
+      const sel = view.state.selection.main, rs = [];
+      for (const [f, t, d, ok, cls] of items) {
+        if (d === 'mk') { rs.push(Decoration.mark({ class: 'mk' }).range(f, t)); continue; }
+        rs.push(Decoration.mark({ class: 'lk' + (cls ? ' ' + cls : '') + (ok ? '' : ' miss'), attributes: { 'data-l': JSON.stringify(d) } }).range(f, t));
+        if (cls === 'file' && !(sel.from <= t && sel.to >= f)) {
+          const open = text[f] === '!' ? 2 : 1, close = text.lastIndexOf('](', t);
+          rs.push(Decoration.replace({}).range(f, f + open), Decoration.replace({}).range(close, t));
+        }
+      }
+      return Decoration.set(rs, true);
     } else {
       let off = 0;
       for (const line of text.split('\n')) {
@@ -67,7 +83,7 @@ function links(mode, space) {
   };
   return ViewPlugin.fromClass(class {
     constructor(v) { this.decorations = build(v); }
-    update(u) { if (u.docChanged) this.decorations = build(u.view); }
+    update(u) { if (u.docChanged || u.selectionSet) this.decorations = build(u.view); }
   }, {
     decorations: v => v.decorations,
     eventHandlers: {
@@ -79,12 +95,36 @@ function links(mode, space) {
     }
   });
 }
+// ![名前](パス) の行の下に、画像をそのまま表示する
+const vaultUrl = sp => 'file://' + vault.split('/').map(encodeURIComponent).join('/') + '/' + (sp === 'p' ? 'paper' : 'digital') + '/';
+class ImgWidget extends WidgetType {
+  constructor(rel, sp) { super(); this.rel = rel; this.sp = sp; }
+  eq(o) { return o.rel === this.rel && o.sp === this.sp; }
+  toDOM() {
+    const d = document.createElement('div'); d.className = 'cm-img';
+    const i = new Image(); i.title = '押すと開く';
+    try { i.src = /^https?:|^data:/.test(this.rel) ? this.rel : new URL(this.rel, vaultUrl(this.sp)).href; } catch { }
+    i.onclick = () => api.openPath(this.sp, this.rel);
+    d.append(i); return d;
+  }
+  ignoreEvent() { return true; }
+}
+const images = space => {
+  const build = state => {
+    const b = new RangeSetBuilder();
+    for (const m of state.doc.toString().matchAll(/!\[[^\]\n]*\]\(([^)\s]*)\)/g)) {
+      b.add(state.doc.lineAt(m.index + m[0].length).to, state.doc.lineAt(m.index + m[0].length).to, Decoration.widget({ widget: new ImgWidget(m[1], space), block: true, side: 1 }));
+    }
+    return b.finish();
+  };
+  return StateField.define({ create: build, update: (v, tr) => tr.docChanged ? build(tr.state) : v, provide: f => EditorView.decorations.from(f) });
+};
 let lastView = null;
 function editor(parent, doc, mode, space, onChange, ph) {
   return lastView = new EditorView({
     parent, state: EditorState.create({
       doc, extensions: [history(), keymap.of([...defaultKeymap, ...historyKeymap]), EditorView.lineWrapping,
-        placeholder(ph), links(mode, space), EditorView.updateListener.of(u => { if (u.docChanged) onChange(u.state.doc.toString()); })]
+        placeholder(ph), links(mode, space), ...(mode === 'note' ? [images(space)] : []), EditorView.updateListener.of(u => { if (u.docChanged) onChange(u.state.doc.toString()); })]
     })
   });
 }
@@ -94,6 +134,7 @@ function jump(view, pos) {
 }
 async function follow(l, view) {
   if (l.t === 'self') { const p = L.selfTarget(view.state.doc.toString(), l.n, l.bare); if (p >= 0) jump(view, p); return; }
+  if (l.t === 'file') return api.openPath(l.s, l.rel);
   if (l.t === 'topic') { if (topics.find(t => t.name === l.name)) openTopic(l.name); return; }
   if (get(l.s, l.id)) return openNote(l.s, l.id, l.n);
   if (confirm(`${SP[l.s]} ${l.id} はまだありません。作りますか？`)) create(l.s, l.id);
@@ -238,6 +279,7 @@ function openNote(s, id, n, keep) {
       <span class="grow"></span>
       <button data-act="sib" title="同じ段の次（Ctrl+クリックで新しいタブ）">並列 ${free(s, L.sibling(id))}</button>
       <button data-act="chi" title="一段下（Ctrl+クリックで新しいタブ）">分岐 ${free(s, L.child(id))}</button>
+      <button data-act="attach" title="ファイルを添付（ドラッグや貼り付けでも）">📎 添付</button>
       <button data-act="ndel" class="danger" title="このノートを削除">削除</button>
     </div>
     <div class="meta" id="meta"></div>
@@ -320,6 +362,7 @@ $('#pane').addEventListener('click', async e => {
   if (act === 'chi') create(s, free(s, L.child(id)));
   if (act === 'kwadd') addKeywordInput(note);
   if (act === 'ndel') deleteNotes([{ s, id }]);
+  if (act === 'attach') pick(true, f => attach(note, f), '*');
   if (act === 'tadd') topicAddDialog(note);
   if (act === 'img') pick(false, async f => { const r = await api.saveImage(s, id, await shrink(f[0])); Object.assign(get(s, id), r); openNote(s, id); });
 });
@@ -506,8 +549,8 @@ async function topicAct(act) {
 }
 
 // ===== スキャン取り込み（紙）=====
-function pick(multi, cb) {
-  const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*'; f.multiple = multi;
+function pick(multi, cb, accept = 'image/*') {
+  const f = document.createElement('input'); f.type = 'file'; f.accept = accept; f.multiple = multi;
   f.onchange = () => f.files.length && cb([...f.files]); f.click();
 }
 function shrink(file, max = 2000) {
@@ -616,3 +659,32 @@ async function deleteNotes(items) {
   selMode = false; picked.clear();
   show(active);
 }
+
+// ===== 添付（ファイルは digital/files/<ID>/ にコピーし、本文のカーソル位置にリンクを入れる）=====
+// 画像は ![名前](パス)（本文の中に表示される）、ほかは [名前](パス)（押すと既定のアプリで開く）
+const PIC = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
+const encRel = n => encodeURIComponent(n).replace(/[()]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+async function attach(note, files) {
+  const list = [];
+  for (const f of files) list.push({ name: f.name || 'image.png', bytes: await f.arrayBuffer() });
+  if (!list.length) return;
+  const names = await api.addFiles(note.s, note.id, list);
+  const view = lastView;
+  if (!view || !view.dom.isConnected || !cur || cur.k !== 'note' || cur.id !== note.id || cur.s !== note.s) return;
+  const head = view.state.selection.main.head, at = view.state.doc.lineAt(head);
+  const md = (head === at.from ? '' : '\n') + names.map(n => `${PIC.test(n) ? '!' : ''}[${n.replace(/[\[\]]/g, '')}](files/${encRel(note.id)}/${encRel(n)})`).join('\n') + '\n';
+  view.dispatch({ changes: { from: head, insert: md }, selection: { anchor: head + md.length } }); view.focus();
+}
+const curNote = () => cur && cur.k === 'note' ? get(cur.s, cur.id) : null;
+$('#pane').addEventListener('dragover', e => { if (curNote() && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); $('#pane').classList.add('drop'); } });
+$('#pane').addEventListener('dragleave', e => { if (!e.relatedTarget || !$('#pane').contains(e.relatedTarget)) $('#pane').classList.remove('drop'); });
+$('#pane').addEventListener('drop', e => {
+  $('#pane').classList.remove('drop');
+  const n = curNote(); if (!n || !e.dataTransfer.files.length) return;
+  e.preventDefault(); attach(n, [...e.dataTransfer.files]);
+});
+// 貼り付け（スクリーンショットなど）
+document.addEventListener('paste', e => {
+  const n = curNote(), fs = [...(e.clipboardData ? e.clipboardData.files : [])];
+  if (n && fs.length) { e.preventDefault(); attach(n, fs); }
+});
