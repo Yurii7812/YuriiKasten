@@ -6,6 +6,7 @@ import { mdExtensions, tableTemplate } from './md.js';
 import { ctx } from './shared.js';
 import * as Chat from './chat.js';
 import * as RP from './roleplay.js';
+import * as CV from './canvas.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -151,6 +152,7 @@ function openLink(rel) {
   try { path = decodeURIComponent(path); } catch { }
   let m;
   if ((m = path.match(/^(R_.+)\.json$/)) && RP.has(m[1])) return RP.open(m[1], false, hash);
+  if ((m = path.match(/^(V_.+)\.json$/)) && CV.has(m[1])) return CV.open(m[1]);
   if ((m = path.match(/^D_(\d{4}-\d{2}-\d{2})(?:-.*)?\.md$/))) return openDiary(m[1]);
   return api.openPath(rel);
 }
@@ -191,6 +193,7 @@ function renderList() {
   if (!q && mode === 'diary') { $('#list').innerHTML = diaryList(); renderSelbar(); return; }
   if (!q && mode === 'chat') { $('#list').innerHTML = Chat.listHtml(); renderSelbar(); return; }
   if (!q && mode === 'rp') { $('#list').innerHTML = RP.listHtml(); renderSelbar(); return; }
+  if (!q && mode === 'canvas') { $('#list').innerHTML = CV.listHtml(); renderSelbar(); return; }
   if (q) {
     // 1. Index  2. トピックIndex  3. ノート
     const rank = k => (k.toLowerCase() === q ? 0 : k.toLowerCase().startsWith(q) ? 1 : 2);
@@ -235,6 +238,8 @@ function onOpenClick(e) {
   if (e.target.id === 'c-new') return Chat.newTopicDialog();
   const rr = e.target.closest('[data-rp]'); if (rr) return RP.open(rr.dataset.rp);
   if (e.target.id === 'rp-new') return RP.newDialog();
+  const vv = e.target.closest('[data-cv]'); if (vv) return CV.open(vv.dataset.cv);
+  if (e.target.id === 'cv-new') return CV.newCanvas();
   if (e.target.id === 'rp-roles') return RP.rolesDialog();
   const row = e.target.closest('#list .item');
   if (selMode && row) return togglePick(row, e.shiftKey);
@@ -280,7 +285,7 @@ function show(i) {
   active = Math.max(-1, Math.min(i, tabs.length - 1));
   const t = tabs[active];
   if (!t || t.k === 'empty') { cur = t || null; $('#pane').innerHTML = '<div class="none">左から選ぶか、「＋ 新規」で書き始めます。<br>Ctrl+クリックで新しいタブに開きます。</div>'; renderTabs(); return renderList(); }
-  if (t.k === 'note') openNote(t.s, t.id, null, true); else if (t.k === 'diary') openDiary(t.date, true); else if (t.k === 'chat') Chat.open(t.topic, true); else if (t.k === 'rp') RP.open(t.key, true); else openTopic(t.name, t.mode, true);
+  if (t.k === 'note') openNote(t.s, t.id, null, true); else if (t.k === 'diary') openDiary(t.date, true); else if (t.k === 'chat') Chat.open(t.topic, true); else if (t.k === 'rp') RP.open(t.key, true); else if (t.k === 'canvas') CV.open(t.key, true); else openTopic(t.name, t.mode, true);
 }
 function closeTab(i) {
   if (i < 0 || i >= tabs.length) return;
@@ -290,7 +295,7 @@ function closeTab(i) {
   show(active < 0 && tabs.length ? 0 : active);
 }
 const tabLabel = t => t.k === 'note' ? `${t.s === 'p' ? '紙 ' : ''}${esc(t.id)}<small>${esc((firstLine(get(t.s, t.id) || { body: '' })).slice(0, 12))}</small>`
-  : t.k === 'topic' ? `📑 ${esc(t.name)}` : t.k === 'diary' ? `📔 ${esc(t.date.slice(5))}` : t.k === 'chat' ? `💬 ${esc(Chat.label(t.topic))}` : t.k === 'rp' ? `🎭 ${esc(RP.titleOf(t.key))}` : '新しいタブ';
+  : t.k === 'topic' ? `📑 ${esc(t.name)}` : t.k === 'diary' ? `📔 ${esc(t.date.slice(5))}` : t.k === 'chat' ? `💬 ${esc(Chat.label(t.topic))}` : t.k === 'rp' ? `🎭 ${esc(RP.titleOf(t.key))}` : t.k === 'canvas' ? `🗺 ${esc(CV.titleOf(t.key))}` : '新しいタブ';
 function renderTabs() {
   $('#tabbar').innerHTML = tabs.map((t, i) => `<div class="tab${i === active ? ' on' : ''}" data-ti="${i}"><span>${tabLabel(t)}</span><b class="x" data-close="${i}" title="閉じる (Ctrl+W)">×</b></div>`).join('')
     + '<button class="tab-new" title="新しいタブ (Ctrl+T)">＋</button>';
@@ -735,12 +740,12 @@ $('#scan').onkeydown = e => {
 
 // ===== 保存フォルダ =====
 function loaded(st) {
-  ({ notes, topics, vault } = st); readings = st.readings || {}; diaries = st.diaries || []; Chat.init(st.docs || {}); RP.init(st.docs || {}); cur = null; tabs = []; active = -1;
+  ({ notes, topics, vault } = st); readings = st.readings || {}; diaries = st.diaries || []; Chat.init(st.docs || {}); RP.init(st.docs || {}); CV.init(st.docs || {}); cur = null; tabs = []; active = -1;
   $('#vault').textContent = '📁 ' + vault.split('/').pop(); $('#vault').title = vault + '\n（Brave では Index.md を開くと全部たどれます）';
   try {
     const saved = JSON.parse(localStorage.getItem('pkm-tabs:' + vault) || 'null');
     if (saved) {
-      tabs = saved.tabs.filter(t => t.k === 'empty' || (t.k === 'note' && get(t.s, t.id)) || (t.k === 'topic' && topics.find(x => x.name === t.name)) || (t.k === 'diary' && getDiary(t.date)) || t.k === 'chat' || (t.k === 'rp' && RP.titleOf(t.key) && (st.docs || {})[t.key]));
+      tabs = saved.tabs.filter(t => t.k === 'empty' || (t.k === 'note' && get(t.s, t.id)) || (t.k === 'topic' && topics.find(x => x.name === t.name)) || (t.k === 'diary' && getDiary(t.date)) || t.k === 'chat' || (t.k === 'rp' && (st.docs || {})[t.key]) || (t.k === 'canvas' && (st.docs || {})[t.key]));
       tabs.forEach(t => { if (t.k === 'topic') t.mode = 'view'; });
       active = Math.min(saved.active, tabs.length - 1);
     }
@@ -811,10 +816,11 @@ async function attach(note, files) {
   view.dispatch({ changes: { from: head, insert: md }, selection: { anchor: head + md.length } }); view.focus();
 }
 const curNote = () => cur && cur.k === 'note' ? get(cur.s, cur.id) : cur && cur.k === 'diary' ? getDiary(cur.date) : null;
-$('#pane').addEventListener('dragover', e => { if ((curNote() || (cur && (cur.k === 'chat' || cur.k === 'rp'))) && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); $('#pane').classList.add('drop'); } });
+$('#pane').addEventListener('dragover', e => { if ((curNote() || (cur && (cur.k === 'chat' || cur.k === 'rp' || cur.k === 'canvas'))) && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); $('#pane').classList.add('drop'); } });
 $('#pane').addEventListener('dragleave', e => { if (!e.relatedTarget || !$('#pane').contains(e.relatedTarget)) $('#pane').classList.remove('drop'); });
 $('#pane').addEventListener('drop', e => {
   $('#pane').classList.remove('drop');
+  if (e.target.closest('#cv-wrap') && e.dataTransfer.files.length) { e.preventDefault(); return CV.dropImages(e); }
   if (e.target.closest('.chat') && e.dataTransfer.files.length) { e.preventDefault(); return (cur && cur.k === 'rp' ? RP : Chat).attach([...e.dataTransfer.files]); }
   const n = curNote(); if (!n || !e.dataTransfer.files.length) return;
   e.preventDefault(); attach(n, [...e.dataTransfer.files]);
@@ -822,6 +828,7 @@ $('#pane').addEventListener('drop', e => {
 // 貼り付け（スクリーンショットなど）
 document.addEventListener('paste', e => {
   const n = curNote(), fs = [...(e.clipboardData ? e.clipboardData.files : [])];
+  if (cur && cur.k === 'canvas' && fs.length) { e.preventDefault(); return CV.attach(fs); }
   if (cur && (cur.k === 'chat' || cur.k === 'rp') && fs.length) { e.preventDefault(); return (cur.k === 'rp' ? RP : Chat).attach(fs); }
   if (n && fs.length) { e.preventDefault(); attach(n, fs); }
 });
@@ -830,6 +837,7 @@ document.addEventListener('paste', e => {
 Object.assign(ctx, {
   api, later, flush, place, renderTabs, openLink, lastNote: () => lastNote,
   renameTab: (a, b) => { for (const t of tabs) if (t.k === 'rp' && t.key === a) t.key = b; },
+  renameCanvasTab: (a, b) => { for (const t of tabs) if (t.k === 'canvas' && t.key === a) t.key = b; },
   closeKind: (k, key) => { for (let i = tabs.length - 1; i >= 0; i--) if (tabs[i].k === k && (tabs[i].key === key || tabs[i].topic === key)) { tabs.splice(i, 1); if (active >= i) active--; } show(Math.max(0, active)); },
   renderList, pick, get, free, refreshDiaries, openNote, openDiary, getDiary,
   setCur: c => { cur = c; }, setMode: m => { mode = m; }, cur: () => cur, notes: () => notes, vault: () => vault,

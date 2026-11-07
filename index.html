@@ -155,6 +155,28 @@ label.rad{display:flex;gap:8px;align-items:center;font-size:14px}
 .spk.on{background:#e3ecfd;border-color:#9fb3e6;color:var(--fg);font-weight:600}
 .rolepick{display:flex;flex-direction:column;gap:4px;max-height:240px;overflow:auto}.rp-opt{display:flex;align-items:center;gap:6px;cursor:pointer}
 .rolerow{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #f2f2f2}
+
+#vlist .ci{margin-right:8px}#vlist .item small{float:right;color:var(--sub)}#vlist .dtop{padding:8px 10px;border-bottom:1px solid var(--line)}
+#pane:has(.cvbox){display:flex;flex-direction:column;overflow:hidden;padding:10px 14px}
+.cvbox{display:flex;flex-direction:column;height:100%;min-height:0}.cv-bar{flex-shrink:0}
+#cv-wrap{flex:1;position:relative;overflow:hidden;border:1px solid var(--line);border-radius:8px;min-height:0;cursor:grab;user-select:none;
+ background-color:#fafbfd;background-image:radial-gradient(#d5dbe8 1px,transparent 1px);background-size:24px 24px}
+#cv-world{position:absolute;left:0;top:0;transform-origin:0 0}#cv-svg{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+#cv-svg g{pointer-events:auto}.cv-hit{fill:none;stroke:transparent;stroke-width:16;cursor:pointer}
+.cv-edge{fill:none;stroke:#6b7a99;stroke-width:2;pointer-events:none}.cv-edge.sel{stroke:#2456c8;stroke-width:3}.cv-edge.tmp{stroke:#2456c8;stroke-dasharray:6 4}
+.cv-label{font-size:13px;fill:#334;paint-order:stroke;stroke:#fafbfd;stroke-width:4px;pointer-events:none}
+.cv-card{position:absolute;background:#fff;border:1px solid #cfd6e6;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.08);cursor:default;overflow:visible;user-select:text}
+.cv-card.sel{border-color:var(--acc);box-shadow:0 0 0 2px #cfdcfb}
+.cv-card .cv-body{height:100%;overflow:hidden;padding:8px 10px;font-size:14px;box-sizing:border-box}.cv-card.note .cv-body{height:calc(100% - 26px)}
+.cv-card .cv-body.md p{margin:0 0 6px}.cv-card .cv-body.md h1,.cv-card .cv-body.md h2,.cv-card .cv-body.md h3{font-size:1.1em;margin:0 0 4px}
+.cv-nh{background:#eef3ff;color:var(--acc);font-size:12px;padding:3px 10px;border-radius:7px 7px 0 0;cursor:pointer;height:26px;box-sizing:border-box}
+.cv-card.image{padding:0;border-radius:6px}.cv-card.image img{width:100%;height:100%;object-fit:contain;border-radius:6px;display:block;pointer-events:none}
+.cv-edit{width:100%;height:100%;border:0;outline:0;resize:none;font:inherit;background:transparent}
+.cv-rs{position:absolute;right:-5px;bottom:-5px;width:12px;height:12px;background:#fff;border:2px solid #9fb3e6;border-radius:3px;cursor:nwse-resize;opacity:0}
+.cv-h{position:absolute;width:12px;height:12px;border-radius:50%;background:#fff;border:2px solid var(--acc);cursor:crosshair;opacity:0;z-index:2}
+.cv-h.top{left:calc(50% - 6px);top:-7px}.cv-h.bottom{left:calc(50% - 6px);bottom:-7px}.cv-h.left{top:calc(50% - 6px);left:-7px}.cv-h.right{top:calc(50% - 6px);right:-7px}
+.cv-card:hover .cv-h,.cv-card:hover .cv-rs,.cv-card.sel .cv-h,.cv-card.sel .cv-rs{opacity:1}
+#cv-hint{position:absolute;left:10px;bottom:6px;font-size:12px;color:#aab;pointer-events:none}
 </style>
 </head>
 <body>
@@ -165,7 +187,7 @@ label.rad{display:flex;gap:8px;align-items:center;font-size:14px}
   <button id="vault">📁</button>
 </header>
 <main>
-  <nav id="rail"><button data-mode="notes" title="ノート">📝</button><button data-mode="diary" title="日記">📔</button><button data-mode="chat" title="チャットメモ">💬</button><button data-mode="rp" title="なりきりチャット">🎭</button></nav>
+  <nav id="rail"><button data-mode="notes" title="ノート">📝</button><button data-mode="diary" title="日記">📔</button><button data-mode="chat" title="チャットメモ">💬</button><button data-mode="rp" title="なりきりチャット">🎭</button><button data-mode="canvas" title="キャンバス">🗺</button></nav>
   <aside>
     <div id="tabs"><button data-tab="d">デジタル</button><button data-tab="p">紙</button><button data-tab="i">Index</button></div>
     <div id="selbar"></div>
