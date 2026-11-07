@@ -211,3 +211,23 @@ test('タイトル: 保存・読み直し・見出し。なりきり・キャン
   assert.match(openVault(dir).state().notes.find(n => n.id === cv.id).body, /^# 新しい題/); // 本文（検索用）も題に合わせる
   fs.rmSync(dir, { recursive: true });
 });
+
+test('IDを消してIDなしに。このノートを指すリンクは、ファイルへのリンクに直る', () => {
+  const dir = tmp(), r = f => fs.readFileSync(path.join(dir, f), 'utf8');
+  const v = openVault(dir);
+  v.saveNote({ s: 'd', id: '1', created: '2026-11-07 10:00', keywords: [], body: 'PKMの本文', title: 'PKMとは' });
+  v.saveNote({ s: 'd', id: '1a', created: '2026-11-07 10:05', keywords: [], body: '子のノート' });
+  v.saveNote({ s: 'd', id: '2', created: '2026-11-07 10:10', keywords: [], body: '参照 :1 と 1(1) と、:1a' });
+  v.saveTopic({ name: 'PKM', entry: { s: 'd', id: '1' }, d: '基本 1 1a', p: '' });
+  const st = v.clearId('d', '1');
+  const n = st.notes.find(x => x.title === 'PKMとは');
+  assert.ok(n.noid && /^u\d{8}-\d{6}/.test(n.id));
+  assert.ok(!fs.existsSync(path.join(dir, 'D_1.md')) && fs.existsSync(path.join(dir, `D_${n.id}.md`)));
+  const b2 = st.notes.find(x => x.id === '2').body;
+  assert.strictEqual(b2, `参照 [PKMとは](D_${n.id}.md) と [PKMとは](D_${n.id}.md) と、:1a`); // :1a は別のノートなのでそのまま
+  assert.ok(st.notes.find(x => x.id === '1a'));                                                   // 子はそのまま
+  assert.strictEqual(st.topics[0].entry, null); assert.strictEqual(st.topics[0].d, '基本 1a');      // 入口なし・索引の行から外れる
+  assert.ok(st.diaries[0].body.includes(`[PKMとは](D_${n.id}.md)`) && st.diaries[0].body.includes('- :1a')); // 日記のリンクも直る
+  assert.ok(!v.clearId('d', n.id));                                                                // すでにIDなしなら何もしない
+  fs.rmSync(dir, { recursive: true });
+});

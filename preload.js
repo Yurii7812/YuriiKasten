@@ -3,6 +3,7 @@ contextBridge.exposeInMainWorld('api', {
   load: () => r.invoke('load'),
   saveNote: n => r.invoke('saveNote', n),
   createNote: x => r.invoke('createNote', x),
+  clearId: (sp, id) => r.invoke('clearId', sp, id),
   rename: (s, a, b) => r.invoke('rename', s, a, b),
   saveImage: (s, id, bytes) => r.invoke('saveImage', s, id, bytes),
   saveTopic: (t, old) => r.invoke('saveTopic', t, old),

@@ -386,6 +386,29 @@ function openVault(vault) {
       const stem = id || freeStem(), n = { s: 'd', id: stem, created: created || L.now(), keywords: [], kind, title, data, img: null, body: kind === 'text' ? body : L.deriveBody(kind, data) };
       notes.set(key('d', stem), n); linkNote(n); rebuild(); return pub(n);
     },
+    // IDを消して、IDなしにする（デジタルのみ）。このノートを指していた :ID は、ファイルへのリンクに直す。
+    // 子のノートのIDはそのまま。トピックIndex の入口だった場合は、入口なしになる
+    clearId(s, id) {
+      const n = get('d', id); if (s !== 'd' || !n || L.isNoid(id)) return false;
+      const stem = freeStem();
+      notes.delete(key('d', id)); n.id = stem; notes.set(key('d', stem), n);
+      if (fs.existsSync(abs(noteFile('d', id)))) fs.unlinkSync(abs(noteFile('d', id)));
+      cache.delete(noteFile('d', id));
+      for (const t of topics.values()) { // 入口と、索引の行から外す
+        if (t.entry && t.entry.s === 'd' && t.entry.id === id) t.entry = null;
+        t.d = L.removeFromTopic(t.d, [id]);
+      }
+      const label = (n.title || (n.body.split('\n').find(x => x.trim()) || '').replace(/^#+\s*/, '').slice(0, 24) || 'ノート').replace(/[\[\]]/g, ''), href = noteHref('d', stem);
+      const fix = body => { // :1a  1a:  1a(1)  などを、リンクに置き換える
+        let out = '', last = 0;
+        for (const t of L.tokens(body)) { if (t.k !== 'ref' || t.id !== id) continue; out += body.slice(last, t.from) + `[${label}](${href})`; last = t.to; }
+        return out + body.slice(last);
+      };
+      for (const m of notes.values()) if (m !== n && (!m.kind || m.kind === 'text')) m.body = fix(m.body);
+      for (const d of diaries.values()) d.body = fix(d.body);
+      for (const m of notes.values()) if (m.kind && m.kind !== 'text' && m.data) { const j = JSON.stringify(m.data); if (j.includes(`"nid":"${id}"`)) { for (const c of m.data.nodes || []) if (c.type === 'note' && c.s === 'd' && c.nid === id) c.nid = stem; m.body = L.deriveBody(m.kind, m.data); } }
+      rebuild(); return this.state();
+    },
     rename(s, from, to) {
       const n = get(s, from);
       if (!n || !isStem(to) || get(s, to)) return false;

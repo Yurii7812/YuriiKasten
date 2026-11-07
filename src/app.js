@@ -15,7 +15,7 @@ const SP = { d: 'デジタル', p: '紙' };
 
 let notes = [], topics = [], readings = {}, tab = 'd', cur = null, vault = '';
 // 開いているタブ（Obsidian 風）。cur は今のタブ
-let tabs = [], active = -1, newTab = false;
+let tabs = [], active = -1, newTab = false, bgOpen = false;
 let mode = 'notes', diaries = [], lastNote = null; // 左の列で選んでいる種類（ノート・日記…）
 let selMode = false, picked = new Set(), lastPick = null; // 一括選択
 const get = (s, id) => notes.find(n => n.s === s && n.id === id);
@@ -99,8 +99,15 @@ function links(mode, space) {
     eventHandlers: {
       mousedown(e, view) {
         const el = e.target.closest('[data-l]');
-        if (!el || e.button !== 0) return false;
-        e.preventDefault(); follow(JSON.parse(el.dataset.l), view); return true;
+        if (!el || (e.button !== 0 && e.button !== 1)) return false;
+        e.preventDefault();
+        if (e.button === 1) { // 中クリック: 新しいタブ（背景）。今のページは動かない
+          const l = JSON.parse(el.dataset.l);
+          if (l.t === 'self') return true;
+          bgOpen = true; try { follow(l, view); } finally { setTimeout(() => { bgOpen = false; renderTabs(); }, 0); }
+          return true;
+        }
+        follow(JSON.parse(el.dataset.l), view); return true;
       }
     }
   });
@@ -177,7 +184,9 @@ function globalIndex() {
 const chip = (s, id, topic) => `<span class="chip ${s}${get(s, id) ? '' : ' miss'}${topic ? ' dotted' : ''}" data-s="${s}" data-id="${esc(id)}">${topic ? `<i class="dotabove" data-topic="${esc(topic.name)}" title="トピックIndex ${esc(topic.name)}">●</i>` : ''}${s === 'p' ? '紙' : ''}${esc(id)}</span>`;
 // t があれば、その入口のIDだけ点を付ける
 const chips = (v, t) => [['d', v.d], ['p', v.p]].map(([s, l]) => l.map(x => chip(s, x, t && t.entry && t.entry.s === s && t.entry.id === x ? t : null)).join('')).join('');
-const tchip = name => `<span class="chip t" data-topic="${esc(name)}">${esc(name)}</span>`;
+const stripId = name => name.replace(/^[0-9][0-9a-z]*-/, '') || name;
+const topicLabel = t => stripId(t.name);
+const tchip = name => `<span class="chip t" data-topic="${esc(name)}">${esc(stripId(name))}</span>`;
 const firstLine = n => (n.body.split('\n').find(x => x.trim()) || '').replace(/^#+\s*/, '').trim().slice(0, 40);
 const titleOf = n => (n.title || '').trim() || firstLine(n) || (n.kind === 'rp' ? '会話' : n.kind === 'canvas' ? 'キャンバス' : '（無題）');
 const icon = n => L.KINDS[n.kind || 'text'] || '';
@@ -191,7 +200,7 @@ const noteRow = (n, label = false) =>
   `<div class="nt">${label ? `<span class="sp ${n.s}">${SP[n.s]}</span>` : ''}${icon(n) ? icon(n) + ' ' : ''}${n.image ? '📷 ' : ''}${esc(titleOf(n))}</div>` +
   `<div class="ns">${n.noid ? `IDなし · ${shortTime(n.created)}` : `${n.s === 'p' ? '紙 ' : ''}${esc(n.id)}`}${n.keywords.length ? ` · ${n.keywords.map(esc).join('・')}` : ''}</div></div></div>`;
 // トピックIndex の行（その入口のノートの手前に出す）
-const topicRow = t => `<div class="item topicrow" data-topic="${esc(t.name)}"><div class="nrow"><div class="nt"><span class="tbadge">トピックIndex</span>📑 ${esc(t.name)}</div><div class="ns">${t.entry ? `入口 ${t.entry.s === 'p' ? '紙 ' : ''}${esc(t.entry.id)}` : '入口なし'}</div></div></div>`;
+const topicRow = t => `<div class="item topicrow" data-topic="${esc(t.name)}"><div class="nrow"><div class="nt">${esc(topicLabel(t))}</div></div></div>`;
 
 function renderList() {
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
@@ -241,7 +250,13 @@ function renderList() {
   renderSelbar();
 }
 // Ctrl+クリック・中クリックは新しいタブで開く
-document.addEventListener('mousedown', e => { newTab = e.ctrlKey || e.metaKey || e.button === 1; }, true);
+// 中クリックは、貼り付けも自動スクロールもしない（Linux の中クリック貼り付けをやめる）。リンクは背景の新しいタブで開く
+document.addEventListener('mousedown', e => { if (e.button === 1) { e.preventDefault(); } newTab = e.ctrlKey || e.metaKey; }, true);
+document.addEventListener('mouseup', e => { if (e.button === 1) e.preventDefault(); }, true);
+document.addEventListener('paste', e => { if (e.__mid) e.preventDefault(); }, true);
+// 戻る・進む: ボタン、Alt+←/→、マウスの戻る/進むボタン
+document.addEventListener('keydown', e => { if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) { e.preventDefault(); go(e.key === 'ArrowLeft' ? -1 : 1); } });
+document.addEventListener('mouseup', e => { if (e.button === 3) { e.preventDefault(); go(-1); } if (e.button === 4) { e.preventDefault(); go(1); } });
 function onOpenClick(e) {
   if (e.target.closest('#modal') || e.target.closest('#selbar')) return;
   const dd = e.target.closest('[data-diary]'); if (dd && !e.target.closest('.cm-editor')) return openDiary(dd.dataset.diary);
@@ -258,7 +273,7 @@ function onOpenClick(e) {
 }
 document.addEventListener('click', onOpenClick);
 $('#rail').onclick = e => { const b = e.target.closest('button'); if (b) { mode = b.dataset.mode; $('#q').value = ''; renderList(); } };
-document.addEventListener('auxclick', e => { if (e.button === 1 && !e.target.closest('#tabbar')) onOpenClick(e); });
+document.addEventListener('auxclick', e => { if (e.button === 1 && !e.target.closest('#tabbar')) { bgOpen = true; try { onOpenClick(e); } finally { setTimeout(() => { bgOpen = false; renderTabs(); }, 0); } } });
 // 一覧からトピックIndexの欄へドラッグすると ID が入る
 $('#list').addEventListener('click', e => { const b = e.target.closest('.mk-topic'); if (b) topicNewDialog(b.dataset.kw); });
 $('#list').addEventListener('dragstart', e => { const n = e.target.closest('[data-id]'); if (n) e.dataTransfer.setData('text/plain', n.dataset.id); });
@@ -278,13 +293,36 @@ function rememberPos() {
   if (t && t.k === 'note' && lastView && lastView.dom.isConnected) t.pos = lastView.state.selection.main.head;
 }
 // 今のタブに開く（Ctrl+クリックなら新しいタブ）。keep なら今のタブを描き直すだけ
+// 履歴: タブごとに「戻る」「進む」を持つ。同じタブで別のページへ移るとき、前のページを積む
+const desc = t => { const { back, fwd, pos, ...d } = t; return d; };
 function place(t, keep) {
   if (keep && tabs[active]) return tabs[active];
   rememberPos();
+  if (bgOpen) { tabs.push(t); newTab = false; return t; }                        // 背景で新しいタブ: 今のページは動かない
   if (newTab || active < 0 || !tabs[active]) { tabs.push(t); active = tabs.length - 1; }
-  else tabs[active] = t;
+  else {
+    const old = tabs[active];
+    if (!sameTab(old, t)) { t.back = [...(old.back || []), desc(old)].slice(-60); t.fwd = []; } else { t.back = old.back; t.fwd = old.fwd; }
+    tabs[active] = t;
+  }
   newTab = false;
   return t;
+}
+const sameTab = (a, b) => a && b && a.k === b.k && a.s === b.s && a.id === b.id && a.date === b.date && a.topic === b.topic && a.name === b.name;
+// 戻る・進む
+function go(dir) {
+  const t = tabs[active]; if (!t) return;
+  const from = dir < 0 ? (t.back || []) : (t.fwd || []); if (!from.length) return;
+  rememberPos();
+  const target = { ...from[from.length - 1] }, rest = from.slice(0, -1);
+  const mine = desc(t);
+  target.back = dir < 0 ? rest : [...(t.back || []), mine];
+  target.fwd = dir < 0 ? [...(t.fwd || []), mine] : rest;
+  tabs[active] = target; show(active);
+}
+function renderNav() {
+  const t = tabs[active], b = $('#nav-back'), f = $('#nav-fwd'); if (!b) return;
+  b.disabled = !(t && (t.back || []).length); f.disabled = !(t && (t.fwd || []).length);
 }
 function show(i) {
   rememberPos();
@@ -305,7 +343,8 @@ const tabLabel = t => t.k === 'note' ? (n => `${n && icon(n) ? icon(n) + ' ' : '
 function renderTabs() {
   $('#tabbar').innerHTML = tabs.map((t, i) => `<div class="tab${i === active ? ' on' : ''}" data-ti="${i}"><span>${tabLabel(t)}</span><b class="x" data-close="${i}" title="閉じる (Ctrl+W)">×</b></div>`).join('')
     + '<button class="tab-new" title="新しいタブ (Ctrl+T)">＋</button>';
-  try { localStorage.setItem('pkm-tabs:' + vault, JSON.stringify({ tabs, active })); } catch { }
+  renderNav();
+  try { localStorage.setItem('pkm-tabs:' + vault, JSON.stringify({ tabs: tabs.map(t => ({ ...desc(t), pos: t.pos })), active })); } catch { }
 }
 $('#tabbar').addEventListener('click', e => {
   const x = e.target.closest('[data-close]'); if (x) return closeTab(+x.dataset.close);
@@ -317,30 +356,30 @@ $('#tabbar').addEventListener('auxclick', e => { const t = e.target.closest('[da
 // ===== ノート =====
 function openNote(s, id, n, keep, mid) {
   const note = get(s, id); if (!note) return;
+  if (bgOpen) { place({ k: 'note', s, id }, false); return; }
   cur = place({ k: 'note', s, id }, keep); mode = 'notes'; lastNote = { s, id };
   if (!$('#q').value) tab = note.noid ? 'u' : s;
-  const kind = note.kind || 'text', noid = !!note.noid, text = kind === 'text';
+  const kind = note.kind || 'text', noid = !!note.noid, text = kind === 'text', cp = '<svg class="ico" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15V6a1 1 0 011-1h9"/></svg>';
   $('#pane').innerHTML = `
-    <div class="row">
-      <span class="sp ${s}">${SP[s]}</span>${L.KINDS[kind] ? `<span class="kind" title="${kind === 'rp' ? 'なりきりチャット' : 'キャンバス'}">${L.KINDS[kind]}</span>` : ''}
-      <input class="id" id="f-id" value="${noid ? '' : esc(id)}" placeholder="IDなし" title="${noid ? 'IDを入れると、整理されます' : 'ID（変えると名前も変わります）'}">
-      <input class="ntitle" id="f-title" value="${esc(note.title || '')}" placeholder="タイトル（任意）">
-      ${s === 'd' ? `<span class="date">${esc(note.created)}</span>` : ''}
-      ${noid ? '<button data-act="giveid" class="p" title="IDを付けて整理する">IDを付ける</button>' : `
-      <button data-act="sib" title="同じ段の次（Ctrl+クリックで新しいタブ）">並列 ${free(s, L.sibling(id))}</button>
-      <button data-act="chi" title="一段下（Ctrl+クリックで新しいタブ）">分岐 ${free(s, L.child(id))}</button>`}
-      ${text ? `<button data-act="table" title="表を入れる">▦ 表</button>
-      <button data-act="attach" title="ファイルを添付（ドラッグや貼り付けでも）">📎 添付</button>` : ''}
-      <button data-act="ndel" class="danger" title="このノートを削除">削除</button>
-    </div>
-    ${noid ? '<div class="noid-hint">IDなしのノートです。とりあえず書いて、あとで「IDを付ける」で整理できます（IDを付けると、キーワードやトピックIndexも付けられます）。</div>' : '<div class="meta" id="meta"></div>'}
-    ${!text ? '<div id="nbody"></div>' : s === 'p' ? `<div class="paper"><div class="pic">${note.image ? `<img src="${note.image}">` : '<button data-act="img">画像を入れる</button>'}</div><div class="ed" id="ed"></div></div>` : '<div class="ed" id="ed"></div>'}`;
-  if (!noid) renderMeta(note);
+    <div class="stage"><div class="col${s === 'p' || !text ? ' wide' : ''}">
+      <div class="idline">
+        ${noid ? '' : `<button class="cpid" data-act="copyid" title="IDをコピー">${cp}</button>`}
+        <input class="idin" id="f-id" value="${noid ? '' : esc(id)}" placeholder="IDなし" title="${noid ? 'IDを入れると、整理されます' : 'ID（変えると名前も変わります）'}">
+        ${noid ? '<button class="gid" data-act="giveid">IDを付ける</button>' : ''}
+        ${s === 'p' ? '<span class="dt">紙</span>' : ''}${L.KINDS[kind] ? `<span class="dt">${L.KINDS[kind]}</span>` : ''}
+        ${s === 'd' ? `<span class="dt">${esc(note.created)}</span>` : ''}
+        <span class="grow"></span><button class="ic nm" data-act="nmenu" title="このノートのメニュー">${'<svg class="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>'}</button>
+      </div>
+      <input class="ntitle" id="f-title" value="${esc(note.title || '')}" placeholder="タイトル">
+      ${!text ? '<div id="nbody"></div>' : s === 'p' ? `<div class="paper"><div class="pic">${note.image ? `<img src="${note.image}">` : '<button data-act="img">画像を入れる</button>'}</div><div class="ed" id="ed"></div></div>` : '<div class="ed" id="ed"></div>'}
+    </div>${text ? '<aside class="mgn" id="margin"></aside>' : ''}</div>`;
+  if (text) renderMeta(note);
   $('#f-title').oninput = e => { // タイトル: 打ったらすぐ一覧とタブに反映し、少し待って保存
     note.title = e.target.value; if (note.data) note.data.title = note.title || note.data.title;
     if (!text) note.body = L.deriveBody(kind, note.data);
     saveNote(note); renderList(); renderTabs();
   };
+  $('#f-title').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing && lastView) { e.preventDefault(); lastView.focus(); lastView.dispatch({ selection: { anchor: 0 } }); } };
   $('#f-id').onchange = async e => {
     const v = e.target.value.trim().toLowerCase();
     if (v === (noid ? '' : id)) return;
@@ -357,6 +396,7 @@ function openNote(s, id, n, keep, mid) {
     s === 'p' ? '紙の内容を文字で（テキスト化）' : '本文。続き :1a1　引用 (1) と (1):　別ノート 1a(1)　全体 1a:');
   if (n) { const p = L.anchorPos(note.body, n); if (p >= 0) jump(view, p); }
   else if (keep && cur.pos != null) jump(view, Math.min(cur.pos, view.state.doc.length));
+  else if (s === 'd' && !note.body && !note.title) $('#f-title').focus();
   else if (s === 'd' && !note.body) view.focus();
 }
 // ノートにIDを付ける・変える（ファイル名が変わり、日記のリンクなども直る）
@@ -395,16 +435,37 @@ function giveIdDialog(note) {
   });
 }
 // キーワードとトピックIndex（ボタンで足す）
+const refContexts = (body, id) => { // id を指している所の、周辺の文章（ハイライトなし）。リンクだけの行は出さない
+  const out = [];
+  for (const t of L.tokens(body)) {
+    if (t.k !== 'ref' || t.id !== id) continue;
+    const ls = body.lastIndexOf('\n', t.from - 1) + 1, e0 = body.indexOf('\n', t.to), le = e0 < 0 ? body.length : e0;
+    const a = Math.max(ls, t.from - 28), b = Math.min(le, t.to + 40);
+    const before = body.slice(a, t.from).replace(/^[-*]\s+/, ''), after = body.slice(t.to, b);
+    if (!(before + after).trim()) continue;
+    out.push(`${a > ls ? '…' : ''}${esc(before)}${esc(t.text)}${esc(after)}${b < le ? '…' : ''}`);
+  }
+  return out;
+};
+function backlinks(note) { // このノートを指しているノート・日記
+  const out = [];
+  if (note.noid) return out;
+  for (const m of notes) if (m !== note && m.s === note.s && !m.noid) { const c = refContexts(m.body, note.id); if (c.length) out.push({ m, c: c[0], more: c.length - 1 }); }
+  if (note.s === 'd') for (const d of diaries) { const c = refContexts(d.body, note.id); if (c.length) out.push({ d, c: c[0], more: 0 }); }
+  return out;
+}
 function renderMeta(note) {
-  const entry = topicOf(note.s, note.id);
-  $('#meta').innerHTML =
-    (note.keywords.length ? '<span class="lbl">索引</span>' : '') +
-    note.keywords.map(k => `<span class="kwc" title="${esc(readings[k] || '')}">${esc(k)}<b data-kwdel="${esc(k)}" title="外す">×</b></span>`).join('') +
-    `<span id="kw-wrap"><button class="mini" data-act="kwadd">＋キーワード</button></span>` +
-    '<span class="vsep"></span>' +
-    (entry ? `<span class="chip t" data-topic="${esc(entry.name)}" title="このノートが入口">📑 ${esc(entry.name)}</span>` : '') +
-    topicsWith(note).filter(x => x.t !== entry).map(x => `<span class="chip t" data-topic="${esc(x.t.name)}">${esc(x.t.name)}<small> · ${x.kws.map(esc).join('、')}</small></span>`).join('') +
-    `<button class="mini" data-act="tadd">＋トピックIndex</button>`;
+  const el = $('#margin'); if (!el) return;
+  if (note.noid) { el.innerHTML = '<div class="hint">IDなしのノートです。<br>「IDを付ける」と、キーワードやトピックIndex、バックリンクが使えます。</div>'; return; }
+  const tops = topics.map(t => ({ t, kws: L.mergeTopic(t).rows.filter(r => r[note.s].includes(note.id)).map(r => r.kw) })).filter(x => x.kws.length); // 自分のキーワードがあるものだけ
+  const bl = backlinks(note);
+  el.innerHTML =
+    (note.keywords.length ? `<div class="sec"><div class="l">キーワード</div>${note.keywords.map(k => `<div class="mk" title="${esc(readings[k] || '')}"><span>${esc(k)}</span><b data-kwdel="${esc(k)}" title="外す">×</b></div>`).join('')}</div>` : '') +
+    (tops.length ? `<div class="sec"><div class="l">トピックIndex</div>${tops.flatMap(x => x.kws.map(kw => `<div class="mt"><span>${esc(kw)}</span><a class="tl" data-topic="${esc(x.t.name)}">${esc(topicLabel(x.t))}</a></div>`)).join('')}</div>` : '') +
+    (bl.length ? `<div class="sec"><div class="l">バックリンク ${bl.length}</div>${bl.map(x => x.m
+      ? `<div class="bl" data-s="${x.m.s}" data-id="${esc(x.m.id)}"><div class="bh"><b>${esc(titleOf(x.m))}</b><em>${esc(x.m.id)}</em></div><p>${x.c}</p></div>`
+      : `<div class="bl" data-diary="${x.d.date}"><div class="bh"><b>${x.d.date.slice(5)}（${L.weekday(x.d.date)}）</b><em>日記</em></div><p>${x.c}</p></div>`).join('')}</div>` : '') +
+    `<div class="madd"><a data-act="kwadd">＋ キーワード</a><span id="kw-wrap"></span><a data-act="tadd">＋ トピックIndexに入れる</a></div>`;
 }
 // キーワードと読みを入れる。読みは候補が自動で入り、違っていれば直す
 function addKeywordInput(note) {
@@ -458,6 +519,8 @@ $('#pane').addEventListener('click', async e => {
   if (act === 'sib') create(s, free(s, L.sibling(id)));
   if (act === 'chi') create(s, free(s, L.child(id)));
   if (act === 'giveid') return giveIdDialog(note);
+  if (act === 'copyid') { navigator.clipboard.writeText(note.id); return toast(`IDをコピーしました: ${note.id}`); }
+  if (act === 'nmenu') return noteMenu(a, note);
   if (act === 'kwadd') addKeywordInput(note);
   if (act === 'ndel') deleteNotes([{ s, id }]);
   if (act === 'attach') pick(true, f => attach(note, f), '*');
@@ -469,22 +532,44 @@ $('#pane').addEventListener('click', async e => {
   if (act === 'tadd') topicAddDialog(note);
   if (act === 'img') pick(false, async f => { const r = await api.saveImage(s, id, await shrink(f[0])); Object.assign(get(s, id), r); openNote(s, id); });
 });
+// ノートのメニュー（⋯）: 並列・分岐・表・添付・ID・削除
+function noteMenu(btn, note) {
+  const r = btn.getBoundingClientRect(), { s, id } = note, text = (note.kind || 'text') === 'text';
+  popMenu({ clientX: r.right - 190, clientY: r.bottom + 4 }, [
+    ...(!note.noid ? [[`並列のノートを作る（${free(s, L.sibling(id))}）`, () => create(s, free(s, L.sibling(id)))], [`分岐のノートを作る（${free(s, L.child(id))}）`, () => create(s, free(s, L.child(id)))]] : []),
+    ...(text ? [['表を入れる', () => insertTable()], ['ファイルを添付', () => pick(true, f => attach(note, f), '*')]] : []),
+    ...(note.noid ? [['IDを付ける', () => giveIdDialog(note)]] : s === 'd' ? [['IDを消す（IDなしにする）', () => clearIdFlow(note)]] : []),
+    ['削除', () => deleteNotes([{ s, id }]), true]
+  ]);
+}
+// IDを消す: このノートを指すリンクは、自動でファイルへのリンクに直る
+async function clearIdFlow(note) {
+  const n = backlinks(note).length;
+  if (!confirm(`「${titleOf(note)}」のIDを消して、IDなしにしますか？\n${n ? `このノートを指している ${n} 件のリンクは、自動で直ります。\n` : ''}子のノートのIDは、そのままです。`)) return;
+  await flush(); await api.saveNote(pubNote(note));
+  const old = note.id, st = await api.clearId(note.s, old); if (!st) return alert('IDを消せませんでした');
+  ({ notes, topics } = st); diaries = st.diaries; readings = st.readings || readings;
+  const stem = notes.find(x => x.noid && x.created === note.created && x.kind === note.kind && x.title === note.title);
+  for (const t of tabs) if (t.k === 'note' && t.s === note.s && t.id === old && stem) t.id = stem.id;
+  if (stem) openNote('d', stem.id, null, true); else show(Math.max(0, active));
+  toast('IDを消しました');
+}
 // IDなしのノートを作る（kind: text / rp / canvas）。あとでIDを付けて整理する
 async function createNoid(kind) {
   const data = kind === 'rp' ? RP.emptyData() : kind === 'canvas' ? CV.emptyData() : null;
   const n = await api.createNote({ kind, data, created: L.now() });
   notes.push(n); await refreshDiaries(); openNote('d', n.id);
-  if (kind === 'text') setTimeout(() => lastView && lastView.focus(), 30);
+  setTimeout(() => { const t = $('#f-title'); if (t) t.focus(); }, 30); // 作った直後は、タイトル欄から書き始める
 }
 $('#new').onclick = e => {
   if (mode === 'diary') return openDiary(L.todayStr());
   if (mode === 'chat') return Chat.newTopicDialog();
   const r = $('#new').getBoundingClientRect();
   popMenu({ clientX: r.left, clientY: r.bottom + 4 }, [
-    ['ノート（IDなし）', () => createNoid('text')],
-    ['ノート（IDを付けて作る）', () => { const s = tab === 'p' ? 'p' : 'd'; const roots = notes.filter(n => n.s === s && /^\d+$/.test(n.id)).map(n => +n.id); create(s, free(s, String((roots.length ? Math.max(...roots) : 0) + 1))); }],
+    ['ノート', () => createNoid('text')],
     ['🎭 なりきりチャット', () => createNoid('rp')],
-    ['🗺 キャンバス', () => createNoid('canvas')]
+    ['🗺 キャンバス', () => createNoid('canvas')],
+    ['📷 スキャンを取り込む（紙）', () => $('#imp').click()]
   ]);
 };
 
@@ -501,7 +586,7 @@ function topicAddDialog(note) {
     <input id="ta-kw" list="ta-kws" placeholder="例: 英雄伝"><datalist id="ta-kws"></datalist>
     <div class="row"><button id="ta-ok" class="p">追加</button><button id="ta-cancel">やめる</button></div>
     ${entry ? '' : `<hr><div class="sub">新しいトピックIndexを作る（このノートが入口）</div>
-    <div class="row"><input id="ta-name" value="${esc(note.id)}-" style="flex:1"><button id="ta-new">作る</button></div>`}`;
+    <div class="row"><input id="ta-name" value="${esc((note.title || firstLine(note) || '').slice(0, 20))}" placeholder="名前（例: GUI）" style="flex:1"><button id="ta-new">作る</button></div>`}`;
   $('#modal').style.display = 'flex';
   const close = () => { $('#modal').style.display = 'none'; };
   const draw = () => {
@@ -510,7 +595,7 @@ function topicAddDialog(note) {
       .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
     if (sel && !list.includes(sel)) sel = null;
     if (!sel && list.length) choose(list[0], false);
-    $('#ta-list').innerHTML = list.map(t => `<div class="ta-row${t === sel ? ' on' : ''}" data-name="${esc(t.name)}">📑 ${esc(t.name)}${t.entry ? `<small> 入口 ${t.entry.s === 'p' ? '紙' : ''}${esc(t.entry.id)}</small>` : ''}</div>`).join('')
+    $('#ta-list').innerHTML = list.map(t => `<div class="ta-row${t === sel ? ' on' : ''}" data-name="${esc(t.name)}">${esc(stripId(t.name))}${t.entry ? `<small> ${t.entry.s === 'p' ? '紙' : ''}${esc(t.entry.id)}</small>` : ''}</div>`).join('')
       || '<div class="sub" style="padding:6px">ありません</div>';
   };
   function choose(t, redraw = true) {
@@ -564,7 +649,7 @@ function topicNewDialog(kw = '') {
     const k = $('#tn-kw').value.trim(), sp = $('#tn-s').value, id = $('#tn-id').value.trim().toLowerCase();
     const exists = !!get(sp, id);
     $('#tn-note').textContent = !id ? '' : exists ? `既存のノート ${id} を入口にします` : `新しいノート ${id} を作ります`;
-    if (!nameTouched) $('#tn-name').value = id + (k ? '-' + k : '-');
+    if (!nameTouched) $('#tn-name').value = k || '';
     const v = k ? idsOf(k) : null;
     $('#tn-pre').textContent = v ? (v.d.length + v.p.length >= 2 ? `${k} ${[...v.d, ...v.p.map(x => '紙' + x)].join(' ')}` + (exists && !(sp === 'd' ? v.d : v.p).includes(id) || !exists ? ` ${sp === 'p' ? '紙' : ''}${id}` : '') + `　→ ${sp === 'p' ? '紙' : ''}${id} の上に赤い点が付きます` : 'このキーワードのIDは2つ未満です') : '';
   };
@@ -615,7 +700,7 @@ function openTopic(name, tmode = 'view', keep) {
       ${stars.map(x => `<div class="star">★ ${tchip(x)}</div>`).join('')}`;
   $('#pane').innerHTML = `
     <div class="row">
-      <h2>${esc(name)}</h2>
+      <h2>${esc(stripId(name))}</h2>
       <span class="sub">入口</span>${e ? chip(e.s, e.id) : '<span class="sub">なし</span>'}
       <span class="grow"></span>
       ${tmode === 'conf' ? '' : `<button data-act="tconf">入口・名前</button>
@@ -685,6 +770,7 @@ $('#list').addEventListener('click', e => {
   if (e.target.id === 'd-make') { const v = $('#d-pick').value; if (L.isDate(v)) openDiary(v); }
 });
 async function openDiary(date, keep) {
+  if (bgOpen) { place({ k: 'diary', date }, false); return; }
   let d = getDiary(date);
   if (!d || !keep) { // 開くとき、その日に作ったノートで足りないリンクを足す。無い日は作る
     await flush();
@@ -820,6 +906,7 @@ $('#more').onclick = async () => {
     [`YuriiKasten ${info.version}`, () => { }],
     ['更新を確認', () => checkUpdate(info)],
     ...(info.platform !== 'win32' ? [[info.platform === 'darwin' ? 'デスクトップにショートカットを作る' : 'ショートカットを作る（デスクトップ・アプリ一覧）', async () => toast(await api.installShortcuts())]] : []),
+    ['保存フォルダを変える…', () => $('#vault').click()],
     ['GitHub を開く', () => api.openUrl('https://github.com/Yurii7812/YuriiKasten')]
   ]);
 };

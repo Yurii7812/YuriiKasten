@@ -26,6 +26,10 @@ class CheckWidget extends WidgetType {
   }
   ignoreEvent() { return true; }
 }
+class HrWidget extends WidgetType {
+  eq() { return true; }
+  toDOM() { const e = document.createElement('span'); e.className = 'md-hr-w'; return e; }
+}
 class BulletWidget extends WidgetType {
   constructor(text) { super(); this.text = text; }
   eq(o) { return o.text === this.text; }
@@ -59,8 +63,9 @@ function lines(view) {
         else push(s, e, Decoration.mark({ class: 'md-num' }));
       } else if (/^>\s?/.test(text)) {
         push(line.from, line.from, Decoration.line({ class: 'md-quote' }));
-      } else if (/^(-{3,}|\*{3,})\s*$/.test(text) && !onLine) {
-        push(line.from, line.from, Decoration.line({ class: 'md-hr' }));
+      } else if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(text)) {
+        if (!onLine && line.to > line.from) push(line.from, line.to, Decoration.replace({ widget: new HrWidget() })); // 記述は隠して、線だけ
+        else push(line.from, line.from, Decoration.line({ class: 'md-dim' }));
       }
       // 行の中: **太字** *斜体* `コード` ~~取り消し~~
       for (const r of text.matchAll(/(\*\*|__)(?=\S)(.+?)(?<=\S)\1|(?<![*\w])\*(?=\S)([^*]+?)(?<=\S)\*(?![*\w])|`([^`\n]+)`|~~(?=\S)(.+?)(?<=\S)~~/g)) {
@@ -226,7 +231,14 @@ const clickBelow = EditorView.domEventHandlers({
   }
 });
 
-export const mdExtensions = [
+// カーソルが画面の端に着く前にスクロールする（端に張り付かない）
+const margins = EditorView.scrollMargins.of(() => ({ top: 90, bottom: 190 }));
+const noMiddlePaste = EditorView.domEventHandlers({
+  mousedown(e) { if (e.button === 1) { e.preventDefault(); return true; } },
+  auxclick(e) { if (e.button === 1) { e.preventDefault(); return true; } },
+  paste(e) { return false; }
+});
+export const mdExtensions = [noMiddlePaste, margins, 
   linePlugin, tableField, codeFolding(),
   foldGutter({ markerDOM: open => { const s = document.createElement('span'); s.className = 'cm-fold-mark'; s.textContent = open ? '▾' : '▸'; return s; } }),
   outlineFold, listKeys, clickBelow, keymap.of(foldKeymap)
