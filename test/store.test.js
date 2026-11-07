@@ -16,7 +16,7 @@ test('保存フォルダ: 書き出しと読み直し', () => {
 
   const r = p => fs.readFileSync(path.join(dir, p), 'utf8');
   const d1 = r('digital/1.md');
-  assert.match(d1, /<p style="color:#888;font-size:.9em">2026-10-10 11:12　<a href="..\/Index.md#k-[a-z0-9]+">#PKM<\/a><\/p>/);
+  assert.match(d1, /<p style="color:#888;font-size:.9em">2026-10-10 11:12　索引 <a href="..\/Index.md#k-[a-z0-9]+">PKM<\/a><\/p>/);
   assert.match(d1, /分岐 <a href="1a.md">1a<\/a>/);
   assert.match(d1, /<a href="..\/topic\/1-PKM.md">トピックIndex 1-PKM<\/a>/);
   assert.match(r('digital/1a.md'), /\[1\(1\)\]\(1\.md#c1\)/);
@@ -24,6 +24,9 @@ test('保存フォルダ: 書き出しと読み直し', () => {
   assert.match(r('paper/1.md'), /!\[1\]\(1\.jpg\)/);
   assert.doesNotMatch(r('paper/1.md'), /\d{4}-\d\d-\d\d \d\d:\d\d/); // 紙に日付は無い
   assert.match(r('Index.md'), /\| <a id="k-[a-z0-9]+"><\/a>PKM \| \[1\]\(digital\/1\.md\) \[紙1\]\(paper\/1\.md\) \|/);
+  // 読みで並べ、行ごとに分ける
+  v.setReading('紙', 'かみ'); v.setReading('PKM', 'ぴーけーえむ');
+  assert.match(r('Index.md'), /## <a id="row0"><\/a>か[\s\S]*紙 <small style="color:#888">かみ<\/small>[\s\S]*## <a id="row1"><\/a>は[\s\S]*PKM/);
   assert.doesNotMatch(r('Index.md'), /トピックIndex|1-PKM/); // Index にトピックIndexは出さない
   assert.match(r('topic/1-PKM.md'), /入口 <a href="..\/digital\/1.md">1<\/a>/);
   assert.match(r('topic/1-PKM.md'), /\| PKM \| \[1\]\(\.\.\/digital\/1\.md\) \[1a\]\(\.\.\/digital\/1a\.md\) \[紙1\]\(\.\.\/paper\/1\.md\) \|/);
@@ -40,6 +43,7 @@ test('保存フォルダ: 書き出しと読み直し', () => {
   assert.strictEqual(old.body, '昔の本文'); assert.strictEqual(old.created, '2026-11-07 00:00');
   assert.ok(st.notes.find(x => x.s === 'p' && x.id === '1').image.startsWith('file://'));
   assert.deepStrictEqual(st.topics[0].entry, { s: 'd', id: '1' });
+  assert.deepStrictEqual(st.readings, { 紙: 'かみ', PKM: 'ぴーけーえむ' });
 
   // 入口と名前を変える → 古いファイルは消える
   v.saveTopic({ name: '1a-PKM', entry: { s: 'd', id: '1a' }, d: 'PKM 1', p: '' }, '1-PKM');

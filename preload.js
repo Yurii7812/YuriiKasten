@@ -6,5 +6,7 @@ contextBridge.exposeInMainWorld('api', {
   saveImage: (s, id, bytes) => r.invoke('saveImage', s, id, bytes),
   saveTopic: (t, old) => r.invoke('saveTopic', t, old),
   deleteTopic: name => r.invoke('deleteTopic', name),
+  setReading: (k, yomi) => r.invoke('setReading', k, yomi),
+  suggest: text => r.invoke('suggest', text),
   chooseVault: () => r.invoke('chooseVault')
 });

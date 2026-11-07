@@ -24,6 +24,7 @@ const sep = '　｜　';
 
 function openVault(vault) {
   const notes = new Map(), topics = new Map(), cache = new Map();
+  let readings = {}; // キーワード → 読み（Index の並び）
   const key = (s, id) => s + ':' + id;
   const get = (s, id) => notes.get(key(s, id));
   const abs = p => path.join(vault, p);
@@ -60,6 +61,11 @@ function openVault(vault) {
     if (t && t.name) topics.set(t.name, { name: t.name, entry: t.entry || (t.anchors || [])[0] || null, d: t.d || '', p: t.p || '' });
   }
 
+  if (fs.existsSync(abs('Index.md'))) {
+    const text = fs.readFileSync(abs('Index.md'), 'utf8'); cache.set('Index.md', text);
+    readings = (meta(text, 'pkm-index') || {}).readings || {};
+  }
+
   // 前の版（フォルダ直下に <ID>.md / <ID>.jpg）を移す
   function migrate() {
     for (const f of fs.readdirSync(vault)) {
@@ -90,7 +96,7 @@ function openVault(vault) {
     const list = ids(n.s), has = x => !!get(n.s, x), i = list.indexOf(n.id);
     const parent = L.parentIn(n.id, has), kids = list.filter(x => L.parentIn(x, has) === n.id);
     const go = x => `${enc(x)}.md`, t = topicOf(n.s, n.id);
-    const sub = [n.s === 'd' && h(n.created), ...n.keywords.map(k => a(`../Index.md#${L.kwAnchor(k)}`, '#' + h(k)))].filter(Boolean).join('　');
+    const sub = [n.s === 'd' && h(n.created), n.keywords.length && '索引 ' + n.keywords.map(k => a(`../Index.md#${L.kwAnchor(k)}`, h(k))).join('・')].filter(Boolean).join('　');
     const nav1 = [
       i > 0 && a(go(list[i - 1]), '← ' + list[i - 1]),
       parent && a(go(parent), '↑ ' + parent),
@@ -122,20 +128,30 @@ function openVault(vault) {
       if (!m.has(k)) m.set(k, { d: [], p: [] });
       m.get(k)[n.s].push(n.id);
     }
-    return [...m].sort((x, y) => x[0].localeCompare(y[0], 'ja'));
+    const rd = k => readings[k];
+    return [...m].sort((x, y) => L.byReading(rd)(x[0], y[0]));
   }
   const idLinks = (s, list, up) => list.slice().sort(L.cmpId).map(x => `[${label(s, x)}](${up}${DIR[s]}/${enc(x)}.md)`).join(' ');
   const cell = v => [idLinks('d', v.d, ''), idLinks('p', v.p, '')].filter(Boolean).join(' ');
 
+  // 読みのあいうえお順。行（あ・か・さ…）ごとに分ける
   function indexMd() {
-    const out = ['# Index', '', `<p ${SUB}>${a(enc(LIST.d), 'デジタル一覧')}${sep}${a(enc(LIST.p), '紙一覧')}</p>`, ''];
-    const gi = globalIndex();
-    if (!gi.length) out.push('（キーワードはまだありません）');
-    else {
-      out.push('| キーワード | ID |', '|---|---|');
-      for (const [k, v] of gi) out.push(`| <a id="${L.kwAnchor(k)}"></a>${esc(k)} | ${cell(v)} |`);
+    const out = [`<!-- pkm-index ${J({ readings: { ...readings } })} -->`, '# Index', '',
+      `<p ${SUB}>${a(enc(LIST.d), 'デジタル一覧')}${sep}${a(enc(LIST.p), '紙一覧')}</p>`, ''];
+    const groups = new Map();
+    for (const [k, v] of globalIndex()) {
+      const r = L.kanaRow(readings[k] || k);
+      if (!groups.has(r)) groups.set(r, []);
+      groups.get(r).push([k, v]);
     }
-    return out.join('\n') + '\n';
+    if (!groups.size) { out.push('（キーワードはまだありません）'); return out.join('\n') + '\n'; }
+    out.push([...groups.keys()].map((r, i) => `[${r}](#row${i})`).join('　'), '');
+    [...groups].forEach(([r, list], i) => {
+      out.push(`## <a id="row${i}"></a>${r}`, '', '| キーワード | ID |', '|---|---|');
+      for (const [k, v] of list) out.push(`| <a id="${L.kwAnchor(k)}"></a>${esc(k)}${readings[k] && readings[k] !== k ? ` <small style="color:#888">${h(readings[k])}</small>` : ''} | ${cell(v)} |`);
+      out.push('');
+    });
+    return out.join('\n');
   }
 
   function topicMd(t) {
@@ -173,7 +189,8 @@ function openVault(vault) {
   rebuild();
   return {
     vault,
-    state: () => ({ vault, notes: [...notes.values()].map(pub), topics: [...topics.values()] }),
+    state: () => ({ vault, notes: [...notes.values()].map(pub), topics: [...topics.values()], readings: { ...readings } }),
+    setReading(k, r) { if (r) readings[k] = r; else delete readings[k]; rebuild(); return true; },
     saveNote(x) {
       const n = get(x.s, x.id) || { s: x.s, id: x.id, created: x.s === 'd' ? (x.created || L.now()) : '', img: null };
       n.keywords = x.keywords || []; n.body = x.body || '';

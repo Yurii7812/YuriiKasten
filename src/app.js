@@ -7,14 +7,16 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const SP = { d: 'デジタル', p: '紙' };
 
-let notes = [], topics = [], tab = 'd', cur = null, vault = '';
+let notes = [], topics = [], readings = {}, tab = 'd', cur = null, vault = '';
 // 開いているタブ（Obsidian 風）。cur は今のタブ
 let tabs = [], active = -1, newTab = false;
 const get = (s, id) => notes.find(n => n.s === s && n.id === id);
 const free = (s, id) => { while (get(s, id)) id = L.sibling(id); return id; };
 const topicOf = (s, id) => topics.find(t => t.entry && t.entry.s === s && t.entry.id === id); // 入口は1つ
 const topicsWith = n => topics.map(t => ({ t, kws: L.mergeTopic(t).rows.filter(r => r[n.s].includes(n.id)).map(r => r.kw) })).filter(x => x.kws.length);
-const allKeywords = () => [...new Set(notes.flatMap(n => n.keywords))].sort((a, b) => a.localeCompare(b, 'ja'));
+const allKeywords = () => [...new Set(notes.flatMap(n => n.keywords))].sort(L.byReading(k => readings[k]));
+const yomi = k => readings[k] && readings[k] !== k ? `<small class="yomi">${esc(readings[k])}</small>` : '';
+const ixRow = ([k, v]) => `<div class="ix"><b>${esc(k)}</b>${yomi(k)} ${chips(v)}</div>`;
 
 // ===== 保存（少し待ってまとめて）=====
 const timers = {};
@@ -92,13 +94,13 @@ function globalIndex() {
     m.get(k)[n.s].push(n.id);
   }
   for (const v of m.values()) { v.d.sort(L.cmpId); v.p.sort(L.cmpId); }
-  return [...m].sort((a, b) => a[0].localeCompare(b[0], 'ja'));
+  return [...m].sort((a, b) => L.byReading(k => readings[k])(a[0], b[0]));
 }
 const chip = (s, id) => `<span class="chip ${s}${get(s, id) ? '' : ' miss'}" data-s="${s}" data-id="${esc(id)}">${s === 'p' ? '紙' : ''}${esc(id)}</span>`;
 const chips = v => v.d.map(x => chip('d', x)).join('') + v.p.map(x => chip('p', x)).join('');
 const tchip = name => `<span class="chip t" data-topic="${esc(name)}">${esc(name)}</span>`;
 const firstLine = n => (n.body.split('\n').find(x => x.trim()) || '').trim().slice(0, 40);
-const kwTags = n => n.keywords.map(k => `<span class="tag">${esc(k)}</span>`).join('');
+const kwTags = n => n.keywords.length ? `<span class="tag">${n.keywords.map(esc).join('・')}</span>` : '';
 const noteRow = (n, label = false) =>
   `<div class="item${cur && cur.k === 'note' && cur.s === n.s && cur.id === n.id ? ' on' : ''}" draggable="true" data-s="${n.s}" data-id="${esc(n.id)}">` +
   `${label ? `<span class="sp ${n.s}">${SP[n.s]}</span>` : ''}<b>${esc(n.id)}</b>${n.image ? '📷 ' : ''}<small>${esc(firstLine(n))}</small> ${kwTags(n)}</div>`;
@@ -109,21 +111,27 @@ function renderList() {
   if (q) {
     // 1. Index  2. トピックIndex  3. ノート
     const rank = k => (k.toLowerCase() === q ? 0 : k.toLowerCase().startsWith(q) ? 1 : 2);
-    const gi = globalIndex().filter(([k]) => k.toLowerCase().includes(q)).sort((a, b) => rank(a[0]) - rank(b[0]));
-    if (gi.length) out.push('<h4>Index</h4>', ...gi.map(([k, v]) => `<div class="ix"><b>${esc(k)}</b> ${chips(v)}</div>`));
+    const hq = L.toHira(q), rk = k => Math.min(rank(k), readings[k] ? rank(readings[k]) : 9);
+    const gi = globalIndex().filter(([k]) => k.toLowerCase().includes(q) || (readings[k] || '').includes(hq)).sort((a, b) => rk(a[0]) - rk(b[0]));
+    if (gi.length) out.push('<h4>Index</h4>', ...gi.map(ixRow));
     const ti = [];
     for (const t of topics) {
       if (t.name.toLowerCase().includes(q)) ti.push([-1, `<div class="ix">${tchip(t.name)}</div>`]);
       for (const r of L.mergeTopic(t).rows) if (r.kw.toLowerCase().includes(q)) ti.push([rank(r.kw), `<div class="ix"><b>${esc(r.kw)}</b> ${chips(r)} <small>← ${tchip(t.name)}</small></div>`]);
     }
     if (ti.length) out.push('<h4>トピックIndex</h4>', ...ti.sort((a, b) => a[0] - b[0]).map(x => x[1]));
-    const hit = notes.filter(n => [n.id, n.body, n.keywords.join(' ')].join('\n').toLowerCase().includes(q))
+    const hit = notes.filter(n => [n.id, n.body, n.keywords.join(' '), n.keywords.map(k => readings[k] || '').join(' ')].join('\n').toLowerCase().includes(q))
       .sort((a, b) => a.s.localeCompare(b.s) || L.cmpId(a.id, b.id));
     if (hit.length) out.push('<h4>ノート</h4>', ...hit.map(n => noteRow(n, true)));
     if (!out.length) out.push('<div class="none">見つかりません</div>');
   } else if (tab === 'i') {
-    out.push('<h4>Index</h4>', ...globalIndex().map(([k, v]) => `<div class="ix"><b>${esc(k)}</b> ${chips(v)}</div>`));
-    if (out.length === 1) out.push('<div class="none">ノートにキーワードを書くと、ここに並びます</div>');
+    let row = null;
+    for (const e of globalIndex()) {
+      const r = L.kanaRow(readings[e[0]] || e[0]);
+      if (r !== row) { out.push(`<h4>${r}</h4>`); row = r; }
+      out.push(ixRow(e));
+    }
+    if (!out.length) out.push('<div class="none">ノートにキーワードを書くと、ここに並びます</div>');
   } else {
     const list = notes.filter(n => n.s === tab).sort((a, b) => L.cmpId(a.id, b.id));
     for (const n of list) out.push(noteRow(n));
@@ -237,24 +245,42 @@ function openNote(s, id, n, keep) {
 function renderMeta(note) {
   const entry = topicOf(note.s, note.id);
   $('#meta').innerHTML =
-    note.keywords.map(k => `<span class="kwc">#${esc(k)}<b data-kwdel="${esc(k)}" title="外す">×</b></span>`).join('') +
+    (note.keywords.length ? '<span class="lbl">索引</span>' : '') +
+    note.keywords.map(k => `<span class="kwc" title="${esc(readings[k] || '')}">${esc(k)}<b data-kwdel="${esc(k)}" title="外す">×</b></span>`).join('') +
     `<span id="kw-wrap"><button class="mini" data-act="kwadd">＋キーワード</button></span>` +
     '<span class="vsep"></span>' +
     (entry ? `<span class="chip t" data-topic="${esc(entry.name)}" title="このノートが入口">📑 ${esc(entry.name)}</span>` : '') +
     topicsWith(note).filter(x => x.t !== entry).map(x => `<span class="chip t" data-topic="${esc(x.t.name)}">${esc(x.t.name)}<small> · ${x.kws.map(esc).join('、')}</small></span>`).join('') +
     `<button class="mini" data-act="tadd">＋トピックIndex</button>`;
 }
+// キーワードと読みを入れる。読みは候補が自動で入り、違っていれば直す
 function addKeywordInput(note) {
-  $('#kw-wrap').innerHTML = `<input id="kw-in" list="kw-all" placeholder="キーワード（Enter）"><datalist id="kw-all">${allKeywords().map(k => `<option value="${esc(k)}">`).join('')}</datalist>`;
-  const inp = $('#kw-in'); inp.focus();
+  $('#kw-wrap').innerHTML = `<input id="kw-in" list="kw-all" placeholder="キーワード"><input id="kw-yomi" placeholder="よみ"><datalist id="kw-all">${allKeywords().map(k => `<option value="${esc(k)}">`).join('')}</datalist>`;
+  const kw = $('#kw-in'), rd = $('#kw-yomi'); kw.focus();
+  let touched = false, timer = null;
+  rd.oninput = () => { touched = true; };
+  kw.oninput = () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      if (touched) return;
+      const k = kw.value.trim();
+      rd.value = !k ? '' : readings[k] || await api.suggest(k);
+    }, 200);
+  };
   const done = () => renderMeta(note);
-  inp.onkeydown = e => {
+  const onKey = async e => {
     if (e.key === 'Escape') return done();
-    if (e.key !== 'Enter') return;
-    for (const k of L.splitKw(inp.value)) if (!note.keywords.includes(k)) note.keywords.push(k);
+    if (e.key !== 'Enter' || e.isComposing) return;
+    const k = kw.value.trim(); if (!k) return;
+    clearTimeout(timer);
+    const r = L.toHira(rd.value.trim()) || readings[k] || await api.suggest(k);
+    if (r !== readings[k]) { readings[k] = r; await api.setReading(k, r); }
+    if (!note.keywords.includes(k)) note.keywords.push(k);
     saveNote(note); renderList(); done();
   };
-  inp.onblur = () => setTimeout(() => { if ($('#kw-in') === inp) done(); }, 150);
+  kw.onkeydown = onKey; rd.onkeydown = onKey;
+  const blur = () => setTimeout(() => { const a = document.activeElement; if (a !== kw && a !== rd && $('#kw-in') === kw) done(); }, 150);
+  kw.onblur = blur; rd.onblur = blur;
 }
 async function create(s, id) {
   const n = await api.saveNote({ s, id, created: L.now(), keywords: [], body: '' });
@@ -429,7 +455,9 @@ async function scanOk() {
   if (!L.isId(id)) { $('#sc-msg').textContent = 'IDの形が違います（例: 2a1）'; return; }
   if (get('p', id)) { $('#sc-msg').textContent = `紙 ${id} は既にあります。別のIDにしてください`; return; }
   await api.saveImage('p', id, await shrink(queue[qi]));
-  const n = await api.saveNote({ s: 'p', id, keywords: L.splitKw($('#sc-kw').value), body: '' });
+  const kws = L.splitKw($('#sc-kw').value);
+  for (const k of kws) if (!readings[k]) { readings[k] = await api.suggest(k); await api.setReading(k, readings[k]); }
+  const n = await api.saveNote({ s: 'p', id, keywords: kws, body: '' });
   notes.push(n); lastId = id; qi++; renderList(); showScan();
 }
 function closeScan() { $('#scan').style.display = 'none'; tab = 'p'; renderList(); if (lastId && get('p', lastId)) openNote('p', lastId); }
@@ -445,7 +473,7 @@ $('#scan').onkeydown = e => {
 
 // ===== 保存フォルダ =====
 function loaded(st) {
-  ({ notes, topics, vault } = st); cur = null; tabs = []; active = -1;
+  ({ notes, topics, vault } = st); readings = st.readings || {}; cur = null; tabs = []; active = -1;
   $('#vault').textContent = '📁 ' + vault.split('/').pop(); $('#vault').title = vault + '\n（Brave では Index.md を開くと全部たどれます）';
   try {
     const saved = JSON.parse(localStorage.getItem('pkm-tabs:' + vault) || 'null');

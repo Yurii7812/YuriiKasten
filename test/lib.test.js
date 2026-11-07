@@ -54,3 +54,12 @@ test('トピックIndex に足す', () => {
   assert.strictEqual(L.addToTopic('英雄伝 1a', '英雄伝', '1a'), '英雄伝 1a');
   assert.strictEqual(L.addToTopic('英雄伝 1a\n\n', '新しい', '3'), '英雄伝 1a\n新しい 3');
 });
+
+test('読み', () => {
+  assert.strictEqual(L.toHira('カンジ'), 'かんじ');
+  assert.strictEqual(L.kanaRow('がっこう'), 'か');
+  assert.strictEqual(L.kanaRow('ぷるたるこす'), 'は');
+  assert.strictEqual(L.kanaRow('PKM'), '英数・他');
+  const rd = { 漢字: 'かんじ', 英雄伝: 'えいゆうでん' };
+  assert.deepStrictEqual(['PKM', '漢字', '英雄伝'].sort(L.byReading(k => rd[k])), ['英雄伝', '漢字', 'PKM']);
+});

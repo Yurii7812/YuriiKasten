@@ -18,6 +18,16 @@ ipcMain.handle('rename', (_e, s, a, b) => v.rename(s, a, b));
 ipcMain.handle('saveImage', (_e, s, id, bytes) => v.saveImage(s, id, Buffer.from(bytes)));
 ipcMain.handle('saveTopic', (_e, t, old) => v.saveTopic(t, old));
 ipcMain.handle('deleteTopic', (_e, name) => v.deleteTopic(name));
+ipcMain.handle('setReading', (_e, k, r) => v.setReading(k, r));
+// 読みの候補（kuromoji。最初の1回だけ辞書を読む）
+let tk = null;
+const tokenizer = () => tk || (tk = new Promise((ok, ng) => require('kuromoji')
+  .builder({ dicPath: path.join(path.dirname(require.resolve('kuromoji')), '..', 'dict') })
+  .build((e, t) => e ? ng(e) : ok(t))));
+ipcMain.handle('suggest', async (_e, text) => {
+  const t = await tokenizer();
+  return require('./lib').toHira(t.tokenize(text).map(x => x.reading && x.reading !== '*' ? x.reading : x.surface_form).join(''));
+});
 ipcMain.handle('chooseVault', async () => {
   const r = await dialog.showOpenDialog({ title: 'ノートを保存するフォルダ', defaultPath: vault, properties: ['openDirectory', 'createDirectory'] });
   if (r.canceled) return null;

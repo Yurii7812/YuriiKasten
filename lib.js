@@ -136,6 +136,18 @@ function addToTopic(text, kw, id) {
   return lines.join('\n');
 }
 
+// 読み: カタカナ → ひらがな
+const toHira = s => (s || '').replace(/[\u30a1-\u30f6]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
+// 読みの頭が何行か（紙の索引の並び）。かな以外は「英数・他」
+const ROWS = ['あ', 'か', 'さ', 'た', 'な', 'は', 'ま', 'や', 'ら', 'わ'];
+const ROW_OF = {}; 'あいうえおぁぃぅぇぉゔ|かきくけこ|さしすせそ|たちつてとっ|なにぬねの|はひふへほ|まみむめも|やゆよゃゅょ|らりるれろ|わをんゎ'.split('|').forEach((g, i) => { for (const c of g) ROW_OF[c] = ROWS[i]; });
+function kanaRow(reading) {
+  const c = toHira(reading).normalize('NFD').replace(/[\u3099\u309a]/g, '').charAt(0);
+  return ROW_OF[c] || '英数・他';
+}
+const rowIdx = r => { const i = ROWS.indexOf(kanaRow(r)); return i < 0 ? 99 : i; }; // 英数・他は最後
+const byReading = rd => (a, b) => { const x = rd(a) || a, y = rd(b) || b; return rowIdx(x) - rowIdx(y) || x.localeCompare(y, 'ja'); };
+
 const kwAnchor = k => { let h = 5381; for (const c of k) h = (h * 33 + c.codePointAt(0)) >>> 0; return 'k-' + h.toString(36); };
 const fileName = name => name.replace(/[\\/:*?"<>|#%]/g, '_');
 const splitKw = s => (s || '').split(/[,、，]/).map(x => x.trim()).filter(Boolean);
@@ -147,5 +159,5 @@ const now = (d = new Date()) => {
 module.exports = {
   ID, isId, tok, cmpId, sibling, child, parentIn, root,
   tokens, anchorPos, selfTarget, bodyToMd, mdToBody,
-  topicLine, mergeTopic, addToTopic, kwAnchor, fileName, splitKw, now
+  topicLine, mergeTopic, addToTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
 };
