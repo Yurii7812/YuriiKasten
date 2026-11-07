@@ -2,3 +2,7 @@ node_modules
 dist
 release
 .DS_Store
+android/local.properties
+android/build
+android/app/build
+android/.gradle
