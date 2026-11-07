@@ -319,8 +319,27 @@ function openVault(vault) {
     d.entries = keep;
     if (changed) fs.writeFileSync(abs(PIDX + '.json'), JSON.stringify(d, null, 1));
   }
+  // 日記の「今日のノート」から、もう無いノートへのリンクを外す
+  function pruneDiaryLinks() {
+    const exists = id => notes.has(key('d', id));
+    for (const d of diaries.values()) {
+      const lines = d.body.split('\n'); let inSec = false, changed = false;
+      const out = lines.filter(l => {
+        if (/^##\s/.test(l)) inSec = l.trim() === '## 今日のノート';
+        if (!inSec) return true;
+        const m = l.match(/^\s*-\s+:(\S+)\s*$/), f = l.match(/^\s*-\s+\[[^\]]*\]\(D_([^)\s]+)\.md\)\s*$/);
+        const id = m ? m[1] : f ? decodeURIComponent(f[1]) : null;
+        if (id && !exists(id)) { changed = true; return false; }
+        return true;
+      });
+      if (changed) {
+        let body = out.join('\n').replace(/## 今日のノート\n+(?=##\s|$)/g, '').replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '');
+        d.body = body;
+      }
+    }
+  }
   function rebuild() {
-    mergePaperIndex();
+    mergePaperIndex(); pruneDiaryLinks();
     const files = new Map([['Index.md', indexMd()], [LIST.d, listMd('d')], [LIST.p, listMd('p')], [DIARY_LIST, diaryListMd()]]);
     for (const d of diaries.values()) files.set(diaryFile(d), diaryMd(d));
     for (const n of notes.values()) files.set(noteFile(n.s, n.id), noteMd(n));
@@ -341,7 +360,10 @@ function openVault(vault) {
   const pubDiary = d => ({ date: d.date, title: d.title, body: d.body, pages: pages.get(d.date) || [] });
   const ensureDiary = date => { if (!diaries.has(date)) diaries.set(date, { date, title: '', body: '' }); return diaries.get(date); };
   // その日に作ったデジタルノートへのリンクを、日記の「今日のノート」に足す（無ければ日記も作る）
+  const isBlank = n => (!n.kind || n.kind === 'text') && !(n.body || '').trim() && !(n.title || '').trim();
   const linkNote = n => {
+    if (isBlank(n)) { n.pending = true; return; }                  // まだ何も書いていないノートは、日記に載せない（書いたら載る）
+    n.pending = false;
     const date = L.dayOf(n.created); if (!date) return;
     const d = ensureDiary(date);
     if (L.isNoid(n.id)) { // IDなしは :ID で書けないので、ファイルへのリンクにする（ID を付けたとき :ID に直す）
@@ -398,7 +420,7 @@ function openVault(vault) {
       if (x.title !== undefined) n.title = (x.title || '').trim();
       if (n.kind && n.kind !== 'text') { if (n.data) n.data.title = n.title || n.data.title; n.body = L.deriveBody(n.kind, n.data); }
       notes.set(key(x.s, x.id), n);
-      if (fresh && n.s === 'd') linkNote(n); // 作った日の日記に載る
+      if (n.s === 'd' && (fresh || n.pending)) linkNote(n); // 作った日の日記に載る（空のノートは、書いてから）
       rebuild(); return pub(n);
     },
     // IDなしのノートを作る（kind: text / rp / canvas）。ID を渡せば、その ID で作る
