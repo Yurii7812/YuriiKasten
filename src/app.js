@@ -2,6 +2,7 @@ import { EditorView, Decoration, ViewPlugin, WidgetType, keymap, placeholder } f
 import { EditorState, RangeSetBuilder, StateField } from '@codemirror/state';
 import { history, defaultKeymap, historyKeymap } from '@codemirror/commands';
 import L from '../lib.js';
+import { mdExtensions, tableTemplate } from './md.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -131,7 +132,7 @@ function editor(parent, doc, mode, space, onChange, ph) {
   return lastView = new EditorView({
     parent, state: EditorState.create({
       doc, extensions: [history(), keymap.of([...defaultKeymap, ...historyKeymap]), EditorView.lineWrapping,
-        placeholder(ph), links(mode, space), ...(mode === 'note' ? [images(space)] : []), EditorView.updateListener.of(u => { if (u.docChanged) onChange(u.state.doc.toString()); })]
+        placeholder(ph), ...(mode === 'note' ? mdExtensions : []), links(mode, space), ...(mode === 'note' ? [images(space)] : []), EditorView.updateListener.of(u => { if (u.docChanged) onChange(u.state.doc.toString()); })]
     })
   });
 }
@@ -286,6 +287,7 @@ function openNote(s, id, n, keep) {
       <span class="grow"></span>
       <button data-act="sib" title="同じ段の次（Ctrl+クリックで新しいタブ）">並列 ${free(s, L.sibling(id))}</button>
       <button data-act="chi" title="一段下（Ctrl+クリックで新しいタブ）">分岐 ${free(s, L.child(id))}</button>
+      <button data-act="table" title="表を入れる">▦ 表</button>
       <button data-act="attach" title="ファイルを添付（ドラッグや貼り付けでも）">📎 添付</button>
       <button data-act="ndel" class="danger" title="このノートを削除">削除</button>
     </div>
@@ -370,6 +372,11 @@ $('#pane').addEventListener('click', async e => {
   if (act === 'kwadd') addKeywordInput(note);
   if (act === 'ndel') deleteNotes([{ s, id }]);
   if (act === 'attach') pick(true, f => attach(note, f), '*');
+  if (act === 'table' && lastView) {
+    const v = lastView, h = v.state.selection.main.head, at = v.state.doc.lineAt(h);
+    const ins = (h === at.from ? '' : '\n') + tableTemplate;
+    v.dispatch({ changes: { from: h, insert: ins }, selection: { anchor: h + ins.length - 8 } }); v.focus();
+  }
   if (act === 'tadd') topicAddDialog(note);
   if (act === 'img') pick(false, async f => { const r = await api.saveImage(s, id, await shrink(f[0])); Object.assign(get(s, id), r); openNote(s, id); });
 });

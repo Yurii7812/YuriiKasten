@@ -17,6 +17,8 @@
     "esbuild": "^0.28.2"
   },
   "dependencies": {
-    "kuromoji": "^0.1.2"
+    "@codemirror/language": "^6.13.1",
+    "kuromoji": "^0.1.2",
+    "markdown-it": "^15.0.3"
   }
 }
