@@ -6,7 +6,7 @@
   "scripts": {
     "build": "esbuild src/app.js --bundle --outfile=dist/app.js --format=iife",
     "start": "npm run build && electron .",
-    "test": "node --test test/",
+    "test": "node --test test/*.test.js",
     "dist": "npm run build && electron-builder --publish never",
     "dist:linux": "npm run build && electron-builder --linux --publish never",
     "dist:win": "npm run build && electron-builder --win --publish never",
