@@ -44,6 +44,7 @@
       "lib.js",
       "update.js",
       "sync.js",
+      "phone.js",
       "index.html",
       "dist/app.js",
       "build/icon.png",
@@ -102,6 +103,12 @@
     },
     "dmg": {
       "title": "YuriiKasten ${version}"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "downloads/YuriiKasten-memo.apk",
+        "to": "YuriiKasten-memo.apk"
+      }
+    ]
   }
 }

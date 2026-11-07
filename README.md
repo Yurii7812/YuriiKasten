@@ -157,7 +157,8 @@ vault の「正」の置き場を、ラズパイに置けます。PC・スマホ
 - **アラーム**: 何分おき・何時から何時まで。通知を押すと、書く画面が開きます。
 - **メモ**: 書いたものは、同期サーバー経由で、PC の YuriiKasten の「未整理」にノートとして届きます（右上の設定で、サーバーのアドレスと合言葉を入れる。書いたあと自動で送り、「いま送る」でも送れます）。画像も一緒に送ります。
 - **分岐・文脈**: 長押しの「分岐」「文脈」でつないだメモは、ノートの先頭に `[分岐元](…)` `[文脈](…)` のリンクの行として入ります。
-- **作り方・入れ方**（JDK 17 と Android SDK が要ります）: `cd android && ./gradlew assembleFast` → `app/build/outputs/apk/fast/app-fast.apk`。スマホを USB でつないで（USB デバッグをオン）`adb install -r app-fast.apk`。
+- **入れ方（ボタン一つ）**: スマホを USB でつなぎ（USB デバッグをオン）、YuriiKasten の「⋯」→**「スマホにアプリを入れる…」**。同期の設定（アドレスと合言葉）も、確認のうえスマホに渡せます。PC に `adb` が要ります（Linux: `sudo apt install adb`）。APK は `downloads/YuriiKasten-memo.apk`。
+- **作り直す**（JDK 17 と Android SDK が要ります。`sh android/build-apk.sh` で `downloads/` に置かれます）: `cd android && ./gradlew assembleFast` → `app/build/outputs/apk/fast/app-fast.apk`。スマホを USB でつないで（USB デバッグをオン）`adb install -r app-fast.apk`。
 
 ## 削除
 ノートの「削除」、または左上の「☑ 選択」で複数選んで一括削除（Shift+クリックで範囲）。ファイルは `.trash` に移り、索引の行からもIDが外れる（入口だった索引は入口なしになる）。

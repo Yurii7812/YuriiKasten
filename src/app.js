@@ -1016,6 +1016,7 @@ $('#more').onclick = async () => {
     ['更新を確認', () => checkUpdate(info)],
     ...(info.platform !== 'win32' ? [[info.platform === 'darwin' ? 'デスクトップにショートカットを作る' : 'ショートカットを作る（デスクトップ・アプリ一覧）', async () => toast(await api.installShortcuts())]] : []),
     [`同期の設定…（${syncStatus}）`, syncDialog],
+    ['スマホにアプリを入れる…（USB）', phoneInstall],
     ['保存フォルダを変える…', () => $('#vault').click()],
     ['GitHub を開く', () => api.openUrl('https://github.com/Yurii7812/YuriiKasten')]
   ]);
@@ -1029,6 +1030,15 @@ api.onState(st => { // 同期で取り込んだ変更を、画面に反映
   tabs = tabs.filter(t => t.k !== 'note' || get(t.s, t.id)); active = Math.min(active, tabs.length - 1);
   const t = tabs[active]; if (t && t.k !== 'empty') show(active); else renderTabs();
 });
+// スマホにアプリを入れる（USB でつないだスマホに、adb で）
+api.onPhoneMsg(m => toast(m));
+async function phoneInstall() {
+  if (!confirm('スマホを USB ケーブルでつないで、「USBデバッグ」をオンにしてから、OK を押してください。\nスマホに YuriiKasten メモ（アラームとメモのアプリ）を入れます。')) return;
+  const c = await api.syncGet(), withSync = !!(c.url && c.token) && confirm('スマホの設定にも、同期のアドレスと合言葉を入れますか？\n（スマホで入力しなくて済みます。USB の中だけで渡します）');
+  toast('入れています…');
+  const r = await api.phoneInstall(withSync);
+  alert(r.message);
+}
 async function syncDialog() {
   const c = await api.syncGet();
   dialog(`<h3>同期（ラズパイ）</h3>

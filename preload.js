@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('api', {
   setReading: (k, yomi) => r.invoke('setReading', k, yomi),
   suggest: text => r.invoke('suggest', text),
   chooseVault: () => r.invoke('chooseVault'),
+  phoneInstall: withSync => r.invoke('phoneInstall', withSync),
+  onPhoneMsg: cb => r.on('phoneMsg', (_e, m) => cb(m)),
   syncGet: () => r.invoke('syncGet'),
   syncSet: c => r.invoke('syncSet', c),
   syncNow: () => r.invoke('syncNow'),

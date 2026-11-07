@@ -67,6 +67,11 @@ function startSync() {
   try { const w = fs.watch(vault, { persistent: false }, (_e, f) => { if (f && Sync.okName(String(f)) && f !== '.pkm-sync.json') soon(); }); const old = syncStop; syncStop = () => { old(); w.close(); }; } catch { }
   syncTimer = setInterval(runSync, 60000); setTimeout(runSync, 800);
 }
+// ===== スマホにアプリを入れる（USB・adb）=====
+ipcMain.handle('phoneInstall', async (_e, withSync) => {
+  const c = syncCfg();
+  return require('./phone').install({ sync: withSync && c.url && c.token ? { url: c.url, token: c.token } : null }, m => { if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('phoneMsg', m); });
+});
 ipcMain.handle('syncGet', () => ({ ...syncCfg(), state: syncState }));
 ipcMain.handle('syncSet', (_e, c) => { const cfg = readCfg(); cfg.sync = c && c.url ? { url: String(c.url).trim(), token: String(c.token || '').trim() } : {}; writeCfg(cfg); startSync(); return runSync().then(() => ({ ...syncCfg(), state: syncState })); });
 ipcMain.handle('syncNow', () => runSync());
