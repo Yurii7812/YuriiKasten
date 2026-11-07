@@ -3,6 +3,8 @@ import { EditorState, RangeSetBuilder, StateField } from '@codemirror/state';
 import { history, defaultKeymap, historyKeymap } from '@codemirror/commands';
 import L from '../lib.js';
 import { mdExtensions, tableTemplate } from './md.js';
+import { ctx } from './shared.js';
+import * as Chat from './chat.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -176,6 +178,7 @@ function renderList() {
   const q = $('#q').value.trim().toLowerCase(), out = [];
   $('#tabs').style.display = mode === 'notes' || q ? '' : 'none';
   if (!q && mode === 'diary') { $('#list').innerHTML = diaryList(); renderSelbar(); return; }
+  if (!q && mode === 'chat') { $('#list').innerHTML = Chat.listHtml(); renderSelbar(); return; }
   if (q) {
     // 1. Index  2. トピックIndex  3. ノート
     const rank = k => (k.toLowerCase() === q ? 0 : k.toLowerCase().startsWith(q) ? 1 : 2);
@@ -216,6 +219,8 @@ document.addEventListener('mousedown', e => { newTab = e.ctrlKey || e.metaKey ||
 function onOpenClick(e) {
   if (e.target.closest('#modal') || e.target.closest('#selbar')) return;
   const dd = e.target.closest('[data-diary]'); if (dd && !e.target.closest('.cm-editor')) return openDiary(dd.dataset.diary);
+  const cc = e.target.closest('[data-chat]'); if (cc) return Chat.open(cc.dataset.chat);
+  if (e.target.id === 'c-new') return Chat.newTopicDialog();
   const row = e.target.closest('#list .item');
   if (selMode && row) return togglePick(row, e.shiftKey);
   const t = e.target.closest('[data-topic]'); if (t) return openTopic(t.dataset.topic);
@@ -260,7 +265,7 @@ function show(i) {
   active = Math.max(-1, Math.min(i, tabs.length - 1));
   const t = tabs[active];
   if (!t || t.k === 'empty') { cur = t || null; $('#pane').innerHTML = '<div class="none">左から選ぶか、「＋ 新規」で書き始めます。<br>Ctrl+クリックで新しいタブに開きます。</div>'; renderTabs(); return renderList(); }
-  if (t.k === 'note') openNote(t.s, t.id, null, true); else if (t.k === 'diary') openDiary(t.date, true); else openTopic(t.name, t.mode, true);
+  if (t.k === 'note') openNote(t.s, t.id, null, true); else if (t.k === 'diary') openDiary(t.date, true); else if (t.k === 'chat') Chat.open(t.topic, true); else openTopic(t.name, t.mode, true);
 }
 function closeTab(i) {
   if (i < 0 || i >= tabs.length) return;
@@ -270,7 +275,7 @@ function closeTab(i) {
   show(active < 0 && tabs.length ? 0 : active);
 }
 const tabLabel = t => t.k === 'note' ? `${t.s === 'p' ? '紙 ' : ''}${esc(t.id)}<small>${esc((firstLine(get(t.s, t.id) || { body: '' })).slice(0, 12))}</small>`
-  : t.k === 'topic' ? `📑 ${esc(t.name)}` : t.k === 'diary' ? `📔 ${esc(t.date.slice(5))}` : '新しいタブ';
+  : t.k === 'topic' ? `📑 ${esc(t.name)}` : t.k === 'diary' ? `📔 ${esc(t.date.slice(5))}` : t.k === 'chat' ? `💬 ${esc(Chat.label(t.topic))}` : '新しいタブ';
 function renderTabs() {
   $('#tabbar').innerHTML = tabs.map((t, i) => `<div class="tab${i === active ? ' on' : ''}" data-ti="${i}"><span>${tabLabel(t)}</span><b class="x" data-close="${i}" title="閉じる (Ctrl+W)">×</b></div>`).join('')
     + '<button class="tab-new" title="新しいタブ (Ctrl+T)">＋</button>';
@@ -715,12 +720,12 @@ $('#scan').onkeydown = e => {
 
 // ===== 保存フォルダ =====
 function loaded(st) {
-  ({ notes, topics, vault } = st); readings = st.readings || {}; diaries = st.diaries || []; cur = null; tabs = []; active = -1;
+  ({ notes, topics, vault } = st); readings = st.readings || {}; diaries = st.diaries || []; Chat.init(st.docs || {}); cur = null; tabs = []; active = -1;
   $('#vault').textContent = '📁 ' + vault.split('/').pop(); $('#vault').title = vault + '\n（Brave では Index.md を開くと全部たどれます）';
   try {
     const saved = JSON.parse(localStorage.getItem('pkm-tabs:' + vault) || 'null');
     if (saved) {
-      tabs = saved.tabs.filter(t => t.k === 'empty' || (t.k === 'note' && get(t.s, t.id)) || (t.k === 'topic' && topics.find(x => x.name === t.name)) || (t.k === 'diary' && getDiary(t.date)));
+      tabs = saved.tabs.filter(t => t.k === 'empty' || (t.k === 'note' && get(t.s, t.id)) || (t.k === 'topic' && topics.find(x => x.name === t.name)) || (t.k === 'diary' && getDiary(t.date)) || t.k === 'chat');
       tabs.forEach(t => { if (t.k === 'topic') t.mode = 'view'; });
       active = Math.min(saved.active, tabs.length - 1);
     }
@@ -791,15 +796,26 @@ async function attach(note, files) {
   view.dispatch({ changes: { from: head, insert: md }, selection: { anchor: head + md.length } }); view.focus();
 }
 const curNote = () => cur && cur.k === 'note' ? get(cur.s, cur.id) : cur && cur.k === 'diary' ? getDiary(cur.date) : null;
-$('#pane').addEventListener('dragover', e => { if (curNote() && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); $('#pane').classList.add('drop'); } });
+$('#pane').addEventListener('dragover', e => { if ((curNote() || (cur && cur.k === 'chat')) && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); $('#pane').classList.add('drop'); } });
 $('#pane').addEventListener('dragleave', e => { if (!e.relatedTarget || !$('#pane').contains(e.relatedTarget)) $('#pane').classList.remove('drop'); });
 $('#pane').addEventListener('drop', e => {
   $('#pane').classList.remove('drop');
+  if (e.target.closest('.chat') && e.dataTransfer.files.length) { e.preventDefault(); return Chat.attach([...e.dataTransfer.files]); }
   const n = curNote(); if (!n || !e.dataTransfer.files.length) return;
   e.preventDefault(); attach(n, [...e.dataTransfer.files]);
 });
 // 貼り付け（スクリーンショットなど）
 document.addEventListener('paste', e => {
   const n = curNote(), fs = [...(e.clipboardData ? e.clipboardData.files : [])];
+  if (cur && cur.k === 'chat' && fs.length) { e.preventDefault(); return Chat.attach(fs); }
   if (n && fs.length) { e.preventDefault(); attach(n, fs); }
+});
+
+// チャット・なりきり・キャンバスの部品に、アプリの機能を渡す
+Object.assign(ctx, {
+  api, later, flush, place, renderTabs, renderList, pick, get, free, refreshDiaries, openNote, openDiary, getDiary,
+  setCur: c => { cur = c; }, setMode: m => { mode = m; }, cur: () => cur, notes: () => notes, vault: () => vault,
+  touchNote: n => saveNote(n),
+  touchDiary: d => later('dy' + d.date, () => api.saveDiary({ date: d.date, body: d.body })),
+  openDiaryData: async date => { await flush(); const r = await api.openDiary(date); if (r) upsertDiary(r); }
 });
