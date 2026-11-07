@@ -374,7 +374,7 @@ function show(i) {
   active = Math.max(-1, Math.min(i, tabs.length - 1));
   const t = tabs[active];
   if (!t || t.k === 'empty') { cur = t || null; $('#pane').innerHTML = '<div class="none">左から選ぶか、「＋ 新規」で書き始めます。<br>Ctrl+クリックで新しいタブに開きます。</div>'; renderTabs(); return renderList(); }
-  if (t.k === 'note') openNote(t.s, t.id, null, true); else if (t.k === 'diary') openDiary(t.date, true); else if (t.k === 'chat') Chat.open(t.topic, true); else if (t.k === 'graph') openGraph(true); else openTopic(t.name, t.mode, true);
+  if (t.k === 'note') openNote(t.s, t.id, null, true); else if (t.k === 'diary') openDiary(t.date, true); else if (t.k === 'chat') Chat.open(t.topic, true); else if (t.k === 'graph') openGraph(true); else if (t.k === 'export') openExport(t, true); else openTopic(t.name, t.mode, true);
 }
 function closeTab(i) {
   if (i < 0 || i >= tabs.length) return;
@@ -384,7 +384,7 @@ function closeTab(i) {
   show(active < 0 && tabs.length ? 0 : active);
 }
 const tabLabel = t => t.k === 'note' ? (n => `${n && icon(n) ? icon(n) + ' ' : ''}${n ? esc(titleOf(n).slice(0, 16)) : esc(t.id)}<small>${n && n.noid ? 'IDなし' : (t.s === 'p' ? '紙 ' : '') + esc(t.id)}</small>`)(get(t.s, t.id))
-  : t.k === 'topic' ? `📑 ${esc(t.name)}` : t.k === 'diary' ? `📔 ${esc(t.date.slice(5))}` : t.k === 'chat' ? `💬 ${esc(Chat.label(t.topic))}` : t.k === 'graph' ? '🕸 グラフ' : '新しいタブ';
+  : t.k === 'topic' ? `📑 ${esc(t.name)}` : t.k === 'diary' ? `📔 ${esc(t.date.slice(5))}` : t.k === 'chat' ? `💬 ${esc(Chat.label(t.topic))}` : t.k === 'graph' ? '🕸 グラフ' : t.k === 'export' ? '📤 エクスポート' : '新しいタブ';
 function renderTabs() {
   $('#tabbar').innerHTML = tabs.map((t, i) => `<div class="tab${i === active ? ' on' : ''}" data-ti="${i}"><span>${tabLabel(t)}</span><b class="x" data-close="${i}" title="閉じる (Ctrl+W)">×</b></div>`).join('')
     + '<button class="tab-new" title="新しいタブ (Ctrl+T)">＋</button>';
@@ -730,6 +730,57 @@ function topicNewDialog(kw = '') {
   refresh(); $('#tn-kw').focus();
 }
 // mode: view（まとめて表示）| edit（デジタル欄・紙欄に書く）| conf（入口・名前を変える）
+// ===== エクスポート（仮の出力。ファイルは作らない）=====
+// 選んだノート（＋関連・番号の範囲）を、1つの Markdown にまとめる。プレビューで確認 → 一時タブで確認 → コピー
+function exportDialog(start) {
+  const keyOf = n => n.s + ':' + n.id, sel = new Set(start.filter(k => get(k[0], k.slice(2))));
+  const gk = k => get(k[0], k.slice(2)), ordered = () => [...sel].map(gk).filter(Boolean).sort((a, b) => a.s.localeCompare(b.s) || (a.noid ? 1 : 0) - (b.noid ? 1 : 0) || L.cmpId(a.id, b.id));
+  const idsOf = sp => notes.filter(n => n.s === sp && !n.noid).map(n => n.id).sort(L.cmpId);
+  const related = (kinds) => {
+    const add = new Set();
+    for (const n of ordered()) {
+      if (n.noid) continue;
+      if (kinds.includes('out')) for (const t of L.tokens(n.body || '')) if (t.k === 'ref' && get(n.s, t.id)) add.add(n.s + ':' + t.id);
+      if (kinds.includes('in')) for (const m of notes) if (m.s === n.s && !m.noid && refContexts(m.body || '', n.id).length) add.add(keyOf(m));
+      if (kinds.includes('kw')) for (const m of notes) if (!m.noid && m.keywords.some(k => n.keywords.includes(k))) add.add(keyOf(m));
+      if (kinds.includes('topic')) for (const t of topics) { const rows = L.mergeTopic(t).rows; if (rows.some(r => r[n.s].includes(n.id))) for (const r of rows) for (const sp of ['d', 'p']) for (const id of r[sp]) if (get(sp, id)) add.add(sp + ':' + id); }
+    }
+    return add;
+  };
+  const draw = () => {
+    const list = ordered();
+    $('#ex-list').innerHTML = list.map(n => `<div class="exrow"><b>${n.noid ? 'IDなし' : (n.s === 'p' ? '紙 ' : '') + esc(n.id)}</b> ${esc(titleOf(n).slice(0, 40))}<span class="grow"></span><i data-rm="${esc(keyOf(n))}" title="外す">×</i></div>`).join('') || '<div class="sub">まだ選んでいません</div>';
+    $('#ex-n').textContent = `${list.length}件`; $('#ex-open').disabled = $('#ex-copy').disabled = !list.length;
+  };
+  dialog(`<h3>エクスポート <small class="sub">（保存はしません。確認してコピー）</small></h3>
+    <div class="exsec"><b>関連を足す</b>
+      <label><input type="checkbox" class="ex-k" value="out" checked>リンク先</label><label><input type="checkbox" class="ex-k" value="in">リンク元</label>
+      <label><input type="checkbox" class="ex-k" value="kw">同じキーワード</label><label><input type="checkbox" class="ex-k" value="topic">同じトピックIndex</label>
+      <button id="ex-rel">足す</button></div>
+    <div class="exsec"><b>番号の範囲（デジタル）</b> <input id="ex-from" placeholder="1a" size="5"> 〜 <input id="ex-to" placeholder="1a5" size="5"> <button id="ex-range">範囲を足す</button>
+      <input id="ex-root" placeholder="1a" size="5" style="margin-left:14px"> <button id="ex-tree">その枝（子孫すべて）を足す</button></div>
+    <div class="exsec"><b id="ex-n"></b> <span class="sub">番号順に出します。リンクは、この中を指すものだけ生かします</span></div>
+    <div id="ex-list" class="exlist"></div>
+    <div class="row"><button class="p" id="ex-open">一時タブで確認</button><button id="ex-copy">コピー</button><button id="ex-no">閉じる</button></div>`, close => {
+    $('#ex-no').onclick = close;
+    $('#ex-list').onclick = e => { const r = e.target.closest('[data-rm]'); if (r) { sel.delete(r.dataset.rm); draw(); } };
+    $('#ex-rel').onclick = () => { for (const k of related([...document.querySelectorAll('.ex-k:checked')].map(c => c.value))) sel.add(k); draw(); };
+    $('#ex-range').onclick = () => { const f = $('#ex-from').value.trim().toLowerCase(), t = $('#ex-to').value.trim().toLowerCase(); if (!f || !t) return; for (const id of L.fzRange(idsOf('d'), f, t)) sel.add('d:' + id); draw(); };
+    $('#ex-tree').onclick = () => { const r = $('#ex-root').value.trim().toLowerCase(); if (!r) return; for (const id of L.fzSubtree(idsOf('d'), r)) sel.add('d:' + id); draw(); };
+    const text = () => L.exportMd(ordered().map(n => ({ s: n.s, id: n.id, title: n.title || '', body: n.body || '', noid: n.noid })));
+    $('#ex-copy').onclick = async () => { await navigator.clipboard.writeText(text()); toast(`${sel.size}件をコピーしました`); };
+    $('#ex-open').onclick = () => { const t = text(), c = sel.size; close(); newTab = true; openExport({ k: 'export', text: t, count: c }); };
+    draw();
+  });
+}
+function openExport(t, keep) {
+  cur = place({ k: 'export', text: t.text, count: t.count }, keep); mode = 'notes';
+  $('#pane').innerHTML = `<div class="row"><h2>📤 エクスポート</h2><span class="sub">${cur.count}件・保存はされません（このタブを閉じると消えます）</span><span class="grow"></span><button class="p" id="ex-copy2">コピー</button></div>
+    <textarea id="ex-text" class="extext" readonly></textarea>`;
+  $('#ex-text').value = cur.text;
+  $('#ex-copy2').onclick = async () => { await navigator.clipboard.writeText(cur.text); toast('コピーしました'); };
+  renderTabs(); renderList();
+}
 function openGraph(keep) {
   cur = place({ k: 'graph' }, keep); mode = 'notes';
   $('#pane').innerHTML = GR.html(notes, titleOf, topics, L.mergeTopic, topicLabel);
@@ -999,7 +1050,7 @@ function togglePick(row, range) {
 function renderSelbar() {
   const bar = $('#selbar');
   bar.innerHTML = selMode
-    ? `<span>${picked.size}件を選択</span><span class="grow"></span><button id="sel-all">全部</button><button id="sel-del" class="danger" ${picked.size ? '' : 'disabled'}>削除</button><button id="sel-end">やめる</button>`
+    ? `<span>${picked.size}件を選択</span><span class="grow"></span><button id="sel-all">全部</button><button id="sel-exp" ${picked.size ? '' : 'disabled'} title="選んだノートを、1つの Markdown にまとめる（保存はしない。確認してコピー）">📤 エクスポート</button><button id="sel-del" class="danger" ${picked.size ? '' : 'disabled'}>削除</button><button id="sel-end">やめる</button>`
     : '<button id="sel-start" title="複数のノートを選んで、まとめて削除します">☑ 選択</button>';
   bar.style.display = (tab === 'i' || mode !== 'notes') && !$('#q').value ? 'none' : 'flex';
 }
@@ -1008,6 +1059,7 @@ $('#selbar').addEventListener('click', e => {
   if (id === 'sel-start') { selMode = true; picked.clear(); lastPick = null; renderList(); }
   if (id === 'sel-end') { selMode = false; picked.clear(); renderList(); }
   if (id === 'sel-all') { visibleRows().forEach(r => picked.add(r.dataset.s + ':' + r.dataset.id)); renderList(); }
+  if (id === 'sel-exp') exportDialog([...picked]);
   if (id === 'sel-del') deleteNotes([...picked].map(k => ({ s: k[0], id: k.slice(2) })));
 });
 async function deleteNotes(items) {

@@ -99,6 +99,31 @@ function mdToBody(md) {
     .replace(/\n+$/, '');
 }
 
+// ===== エクスポート（複数のノートを1つの Markdown に）=====
+// ids（同じ s の ID の並び）のうち、from 〜 to（番号順）の範囲
+function fzRange(ids, from, to) {
+  let a = from, b = to; if (cmpId(a, b) > 0) [a, b] = [b, a];
+  return ids.filter(i => cmpId(i, a) >= 0 && cmpId(i, b) <= 0);
+}
+// root とその子孫（1a → 1a, 1a1, 1a2b …）
+function fzSubtree(ids, root) {
+  const r = tok(root);
+  return ids.filter(i => { const t = tok(i); return t.length >= r.length && r.every((x, k) => t[k] === x); });
+}
+// items: [{s,id,title,body,noid,created}]（出す順）。選んだノートの中を指すリンクだけ生かし、外へのリンクは普通の文字にする
+function exportMd(items) {
+  const has = new Set(items.filter(n => !n.noid).map(n => n.s + ':' + n.id));
+  const plain = (body, s) => {
+    const toks = tokens(body).filter(t => t.k === 'ref' && !has.has(s + ':' + t.id)).sort((a, b) => b.from - a.from);
+    let out = body; for (const t of toks) out = out.slice(0, t.from) + t.text.replace(/[:：]/g, '') + out.slice(t.to);
+    return out;
+  };
+  return items.map(n => {
+    const label = n.noid ? '（IDなし）' : (n.s === 'p' ? '紙 ' : '') + n.id;
+    return `## ${label}${n.title ? ' ' + n.title : ''}\n\n${plain((n.body || '').trim(), n.s)}`;
+  }).join('\n\n---\n\n') + '\n';
+}
+
 // ===== トピックIndex =====
 // 1行 = 「キーワード ID ID …」。
 //   + で始まる行（★ も同じ）は、別のトピックIndexへの案内（星マーク）
@@ -241,5 +266,5 @@ const now = (d = new Date()) => {
 module.exports = {
   MDLINK, ID, isId, tok, cmpId, sibling, child, parentIn, root,
   tokens, anchorPos, selfTarget, bodyToMd, mdToBody,
-  isNoid, noidStem, KINDS, deriveBody, DAY_START, todayStr, dayOf, weekday, isDate, addToSection, diaryTree, topicLine, mergeTopic, addToTopic, removeFromTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
+  fzRange, fzSubtree, exportMd, isNoid, noidStem, KINDS, deriveBody, DAY_START, todayStr, dayOf, weekday, isDate, addToSection, diaryTree, topicLine, mergeTopic, addToTopic, removeFromTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
 };

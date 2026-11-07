@@ -96,3 +96,13 @@ test('IDなしのノート・種類ごとの本文', () => {
   assert.strictEqual(L.deriveBody('canvas', cv), '# 案\n\n上\n\n:1a\n\n下');
   assert.strictEqual(L.deriveBody('text', null), '');
 });
+
+test('エクスポート: 番号の範囲・枝、リンクは選んだ中だけ生かす', () => {
+  const L = require('../lib');
+  const ids = ['1', '1a', '1a1', '1a2', '1b', '2'].sort(L.cmpId);
+  assert.deepStrictEqual(L.fzRange(ids, '1a', '1a2'), ['1a', '1a1', '1a2']);
+  assert.deepStrictEqual(L.fzSubtree(ids, '1a'), ['1a', '1a1', '1a2']);
+  assert.deepStrictEqual(L.fzSubtree(ids, '1'), ['1', '1a', '1a1', '1a2', '1b']);
+  const md = L.exportMd([{ s: 'd', id: '1', title: 'あ', body: '続き :1a と :2' }, { s: 'd', id: '1a', title: 'い', body: '本文' }]);
+  assert.match(md, /## 1 あ/); assert.match(md, /:1a と 2/); assert.match(md, /## 1a い/);
+});
