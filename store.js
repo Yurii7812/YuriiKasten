@@ -300,7 +300,27 @@ function openVault(vault) {
     return out.join('\n') + '\n';
   }
 
+  // 紙のIndex: K_paperindex.json = { entries: [{ kw, reading, ids:[まだ紙のノートが無いID] }] }
+  // その ID の紙のノートができたら、ノートのキーワードにして（本 Index に出る）、この表から外す
+  const PIDX = 'K_paperindex';
+  function mergePaperIndex() {
+    const d = docs.get(PIDX); if (!d || !d.entries) return;
+    let changed = false;
+    for (const e of d.entries) {
+      e.ids = e.ids.filter(id => {
+        const n = get('p', id); if (!n) return true;
+        if (!n.keywords.includes(e.kw)) n.keywords.push(e.kw);
+        if (e.reading && !readings[e.kw]) readings[e.kw] = e.reading;
+        changed = true; return false;
+      });
+    }
+    const keep = d.entries.filter(e => e.ids.length);
+    if (keep.length !== d.entries.length) changed = true;
+    d.entries = keep;
+    if (changed) fs.writeFileSync(abs(PIDX + '.json'), JSON.stringify(d, null, 1));
+  }
   function rebuild() {
+    mergePaperIndex();
     const files = new Map([['Index.md', indexMd()], [LIST.d, listMd('d')], [LIST.p, listMd('p')], [DIARY_LIST, diaryListMd()]]);
     for (const d of diaries.values()) files.set(diaryFile(d), diaryMd(d));
     for (const n of notes.values()) files.set(noteFile(n.s, n.id), noteMd(n));
@@ -462,6 +482,24 @@ function openVault(vault) {
         if (t.entry && items.some(x => x.s === t.entry.s && x.id === t.entry.id)) t.entry = null;
         for (const sp of ['d', 'p']) t[sp] = L.removeFromTopic(t[sp], items.filter(x => x.s === sp).map(x => x.id));
       }
+      rebuild(); return this.state();
+    },
+    // 紙のIndexに足す。ID はまだ取り込んでいない紙のものでもよい（取り込まれたら自動でマージ）
+    addPaperIndex({ kw, reading, ids }) {
+      kw = (kw || '').trim(); if (!kw) return false;
+      const d = docs.get(PIDX) || { entries: [] };
+      let e = d.entries.find(x => x.kw === kw);
+      if (!e) { e = { kw, reading: '', ids: [] }; d.entries.push(e); }
+      if (reading) { e.reading = reading; readings[kw] = reading; }
+      for (const id of ids || []) if (validId(id) && !e.ids.includes(id)) e.ids.push(id);
+      docs.set(PIDX, d); fs.writeFileSync(abs(PIDX + '.json'), JSON.stringify(d, null, 1));
+      rebuild(); return this.state();
+    },
+    // 紙のIndexから外す（まだ紙のノートが無いIDは表から、ノートがあるIDはノートのキーワードから）
+    removePaperIndex({ kw, id }) {
+      const d = docs.get(PIDX), e = d && d.entries.find(x => x.kw === kw);
+      if (e && e.ids.includes(id)) { e.ids = e.ids.filter(x => x !== id); d.entries = d.entries.filter(x => x.ids.length); fs.writeFileSync(abs(PIDX + '.json'), JSON.stringify(d, null, 1)); }
+      const n = get('p', id); if (n) n.keywords = n.keywords.filter(k => k !== kw);
       rebuild(); return this.state();
     },
     deleteTopic(name) { topics.delete(name); removeFile(topicFile(name)); rebuild(); return true; }

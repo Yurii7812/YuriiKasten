@@ -1,6 +1,6 @@
 // Obsidian 風の整形（書いたその場で）。見出し・太字・斜体・コード・チェックボックス・箇条書き・アウトライン・表
 import { EditorView, Decoration, ViewPlugin, WidgetType, keymap } from '@codemirror/view';
-import { Prec, RangeSetBuilder, StateField } from '@codemirror/state';
+import { Prec, RangeSetBuilder, StateField, StateEffect } from '@codemirror/state';
 import { foldService, foldGutter, foldKeymap, codeFolding, foldEffect, unfoldEffect, foldedRanges } from '@codemirror/language';
 import { indentLess } from '@codemirror/commands';
 
@@ -245,3 +245,19 @@ export const mdExtensions = [noMiddlePaste, margins,
 ];
 // 表のひな形
 export const tableTemplate = '| 見出し1 | 見出し2 | 見出し3 |\n| --- | --- | --- |\n|  |  |  |\n';
+
+// ===== 検索した語の印（開いたノートの本文の中）=====
+export const setSearch = StateEffect.define();
+export const searchExt = StateField.define({
+  create: () => ({ q: '', deco: Decoration.none }),
+  update(v, tr) {
+    let q = v.q, changed = tr.docChanged;
+    for (const e of tr.effects) if (e.is(setSearch)) { q = e.value; changed = true; }
+    if (!changed) return v;
+    if (!q) return { q, deco: Decoration.none };
+    const text = tr.state.doc.toString().toLowerCase(), needle = q.toLowerCase(), r = [];
+    for (let i = text.indexOf(needle); i >= 0 && r.length < 500; i = text.indexOf(needle, i + needle.length)) r.push(Decoration.mark({ class: 'hl' }).range(i, i + needle.length));
+    return { q, deco: Decoration.set(r, true) };
+  },
+  provide: f => EditorView.decorations.from(f, v => v.deco)
+});

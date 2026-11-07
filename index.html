@@ -255,6 +255,28 @@ button{font-size:14.5px;padding:5px 13px;border-color:#d6d9e1;color:#3d4150}
 .mgn .madd a{font-size:13.5px;color:#5d6270}.mgn .madd a:hover{color:var(--acc)}
 .mgn .hint{font-size:13.5px;color:#7b8090}
 .tab-new{font-size:18px}
+.item mark,.hl{background:#ffe97a;color:inherit;border-radius:3px;padding:0 1px}
+.item .sn{font-size:12.5px;color:#5d6270;margin-top:3px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:normal}
+
+/* ===== 紙のIndex ===== */
+#pi{display:flex;flex-direction:column;height:100%}
+.pi-form{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:12px 12px 8px}
+.pi-form input,.pi-find input{font:inherit;font-size:14px;padding:6px 10px;border:1px solid #dcdfe6;border-radius:8px;outline:none;min-width:0}
+.pi-form input:focus,.pi-find input:focus{border-color:#9fb3e6}
+.pi-form #pi-ids{grid-column:1/2}.pi-form button{grid-column:2/3}
+.pi-find{padding:2px 12px 8px;border-bottom:1px solid #f0f0f3}.pi-find input{width:100%;background:#f4f5f8;border-color:transparent}
+#pi-rows{flex:1;overflow:auto;padding:4px 0 40vh}
+.pg{font-size:12px;font-weight:700;color:#7b8090;padding:12px 16px 3px;letter-spacing:.06em}
+.pr{padding:5px 16px;display:flex;flex-direction:column;border-left:3px solid transparent}
+.pr .pk{display:flex;align-items:baseline;gap:8px}.pr b{font-weight:600;font-size:15px}.pr small{color:#8a8f9c;font-size:11.5px}
+.pids{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}
+.pid{font-size:12.5px;background:#eef0f6;color:#3d4150;border-radius:6px;padding:0 6px;display:inline-flex;gap:3px;align-items:center}
+.pid.wait{background:#fff;border:1px dashed #b9bdc9;color:#7b8090}
+.pid i{font-style:normal;color:#b0b4c0;cursor:pointer;opacity:0}.pid:hover i{opacity:1}.pid i:hover{color:var(--red)}
+.pr.hit{cursor:pointer}.pr.hit:hover{background:#f3f5fb}
+.pr.flash{background:#fff4c2;border-left-color:#e0a800;transition:background .6s}
+.pr.prev{border:1.5px dashed #6c87e8;background:#f2f6ff;border-radius:8px;margin:3px 8px;flex-direction:row;align-items:baseline;gap:8px;padding:5px 10px}
+.pr.prev b{color:#3b5bdb}.pr.prev span{margin-left:auto;font-size:12px;color:#3b5bdb}
 </style>
 </head>
 <body>

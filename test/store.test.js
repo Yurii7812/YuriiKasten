@@ -231,3 +231,29 @@ test('IDを消してIDなしに。このノートを指すリンクは、ファ�
   assert.ok(!v.clearId('d', n.id));                                                                // すでにIDなしなら何もしない
   fs.rmSync(dir, { recursive: true });
 });
+
+test('紙のIndex: 取り込み前のIDも書ける。紙のノートができたら本 Index にマージされる', () => {
+  const dir = tmp(), r = f => fs.readFileSync(path.join(dir, f), 'utf8');
+  const v = openVault(dir);
+  v.saveImage('p', '3', Buffer.from([0xff, 0xd8, 0xff]));                       // 紙の 3 だけ、もう取り込んである
+  let st = v.addPaperIndex({ kw: 'GUI', reading: 'ぐい', ids: ['3', '12', '12a'] });
+  const pd = st.docs.K_paperindex;
+  assert.deepStrictEqual(pd.entries, [{ kw: 'GUI', reading: 'ぐい', ids: ['12', '12a'] }]); // 3 はもうノートがあるのでマージ済み、12 と 12a は取り込み前
+  assert.deepStrictEqual(st.notes.find(n => n.s === 'p' && n.id === '3').keywords, ['GUI']);
+  assert.match(r('Index.md'), /GUI[^\n]*紙3/);                                          // 本 Index には、ノートがあるものだけ
+  assert.doesNotMatch(r('Index.md'), /紙12/);
+  // 紙の 12 を取り込む → 自動でマージされる
+  st = v.saveImage('p', '12', Buffer.from([0xff, 0xd8, 0xff])) && v.state();
+  assert.deepStrictEqual(st.docs.K_paperindex.entries[0].ids, ['12a']);
+  assert.deepStrictEqual(st.notes.find(n => n.s === 'p' && n.id === '12').keywords, ['GUI']);
+  assert.match(r('Index.md'), /紙12/);
+  // 同じ名前の読みを後から直せる。外す: 取り込み前のIDは表から、ノートがあるIDはキーワードから
+  st = v.addPaperIndex({ kw: 'GUI', reading: 'ジーユーアイ', ids: [] });
+  assert.strictEqual(st.readings.GUI, 'ジーユーアイ');
+  st = v.removePaperIndex({ kw: 'GUI', id: '12a' }); assert.deepStrictEqual(st.docs.K_paperindex.entries, []);
+  st = v.removePaperIndex({ kw: 'GUI', id: '3' }); assert.deepStrictEqual(st.notes.find(n => n.s === 'p' && n.id === '3').keywords, []);
+  assert.ok(!v.addPaperIndex({ kw: '  ', ids: ['1'] }));
+  // 読み直し
+  assert.ok(!openVault(dir).state().docs.K_paperindex || openVault(dir).state().docs.K_paperindex.entries.length === 0);
+  fs.rmSync(dir, { recursive: true });
+});

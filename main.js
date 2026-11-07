@@ -44,6 +44,8 @@ const open = () => { v = store.openVault(vault); return v.state(); };
 ipcMain.handle('load', () => open());
 ipcMain.handle('saveNote', (_e, n) => v.saveNote(n));
 ipcMain.handle('createNote', (_e, x) => v.createNote(x));
+ipcMain.handle('addPaperIndex', (_e, x) => v.addPaperIndex(x));
+ipcMain.handle('removePaperIndex', (_e, x) => v.removePaperIndex(x));
 ipcMain.handle('clearId', (_e, sp, id) => v.clearId(sp, id));
 ipcMain.handle('rename', (_e, s, a, b) => v.rename(s, a, b));
 ipcMain.handle('saveImage', (_e, s, id, bytes) => v.saveImage(s, id, Buffer.from(bytes)));

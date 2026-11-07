@@ -2,10 +2,11 @@ import { EditorView, Decoration, ViewPlugin, WidgetType, keymap, placeholder } f
 import { EditorState, RangeSetBuilder, StateField } from '@codemirror/state';
 import { history, defaultKeymap, historyKeymap } from '@codemirror/commands';
 import L from '../lib.js';
-import { mdExtensions, tableTemplate } from './md.js';
+import { mdExtensions, tableTemplate, searchExt, setSearch } from './md.js';
 import { ctx } from './shared.js';
 import * as Chat from './chat.js';
 import * as RP from './roleplay.js';
+import * as PI from './pindex.js';
 import * as CV from './canvas.js';
 import { dialog, popMenu, toast } from './shared.js';
 
@@ -18,6 +19,7 @@ let notes = [], topics = [], readings = {}, tab = 'd', cur = null, vault = '';
 let tabs = [], active = -1, newTab = false, bgOpen = false;
 let mode = 'notes', diaries = [], lastNote = null; // 左の列で選んでいる種類（ノート・日記…）
 let selMode = false, picked = new Set(), lastPick = null; // 一括選択
+let searchQ = ''; // いま検索している語（一覧と、開いたノートの中の印に使う）
 const get = (s, id) => notes.find(n => n.s === s && n.id === id);
 const free = (s, id) => { while (get(s, id)) id = L.sibling(id); return id; };
 const topicOf = (s, id) => topics.find(t => t.entry && t.entry.s === s && t.entry.id === id); // 入口は1つ
@@ -140,12 +142,14 @@ const images = space => {
   };
   return StateField.define({ create: build, update: (v, tr) => tr.docChanged ? build(tr.state) : v, provide: f => EditorView.decorations.from(f) });
 };
+// 開いているノートの本文に、検索した語の印を付ける（md.js の searchHighlight が読む）
+function searchMark() { if (lastView && lastView.dom.isConnected) lastView.dispatch({ effects: setSearch.of(searchQ) }); }
 let lastView = null;
 function editor(parent, doc, mode, space, onChange, ph) {
   return lastView = new EditorView({
     parent, state: EditorState.create({
       doc, extensions: [history(), keymap.of([...defaultKeymap, ...historyKeymap]), EditorView.lineWrapping,
-        placeholder(ph), ...(mode === 'note' ? mdExtensions : []), links(mode, space), ...(mode === 'note' ? [images(space)] : []), EditorView.updateListener.of(u => { if (u.docChanged) onChange(u.state.doc.toString()); })]
+        placeholder(ph), ...(mode === 'note' ? [...mdExtensions, searchExt] : []), links(mode, space), ...(mode === 'note' ? [images(space)] : []), EditorView.updateListener.of(u => { if (u.docChanged) onChange(u.state.doc.toString()); })]
     })
   });
 }
@@ -189,26 +193,36 @@ const topicLabel = t => stripId(t.name);
 const tchip = name => `<span class="chip t" data-topic="${esc(name)}">${esc(stripId(name))}</span>`;
 const firstLine = n => (n.body.split('\n').find(x => x.trim()) || '').replace(/^#+\s*/, '').trim().slice(0, 40);
 const titleOf = n => (n.title || '').trim() || firstLine(n) || (n.kind === 'rp' ? '会話' : n.kind === 'canvas' ? 'キャンバス' : '（無題）');
+// 検索: 一致した所を mark で囲む（大文字小文字は区別しない）
+const escRe = q => q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const mk = (text, q) => !q ? esc(text) : String(text).split(new RegExp('(' + escRe(q) + ')', 'ig')).map((p, i) => i % 2 ? `<mark>${esc(p)}</mark>` : esc(p)).join('');
+// 本文の中の、最初に一致した所の周辺（前後を省略して）。一致が無ければ ''
+function snippet(body, q) {
+  const i = body.toLowerCase().indexOf(q.toLowerCase()); if (i < 0) return '';
+  const a = Math.max(0, i - 24), b = Math.min(body.length, i + q.length + 56);
+  return (a > 0 ? '…' : '') + mk(body.slice(a, b).replace(/\s*\n\s*/g, ' '), q) + (b < body.length ? '…' : '');
+}
 const icon = n => L.KINDS[n.kind || 'text'] || '';
 const shortTime = c => (c || '').slice(5, 16).replace('-', '/');
 const kwTags = n => n.keywords.length ? `<span class="tag">${n.keywords.map(esc).join('・')}</span>` : '';
 const firstLineOf = b => (b.split('\n').find(x => x.trim() && !/^##\s/.test(x)) || '').trim().slice(0, 40);
 // 左の一覧の行: タイトル（無ければ本文の最初の行）と、その下に小さく ID（IDなしは日時）とキーワード
-const noteRow = (n, label = false) =>
+const noteRow = (n, label = false, q = '') =>
   `<div class="item note${cur && cur.k === 'note' && cur.s === n.s && cur.id === n.id ? ' on' : ''}" draggable="true" data-s="${n.s}" data-id="${esc(n.id)}">` +
   `${selMode ? `<input type="checkbox" class="ck" ${picked.has(n.s + ':' + n.id) ? 'checked' : ''}>` : ''}<div class="nrow">` +
-  `<div class="nt">${label ? `<span class="sp ${n.s}">${SP[n.s]}</span>` : ''}${icon(n) ? icon(n) + ' ' : ''}${n.image ? '📷 ' : ''}${esc(titleOf(n))}</div>` +
-  `<div class="ns">${n.noid ? `IDなし · ${shortTime(n.created)}` : `${n.s === 'p' ? '紙 ' : ''}${esc(n.id)}`}${n.keywords.length ? ` · ${n.keywords.map(esc).join('・')}` : ''}</div></div></div>`;
+  `<div class="nt">${label && n.s === 'p' ? `<span class="sp ${n.s}">${SP[n.s]}</span>` : ''}${icon(n) ? icon(n) + ' ' : ''}${n.image ? '📷 ' : ''}${mk(titleOf(n), q)}</div>` +
+  `<div class="ns">${n.noid ? `IDなし · ${shortTime(n.created)}` : `${n.s === 'p' ? '紙 ' : ''}${mk(n.id, q)}`}${n.keywords.length ? ` · ${n.keywords.map(k => mk(k, q)).join('・')}` : ''}</div>${q && snippet(n.body, q) ? `<div class="sn">${snippet(n.body, q)}</div>` : ''}</div></div>`;
 // トピックIndex の行（その入口のノートの手前に出す）
 const topicRow = t => `<div class="item topicrow" data-topic="${esc(t.name)}"><div class="nrow"><div class="nt">${esc(topicLabel(t))}</div></div></div>`;
 
 function renderList() {
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   document.querySelectorAll('#rail button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
-  const q = $('#q').value.trim().toLowerCase(), out = [];
+  const q = $('#q').value.trim().toLowerCase(), out = []; searchQ = q;
   $('#tabs').style.display = mode === 'notes' || q ? '' : 'none';
   if (!q && mode === 'diary') { $('#list').innerHTML = diaryList(); renderSelbar(); return; }
   if (!q && mode === 'chat') { $('#list').innerHTML = Chat.listHtml(); renderSelbar(); return; }
+  if (!q && mode === 'pindex') { if (!$('#pi')) $('#list').innerHTML = PI.html(); PI.draw(); renderSelbar(); return; } // 入力中の欄は、描き直さない
   if (q) {
     // 1. Index  2. トピックIndex  3. ノート
     const rank = k => (k.toLowerCase() === q ? 0 : k.toLowerCase().startsWith(q) ? 1 : 2);
@@ -223,9 +237,9 @@ function renderList() {
     if (ti.length) out.push('<h4>トピックIndex</h4>', ...ti.sort((a, b) => a[0] - b[0]).map(x => x[1]));
     const hit = notes.filter(n => [n.id, n.title || '', n.body, n.keywords.join(' '), n.keywords.map(k => readings[k] || '').join(' ')].join('\n').toLowerCase().includes(q))
       .sort((a, b) => a.s.localeCompare(b.s) || L.cmpId(a.id, b.id));
-    if (hit.length) out.push('<h4>ノート</h4>', ...hit.map(n => noteRow(n, true)));
+    if (hit.length) out.push('<h4>ノート</h4>', ...hit.map(n => noteRow(n, true, q)));
     const dh = diaries.filter(d => [d.date, d.title, d.body].join('\n').toLowerCase().includes(q)).sort((a, b) => b.date.localeCompare(a.date));
-    if (dh.length) out.push('<h4>日記</h4>', ...dh.map(d => `<div class="item" data-diary="${d.date}"><b>${d.date.slice(2)}</b><small>${esc(d.title || firstLineOf(d.body))}</small></div>`));
+    if (dh.length) out.push('<h4>日記</h4>', ...dh.map(d => `<div class="item note" data-diary="${d.date}"><div class="nrow"><div class="nt">${mk(d.title || d.date, q)}</div><div class="ns">日記 · ${d.date}</div>${snippet(d.body, q) ? `<div class="sn">${snippet(d.body, q)}</div>` : ''}</div></div>`));
     if (!out.length) out.push('<div class="none">見つかりません</div>');
   } else if (tab === 'i') {
     out.push('<div class="ix"><button class="mini mk-topic" data-kw="">＋ トピックIndexを新しく作る</button></div>');
@@ -279,6 +293,7 @@ $('#list').addEventListener('click', e => { const b = e.target.closest('.mk-topi
 $('#list').addEventListener('dragstart', e => { const n = e.target.closest('[data-id]'); if (n) e.dataTransfer.setData('text/plain', n.dataset.id); });
 $('#tabs').onclick = e => { const b = e.target.closest('button'); if (b) { tab = b.dataset.tab; $('#q').value = ''; renderList(); } };
 $('#q').oninput = renderList;
+$('#q').onkeydown = e => { if (e.key === 'Escape') { $('#q').value = ''; $('#q').blur(); renderList(); if (lastView && cur && cur.k === 'note') lastView.focus(); searchMark(); } };
 document.addEventListener('keydown', e => {
   if (!(e.ctrlKey || e.metaKey) || $('#modal').style.display === 'flex') return;
   if (e.key === 'f') { e.preventDefault(); $('#q').focus(); $('#q').select(); }
@@ -394,7 +409,10 @@ function openNote(s, id, n, keep, mid) {
   }
   const view = editor($('#ed'), note.body, 'note', s, v => { note.body = v; saveNote(note); renderList(); },
     s === 'p' ? '紙の内容を文字で（テキスト化）' : '本文。続き :1a1　引用 (1) と (1):　別ノート 1a(1)　全体 1a:');
+  searchMark();
+  const hitAt = searchQ ? note.body.toLowerCase().indexOf(searchQ) : -1;
   if (n) { const p = L.anchorPos(note.body, n); if (p >= 0) jump(view, p); }
+  else if (hitAt >= 0) view.dispatch({ effects: EditorView.scrollIntoView(hitAt, { y: 'center' }) }); // 検索から開いたら、最初の一致の所へ
   else if (keep && cur.pos != null) jump(view, Math.min(cur.pos, view.state.doc.length));
   else if (s === 'd' && !note.body && !note.title) $('#f-title').focus();
   else if (s === 'd' && !note.body) view.focus();
@@ -887,7 +905,7 @@ $('#scan').onkeydown = e => {
 
 // ===== 保存フォルダ =====
 function loaded(st) {
-  ({ notes, topics, vault } = st); readings = st.readings || {}; diaries = st.diaries || []; Chat.init(st.docs || {}); RP.init(st.docs || {}); cur = null; tabs = []; active = -1;
+  ({ notes, topics, vault } = st); readings = st.readings || {}; diaries = st.diaries || []; Chat.init(st.docs || {}); RP.init(st.docs || {}); PI.init(st.docs || {}); cur = null; tabs = []; active = -1;
   $('#vault').textContent = '📁 ' + vault.split('/').pop(); $('#vault').title = vault + '\n（Brave では Index.md を開くと全部たどれます）';
   try {
     const saved = JSON.parse(localStorage.getItem('pkm-tabs:' + vault) || 'null');
@@ -1006,9 +1024,11 @@ document.addEventListener('paste', e => {
   if (n && fs.length) { e.preventDefault(); attach(n, fs); }
 });
 
+// 保存側の状態（ノート・日記・読み・紙のIndex）を、画面に反映する
+function applyState(st) { ({ notes, topics } = st); diaries = st.diaries || diaries; readings = st.readings || readings; PI.apply(st); renderList(); }
 // チャット・なりきり・キャンバスの部品に、アプリの機能を渡す
 Object.assign(ctx, {
-  api, later, flush, place, renderTabs, openLink, lastNote: () => lastNote,
+  api, later, flush, place, renderTabs, openLink, applyState, readings: () => readings, lastNote: () => lastNote,
  renderList, pick, get, free, refreshDiaries, openNote, openDiary, getDiary,
   setCur: c => { cur = c; }, setMode: m => { mode = m; }, cur: () => cur, notes: () => notes, vault: () => vault,
   touchNote: n => saveNote(n),
