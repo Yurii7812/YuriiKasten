@@ -393,8 +393,8 @@ function openNote(s, id, n, keep, mid) {
       </div>
       <input class="ntitle" id="f-title" value="${esc(note.title || '')}" placeholder="タイトル">
       ${!text ? '<div id="nbody"></div>' : s === 'p' ? `<div class="paper"><div class="pic">${note.image ? `<img src="${note.image}">` : '<button data-act="img">画像を入れる</button>'}</div><div class="ed" id="ed"></div></div>` : '<div class="ed" id="ed"></div>'}
-    </div>${text ? '<aside class="mgn" id="margin"></aside>' : ''}</div>`;
-  if (text) renderMeta(note);
+    </div><aside class="mgn" id="margin"></aside></div>`;
+  renderMeta(note);
   $('#f-title').oninput = e => { // タイトル: 打ったらすぐ一覧とタブに反映し、少し待って保存
     note.title = e.target.value; if (note.data) note.data.title = note.title || note.data.title;
     if (!text) note.body = L.deriveBody(kind, note.data);
@@ -728,7 +728,11 @@ function openTopic(name, tmode = 'view', keep) {
       <div class="row"><button data-act="tsave" class="p">決定</button><button data-act="tcancel">やめる</button>
         <span class="grow"></span><button data-act="tdel" class="danger">このトピックIndexを削除</button></div></div>`;
   else body = `<table class="ti">${rows.map(r => `<tr><td>${esc(r.kw)}</td><td>${chips(r)}</td></tr>`).join('') || '<tr><td class="none">まだ空です。「編集」で書きます</td></tr>'}</table>
-      ${stars.map(x => `<div class="star">★ ${tchip(x)}</div>`).join('')}`;
+      ${stars.map(x => `<div class="star">★ ${tchip(x)}</div>`).join('')}
+      ${(() => { // 逆方向: このトピックIndexの入口を載せている Index・このIndexを星で案内している Index（引用できるのは Index だけ）
+        const back = topics.filter(o => o !== t && (L.mergeTopic(o).stars.includes(t.name) || (e && L.mergeTopic(o).rows.some(r => r[e.s].includes(e.id))))).sort((x, y) => x.name.localeCompare(y.name, 'ja'));
+        return back.length ? `<div class="backidx"><div class="l">このIndexを載せている Index</div>${back.map(o => tchip(o.name)).join('')}</div>` : '';
+      })()}`;
   $('#pane').innerHTML = `
     <div class="row">
       <h2>${esc(stripId(name))}</h2>
