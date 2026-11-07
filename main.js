@@ -18,6 +18,7 @@ ipcMain.handle('rename', (_e, s, a, b) => v.rename(s, a, b));
 ipcMain.handle('saveImage', (_e, s, id, bytes) => v.saveImage(s, id, Buffer.from(bytes)));
 ipcMain.handle('saveTopic', (_e, t, old) => v.saveTopic(t, old));
 ipcMain.handle('deleteTopic', (_e, name) => v.deleteTopic(name));
+ipcMain.handle('deleteNotes', (_e, items) => v.deleteNotes(items));
 ipcMain.handle('setReading', (_e, k, r) => v.setReading(k, r));
 // 読みの候補（kuromoji。最初の1回だけ辞書を読む）
 let tk = null;

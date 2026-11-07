@@ -10,6 +10,7 @@ const SP = { d: 'デジタル', p: '紙' };
 let notes = [], topics = [], readings = {}, tab = 'd', cur = null, vault = '';
 // 開いているタブ（Obsidian 風）。cur は今のタブ
 let tabs = [], active = -1, newTab = false;
+let selMode = false, picked = new Set(), lastPick = null; // 一括選択
 const get = (s, id) => notes.find(n => n.s === s && n.id === id);
 const free = (s, id) => { while (get(s, id)) id = L.sibling(id); return id; };
 const topicOf = (s, id) => topics.find(t => t.entry && t.entry.s === s && t.entry.id === id); // 入口は1つ
@@ -103,7 +104,7 @@ const firstLine = n => (n.body.split('\n').find(x => x.trim()) || '').trim().sli
 const kwTags = n => n.keywords.length ? `<span class="tag">${n.keywords.map(esc).join('・')}</span>` : '';
 const noteRow = (n, label = false) =>
   `<div class="item${cur && cur.k === 'note' && cur.s === n.s && cur.id === n.id ? ' on' : ''}" draggable="true" data-s="${n.s}" data-id="${esc(n.id)}">` +
-  `${label ? `<span class="sp ${n.s}">${SP[n.s]}</span>` : ''}<b>${esc(n.id)}</b>${n.image ? '📷 ' : ''}<small>${esc(firstLine(n))}</small> ${kwTags(n)}</div>`;
+  `${selMode ? `<input type="checkbox" class="ck" ${picked.has(n.s + ':' + n.id) ? 'checked' : ''}>` : ''}${label ? `<span class="sp ${n.s}">${SP[n.s]}</span>` : ''}<b>${esc(n.id)}</b>${n.image ? '📷 ' : ''}<small>${esc(firstLine(n))}</small> ${kwTags(n)}</div>`;
 
 function renderList() {
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
@@ -138,11 +139,14 @@ function renderList() {
     if (!list.length) out.push(`<div class="none">${tab === 'p' ? '「📷 スキャン取り込み」で紙を入れます' : '「＋ 新規」で書き始めます'}</div>`);
   }
   $('#list').innerHTML = out.join('');
+  renderSelbar();
 }
 // Ctrl+クリック・中クリックは新しいタブで開く
 document.addEventListener('mousedown', e => { newTab = e.ctrlKey || e.metaKey || e.button === 1; }, true);
 function onOpenClick(e) {
-  if (e.target.closest('#modal')) return;
+  if (e.target.closest('#modal') || e.target.closest('#selbar')) return;
+  const row = e.target.closest('#list .item');
+  if (selMode && row) return togglePick(row, e.shiftKey);
   const t = e.target.closest('[data-topic]'); if (t) return openTopic(t.dataset.topic);
   const n = e.target.closest('[data-id][data-s]');
   if (n && !e.target.closest('.cm-editor')) {
@@ -219,6 +223,7 @@ function openNote(s, id, n, keep) {
       <span class="grow"></span>
       <button data-act="sib" title="同じ段の次（Ctrl+クリックで新しいタブ）">並列 ${free(s, L.sibling(id))}</button>
       <button data-act="chi" title="一段下（Ctrl+クリックで新しいタブ）">分岐 ${free(s, L.child(id))}</button>
+      <button data-act="ndel" class="danger" title="このノートを削除">削除</button>
     </div>
     <div class="meta" id="meta"></div>
     ${s === 'p' ? `<div class="paper"><div class="pic">${note.image ? `<img src="${note.image}">` : '<button data-act="img">画像を入れる</button>'}</div><div class="ed" id="ed"></div></div>` : '<div class="ed" id="ed"></div>'}`;
@@ -299,6 +304,7 @@ $('#pane').addEventListener('click', async e => {
   if (act === 'sib') create(s, free(s, L.sibling(id)));
   if (act === 'chi') create(s, free(s, L.child(id)));
   if (act === 'kwadd') addKeywordInput(note);
+  if (act === 'ndel') deleteNotes([{ s, id }]);
   if (act === 'tadd') topicAddDialog(note);
   if (act === 'img') pick(false, async f => { const r = await api.saveImage(s, id, await shrink(f[0])); Object.assign(get(s, id), r); openNote(s, id); });
 });
@@ -488,3 +494,46 @@ function loaded(st) {
 $('#vault').onclick = async () => { const st = await api.chooseVault(); if (st) loaded(st); };
 api.load().then(loaded);
 window.__pkm = { get cur() { return cur; }, get notes() { return notes; }, get topics() { return topics; }, get view() { return lastView; } };
+
+// ===== 削除・一括削除 =====
+const keyOf = n => n.s + ':' + n.id;
+function visibleRows() { return [...document.querySelectorAll('#list .item')]; }
+function togglePick(row, range) {
+  const k = row.dataset.s + ':' + row.dataset.id;
+  if (range && lastPick) {
+    const rows = visibleRows(), a = rows.findIndex(r => r.dataset.s + ':' + r.dataset.id === lastPick), b = rows.indexOf(row);
+    if (a >= 0) for (const r of rows.slice(Math.min(a, b), Math.max(a, b) + 1)) picked.add(r.dataset.s + ':' + r.dataset.id);
+  } else { picked.has(k) ? picked.delete(k) : picked.add(k); lastPick = k; }
+  renderList();
+}
+function renderSelbar() {
+  const bar = $('#selbar');
+  bar.innerHTML = selMode
+    ? `<span>${picked.size}件を選択</span><span class="grow"></span><button id="sel-all">全部</button><button id="sel-del" class="danger" ${picked.size ? '' : 'disabled'}>削除</button><button id="sel-end">やめる</button>`
+    : '<button id="sel-start" title="複数のノートを選んで、まとめて削除します">☑ 選択</button>';
+  bar.style.display = tab === 'i' && !$('#q').value ? 'none' : 'flex';
+}
+$('#selbar').addEventListener('click', e => {
+  const id = e.target.id;
+  if (id === 'sel-start') { selMode = true; picked.clear(); lastPick = null; renderList(); }
+  if (id === 'sel-end') { selMode = false; picked.clear(); renderList(); }
+  if (id === 'sel-all') { visibleRows().forEach(r => picked.add(r.dataset.s + ':' + r.dataset.id)); renderList(); }
+  if (id === 'sel-del') deleteNotes([...picked].map(k => ({ s: k[0], id: k.slice(2) })));
+});
+async function deleteNotes(items) {
+  items = items.filter(x => get(x.s, x.id));
+  if (!items.length) return;
+  const label = items.length === 1 ? `${SP[items[0].s]} ${items[0].id}` : `${items.length}件のノート`;
+  if (!confirm(`${label} を削除しますか？\n（ファイルは .trash に移ります。索引の行からもIDを外します）`)) return;
+  await flush();
+  const st = await api.deleteNotes(items);
+  ({ notes, topics } = st);
+  readings = st.readings || readings;
+  const gone = new Set(items.map(keyOf));
+  const cp = cur;
+  tabs = tabs.filter(t => !(t.k === 'note' && gone.has(keyOf(t))));
+  active = cp ? tabs.indexOf(cp) : -1;
+  if (active < 0) active = Math.min(Math.max(active, 0), tabs.length - 1);
+  selMode = false; picked.clear();
+  show(active);
+}

@@ -148,6 +148,17 @@ function kanaRow(reading) {
 const rowIdx = r => { const i = ROWS.indexOf(kanaRow(r)); return i < 0 ? 99 : i; }; // 英数・他は最後
 const byReading = rd => (a, b) => { const x = rd(a) || a, y = rd(b) || b; return rowIdx(x) - rowIdx(y) || x.localeCompare(y, 'ja'); };
 
+// トピックIndex の欄から ID を外す（ID が無くなった行は消す）
+function removeFromTopic(text, ids) {
+  const set = new Set(ids);
+  return (text || '').split('\n').flatMap(line => {
+    const r = topicLine(line);
+    if (r.star !== undefined || !r.ids.some(x => set.has(x.id))) return [line];
+    const keep = r.ids.filter(x => !set.has(x.id));
+    return keep.length ? [r.kw + ' ' + keep.map(x => x.id).join(' ')] : [];
+  }).join('\n');
+}
+
 const kwAnchor = k => { let h = 5381; for (const c of k) h = (h * 33 + c.codePointAt(0)) >>> 0; return 'k-' + h.toString(36); };
 const fileName = name => name.replace(/[\\/:*?"<>|#%]/g, '_');
 const splitKw = s => (s || '').split(/[,、，]/).map(x => x.trim()).filter(Boolean);
@@ -159,5 +170,5 @@ const now = (d = new Date()) => {
 module.exports = {
   ID, isId, tok, cmpId, sibling, child, parentIn, root,
   tokens, anchorPos, selfTarget, bodyToMd, mdToBody,
-  topicLine, mergeTopic, addToTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
+  topicLine, mergeTopic, addToTopic, removeFromTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
 };

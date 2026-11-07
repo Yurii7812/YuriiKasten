@@ -55,8 +55,20 @@ test('保存フォルダ: 書き出しと読み直し', () => {
   assert.ok(!fs.existsSync(path.join(dir, 'topic/1a-PKM.md')));
   assert.doesNotMatch(r('digital/1a.md'), /トピックIndex/);
 
+  // 入口は1ノートに1つ
+  v.saveTopic({ name: 'A', entry: { s: 'd', id: '1' }, d: 'x 1 5', p: '' });
+  assert.strictEqual(v.saveTopic({ name: 'B', entry: { s: 'd', id: '1' }, d: '', p: '' }), false);
+  // ノートを消す（画像つきの紙も）→ .trash、索引の行からも外れる
+  const st2 = v.deleteNotes([{ s: 'd', id: '1' }, { s: 'p', id: '1' }]);
+  assert.ok(!fs.existsSync(path.join(dir, 'digital/1.md')) && !fs.existsSync(path.join(dir, 'paper/1.jpg')));
+  assert.strictEqual(fs.readdirSync(path.join(dir, '.trash')).length, 3);
+  assert.ok(!st2.notes.some(x => x.id === '1'));
+  assert.strictEqual(st2.topics.find(t => t.name === 'A').entry, null);
+  assert.strictEqual(st2.topics.find(t => t.name === 'A').d, 'x 5');
+  assert.doesNotMatch(r('Index.md'), /digital\/1\.md/);
+
   assert.ok(v.rename('d', '1a', '1b'));
   assert.ok(!fs.existsSync(path.join(dir, 'digital/1a.md')));
-  assert.match(r('digital/1.md'), /分岐 <a href="1b.md">1b<\/a>/);
+  assert.ok(fs.existsSync(path.join(dir, 'digital/1b.md')));
   fs.rmSync(dir, { recursive: true });
 });

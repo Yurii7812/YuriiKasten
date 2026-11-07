@@ -214,12 +214,27 @@ function openVault(vault) {
     },
     // oldName があれば名前の変更
     saveTopic(t, oldName) {
+      if (t.entry && [...topics.values()].some(o => o.name !== (oldName || t.name) && o.entry && o.entry.s === t.entry.s && o.entry.id === t.entry.id)) return false;
       if (oldName && oldName !== t.name) {
         topics.delete(oldName);
         if (topicPath(oldName) !== topicPath(t.name)) { if (fs.existsSync(abs(topicPath(oldName)))) fs.unlinkSync(abs(topicPath(oldName))); cache.delete(topicPath(oldName)); }
       }
       topics.set(t.name, { name: t.name, entry: t.entry || null, d: t.d || '', p: t.p || '' });
       rebuild(); return true;
+    },
+    // ノートを消す（ファイルは .trash へ）。入口だった索引は入口なしに、索引の行からも ID を外す
+    deleteNotes(items) {
+      for (const { s, id } of items) {
+        const n = get(s, id); if (!n) continue;
+        removeFile(notePath(s, id));
+        if (n.img) removeFile(`${DIR[s]}/${n.img}`);
+        notes.delete(key(s, id));
+      }
+      for (const t of topics.values()) {
+        if (t.entry && items.some(x => x.s === t.entry.s && x.id === t.entry.id)) t.entry = null;
+        for (const sp of ['d', 'p']) t[sp] = L.removeFromTopic(t[sp], items.filter(x => x.s === sp).map(x => x.id));
+      }
+      rebuild(); return this.state();
     },
     deleteTopic(name) { topics.delete(name); removeFile(topicPath(name)); rebuild(); return true; }
   };

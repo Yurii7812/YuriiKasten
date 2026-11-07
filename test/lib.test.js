@@ -63,3 +63,7 @@ test('読み', () => {
   const rd = { 漢字: 'かんじ', 英雄伝: 'えいゆうでん' };
   assert.deepStrictEqual(['PKM', '漢字', '英雄伝'].sort(L.byReading(k => rd[k])), ['英雄伝', '漢字', 'PKM']);
 });
+
+test('トピックIndex から ID を外す', () => {
+  assert.strictEqual(L.removeFromTopic('英雄伝 1 2\n漢字 1\n★ 3-x', ['1']), '英雄伝 2\n★ 3-x');
+});

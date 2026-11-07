@@ -18,6 +18,10 @@ aside{width:290px;display:flex;flex-direction:column;border-right:1px solid var(
 #tabs button{flex:1;border:0;border-radius:0;padding:7px 0;color:var(--sub)}
 #tabs button.on{color:var(--acc);box-shadow:inset 0 -2px var(--acc);font-weight:600}
 #list{flex:1;overflow:auto}
+#selbar{display:flex;gap:6px;align-items:center;padding:5px 10px;border-bottom:1px solid var(--line);font-size:13px;color:var(--sub)}
+#selbar button{font-size:13px;padding:1px 9px}
+button:disabled{opacity:.4;cursor:default}
+.ck{margin-right:7px;vertical-align:middle}
 #list h4{margin:10px 12px 2px;font-size:12px;color:var(--sub);font-weight:600}
 .item,.ix{padding:5px 12px;border-bottom:1px solid #f2f2f2;cursor:pointer}
 .item{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -95,6 +99,7 @@ button.danger{color:var(--red);border-color:#efc9c4}
 <main>
   <aside>
     <div id="tabs"><button data-tab="d">デジタル</button><button data-tab="p">紙</button><button data-tab="i">Index</button></div>
+    <div id="selbar"></div>
     <div id="list"></div>
   </aside>
   <section id="right"><div id="tabbar"></div><div id="pane"></div></section>
