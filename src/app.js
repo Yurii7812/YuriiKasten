@@ -29,9 +29,29 @@ const allKeywords = () => [...new Set(notes.flatMap(n => n.keywords))].sort(L.by
 const yomi = k => readings[k] && readings[k] !== k ? `<small class="yomi">${esc(readings[k])}</small>` : '';
 const kwTopic = k => topics.find(t => t.keyword === k);
 // そのキーワードのトピックIndex があれば赤い点（押すと開く）。IDが2つ以上でまだ無ければ「作る」
+let ixEdit = false;   // グローバルIndexの編集モード（赤い点を付けるIDを選ぶ）
+const pickChips = (k, v, t) => { const dd = t && dotOf(t, k); return [['d', v.d], ['p', v.p]].map(([s, l]) => l.map(id => { const on = dd && dd.s === s && dd.id === id; return `<span class="chip ${s} pick${on ? ' on' : ''}" data-pk="${esc(k)}" data-ps="${s}" data-pid="${esc(id)}" title="${on ? '点を外す' : 'ここに赤い点を付ける'}">${on ? '<i class="dotabove">●</i>' : ''}${s === 'p' ? '紙' : ''}${esc(id)}</span>`; }).join('')).join(''); };
+// 赤い点を k の ID（s, id）に付ける。そのIDにトピックIndexがあればそれを、無ければ新しく作る
+async function pickDot(k, s, id) {
+  const cur0 = kwTopic(k), dd = cur0 && dotOf(cur0, k);
+  const strip = t => { for (const sp of ['d', 'p']) t[sp] = (t[sp] || '').split('\n').map(l => { const r = L.topicLine(l); return r.star === undefined && r.kw === k ? l.replace(/(^|\s)[*＊](?=\S)/g, '$1') : l; }).join('\n'); };
+  if (cur0 && dd && dd.s === s && dd.id === id) { cur0.keyword = ''; strip(cur0); saveTopic(cur0); return renderList(); }       // 点を外す
+  let t = topicOf(s, id);
+  if (!t) {
+    if (!get(s, id)) return alert('そのノートがまだありません');
+    if (!confirm(`「${k}」の赤い点を ${SP[s]} ${id} に付けるため、トピックIndex「${id}-${k}」を新しく作ります。よろしいですか？`)) return;
+    const v = globalIndex().find(x => x[0] === k)[1];
+    let name = `${id}-${k}`; while (topics.some(x => x.name === name)) name += '_';
+    t = { name, entry: { s, id }, keyword: '', d: v.d.length ? k + ' ' + v.d.join(' ') : '', p: v.p.length ? k + ' ' + v.p.join(' ') : '' };
+    topics.push(t);
+  } else if (t.keyword && t.keyword !== k && !confirm(`${SP[s]} ${id} のトピックIndex「${stripId(t.name)}」は、いま「${t.keyword}」の点です。「${k}」に変えますか？`)) return;
+  if (cur0 && cur0 !== t) { cur0.keyword = ''; strip(cur0); saveTopic(cur0); }
+  t.keyword = k; strip(t); await api.saveTopic(t); renderList();
+}
 const ixRow = ([k, v]) => {
   const t = kwTopic(k), n = v.d.length + v.p.length;
   const mark = '';
+  if (ixEdit) return `<div class="ix"><b>${esc(k)}</b>${yomi(k)} ${pickChips(k, v, t)}</div>`;
   return `<div class="ix">${mark}<b>${esc(k)}</b>${yomi(k)} ${chips(v, t)}</div>`;
 };
 // 入口のノートに、そのキーワードを付ける（Index の ID の並びに入り、そこに赤い点が付く）
@@ -244,6 +264,7 @@ function renderList() {
     if (dh.length) out.push('<h4>日記</h4>', ...dh.map(d => `<div class="item note" data-diary="${d.date}"><div class="nrow"><div class="nt">${mk(d.title || d.date, q)}</div><div class="ns">日記 · ${d.date}</div>${snippet(d.body, q) ? `<div class="sn">${snippet(d.body, q)}</div>` : ''}</div></div>`));
     if (!out.length) out.push('<div class="none">見つかりません</div>');
   } else if (tab === 'i') {
+    out.push(`<div class="ixbar"><span class="sub">${ixEdit ? '赤い点を付けるIDを選びます（点のIDをもう一度押すと外れます）' : ''}</span><span class="grow"></span><button class="mini${ixEdit ? ' p' : ''}" id="ix-edit">${ixEdit ? '完了' : '編集'}</button></div>`);
     let row = null;
     for (const e of globalIndex()) {
       const r = L.kanaRow(readings[e[0]] || e[0]);
@@ -293,7 +314,10 @@ document.addEventListener('click', onOpenClick);
 $('#rail').onclick = e => { const b = e.target.closest('button'); if (b && b.dataset.mode === 'graph') return openGraph(); if (b) { mode = b.dataset.mode; $('#q').value = ''; renderList(); } };
 document.addEventListener('auxclick', e => { if (e.button === 1 && !e.target.closest('#tabbar')) { bgOpen = true; try { onOpenClick(e); } finally { setTimeout(() => { bgOpen = false; renderTabs(); }, 0); } } });
 // 一覧からトピックIndexの欄へドラッグすると ID が入る
-$('#list').addEventListener('click', e => { const b = e.target.closest('.mk-topic'); if (b) topicNewDialog(b.dataset.kw); });
+$('#list').addEventListener('click', e => {
+  if (e.target.closest('#ix-edit')) { ixEdit = !ixEdit; return renderList(); }
+  const c = e.target.closest('.chip.pick'); if (c) pickDot(c.dataset.pk, c.dataset.ps, c.dataset.pid);
+});
 $('#list').addEventListener('dragstart', e => { const n = e.target.closest('[data-id]'); if (n) e.dataTransfer.setData('text/plain', n.dataset.id); });
 $('#tabs').onclick = e => { const b = e.target.closest('button'); if (b) { tab = b.dataset.tab; $('#q').value = ''; renderList(); } };
 $('#q').oninput = renderList;
