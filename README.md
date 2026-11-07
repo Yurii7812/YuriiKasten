@@ -3,15 +3,13 @@
 紙のPKM（ツェッテルカステン）をデジタルでやるアプリ。ノート・日記・チャットメモ・なりきりチャット・キャンバスを、1つのフォルダに平らに保存します。
 方法: https://yurii7812.github.io/homepage/ja/paper-pkm/
 
-## インストール（ボタン一つ）
-**https://github.com/Yurii7812/YuriiKasten/releases/latest** から、お使いの OS のファイルをダウンロードして開くだけ。
-| OS | ファイル | インストール |
-|---|---|---|
-| Windows | `YuriiKasten-…-win-x64.exe` | ダブルクリック。**デスクトップとスタートメニューにショートカット**ができ、そのまま開く |
-| Mac | `YuriiKasten-…-mac-arm64.dmg`（M1 以降）/ `-mac-x64.dmg`（Intel） | 開いて、YuriiKasten を Applications へ。デスクトップのショートカットは、アプリの「⋯」→「デスクトップにショートカットを作る」 |
-| Linux | `YuriiKasten-…-linux-x86_64.AppImage` | `chmod +x` して開く。アプリの「⋯」→「ショートカットを作る」で、**デスクトップ・アプリ一覧のショートカット**と、端末の `YuriiKasten` コマンドができる（`./YuriiKasten-….AppImage --install` でも同じ） |
+## インストール（コマンド1行）
+| OS | ターミナルに貼る |
+|---|---|
+| **Linux / macOS** | `curl -fsSL https://raw.githubusercontent.com/Yurii7812/YuriiKasten/main/install/bootstrap.sh \| sh` |
+| **Windows**（PowerShell） | `irm https://raw.githubusercontent.com/Yurii7812/YuriiKasten/main/install/bootstrap.ps1 \| iex` |
 
-署名はしていないので、初回に「提供元を確認できません」と出ることがある（Windows: 「詳細情報」→「実行」、Mac: アプリを右クリック →「開く」）。
+最新のリリースから本体を取ってきて入れ、ショートカットも作ります。自分で作りたいときは `npm run dist:linux`（`release/` にできます）。
 
 ## 更新（自動では何もしません）
 確認も更新も、**自分で押したときだけ**。
