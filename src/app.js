@@ -728,12 +728,11 @@ function openTopic(name, tmode = 'view', keep) {
       <div class="row"><button data-act="tsave" class="p">決定</button><button data-act="tcancel">やめる</button>
         <span class="grow"></span><button data-act="tdel" class="danger">このトピックIndexを削除</button></div></div>`;
   else body = `<table class="ti">${rows.map(r => `<tr><td>${esc(r.kw)}</td><td>${chips(r)}</td></tr>`).join('') || '<tr><td class="none">まだ空です。「編集」で書きます</td></tr>'}</table>
-      ${stars.map(x => `<div class="star">★ ${tchip(x)}</div>`).join('')}
-      ${(() => { // 逆方向: このトピックIndexの入口を載せている Index・このIndexを星で案内している Index（引用できるのは Index だけ）
-        const back = topics.filter(o => o !== t && (L.mergeTopic(o).stars.includes(t.name) || (e && L.mergeTopic(o).rows.some(r => r[e.s].includes(e.id))))).sort((x, y) => x.name.localeCompare(y.name, 'ja'));
-        return back.length ? `<div class="backidx"><div class="l">このIndexを載せている Index</div>${back.map(o => tchip(o.name)).join('')}</div>` : '';
-      })()}`;
+      ${stars.map(x => `<div class="star">★ ${tchip(x)}</div>`).join('')}`;
+  // 逆方向（上に出す）: このトピックIndexの入口を載せている Index・このIndexを + で案内している Index（引用できるのは Index だけ）
+  const back = topics.filter(o => o !== t && (L.mergeTopic(o).stars.includes(t.name) || (e && L.mergeTopic(o).rows.some(r => r[e.s].includes(e.id))))).sort((x, y) => x.name.localeCompare(y.name, 'ja'));
   $('#pane').innerHTML = `
+    ${back.length ? `<div class="backidx">↑ ${back.map(o => tchip(o.name)).join('')}</div>` : ''}
     <div class="row">
       <h2>${esc(stripId(name))}</h2>
       <span class="sub">入口</span>${e ? chip(e.s, e.id) : '<span class="sub">なし</span>'}
