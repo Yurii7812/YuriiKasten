@@ -213,11 +213,53 @@ label.rad{display:flex;gap:8px;align-items:center;font-size:14px}
 .cv-h.top{left:calc(50% - 6px);top:-7px}.cv-h.bottom{left:calc(50% - 6px);bottom:-7px}.cv-h.left{top:calc(50% - 6px);left:-7px}.cv-h.right{top:calc(50% - 6px);right:-7px}
 .cv-card:hover .cv-h,.cv-card:hover .cv-rs,.cv-card.sel .cv-h,.cv-card.sel .cv-rs{opacity:1}
 #cv-hint{position:absolute;left:10px;bottom:6px;font-size:12px;color:#aab;pointer-events:none}
+
+/* ===== 見やすさの調整: 文字を大きく・濃く、部品をはっきり ===== */
+:root{--sub:#6a6f7d;--line:#e1e3e9;--hl:#f0f2f7;--tint:#e6eeff}
+body{font-size:16px}
+#rail{width:54px;padding:12px 0;gap:6px}
+#rail button{width:42px;height:42px;font-size:23px;line-height:1;opacity:.55;filter:none;border-radius:10px;color:inherit}
+#rail button:hover{opacity:1;background:var(--hl)}#rail button.on{opacity:1;background:#e3e9fb}
+aside{width:280px}
+#tabs{gap:6px;padding:14px 12px 10px}
+#tabs button{font-size:14.5px;padding:5px 10px;border-radius:8px;color:#5d6270;background:none}
+#tabs button:hover{background:var(--hl)}#tabs button.on{background:#e3e9fb;color:#2338a8;font-weight:700;box-shadow:none}
+.item.note,.item.topicrow{padding:9px 16px}
+.nt{font-size:16px;line-height:1.4;color:#23262d}.ns{font-size:12.5px;color:#6a6f7d;margin-top:1px}
+.item.note.on{background:#e8e9ee;box-shadow:inset 3px 0 #3b5bdb}.item.note.on .nt{color:#23262d;font-weight:700}
+.item.topicrow .nt{color:#2c3f8f;font-weight:500}
+#selbar{font-size:13.5px;padding:4px 14px}#selbar button{font-size:13px}
+.top{padding:9px 14px;gap:4px}
+.top input{width:210px;font-size:15px;padding:7px 14px;background:#eef0f5}
+.top input:focus{width:300px}
+button.ic{width:36px;height:36px;border-radius:9px;color:#5d6270}
+button.ic .ico{width:21px;height:21px;stroke-width:1.9}
+button.ic:hover:not(:disabled){background:#e9ecf3;color:#23262d}
+button{font-size:14.5px;padding:5px 13px;border-color:#d6d9e1;color:#3d4150}
+#tabbar{padding:6px 12px 0}
+.tab{font-size:14.5px;padding:7px 12px 7px 14px;color:#5d6270}.tab.on{color:#23262d;font-weight:600}
+.tab small{color:#8a8f9c}
+.idline{font-size:14px;color:#5d6270;min-height:28px}
+.idline .cpid{width:24px;height:24px}.idline .cpid .ico{width:17px;height:17px}
+.idline input.idin{font-size:14.5px;color:#3d4150;width:96px;font-weight:600}
+.idline .dt{color:#8a8f9c;font-size:13px}.idline .gid{font-size:13.5px;font-weight:600}
+.ntitle{font-size:34px;margin:4px 0 12px}.ntitle::placeholder{color:#c3c7d1}
+.col{padding-top:34px}
+.ed .cm-editor{font-size:17px}.ed .cm-scroller{line-height:1.9}
+.mgn{width:290px;font-size:14px;color:#4d5160}
+.mgn .sec>.l{font-size:12px;color:#7b8090;font-weight:600;letter-spacing:.04em;margin-bottom:6px}
+.mgn .mk{font-size:15px;color:#2b2d33;padding:2px 0}
+.mgn .mt{font-size:15px;padding:2px 0}
+.mgn .bh{font-size:14.5px}.mgn .bh em{font-size:12px;color:#7b8090}
+.mgn .bl p{font-size:13.5px;color:#5d6270}
+.mgn .madd a{font-size:13.5px;color:#5d6270}.mgn .madd a:hover{color:var(--acc)}
+.mgn .hint{font-size:13.5px;color:#7b8090}
+.tab-new{font-size:18px}
 </style>
 </head>
 <body>
 <main>
-  <nav id="rail"><button data-mode="notes" title="ノート"><svg class="ico" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/></svg></button><button data-mode="diary" title="日記"><svg class="ico" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3v18"/></svg></button><button data-mode="chat" title="チャットメモ"><svg class="ico" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg></button><button data-mode="pindex" title="紙のIndex（並べ替え）"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="2"/><path d="M4 10h16"/></svg></button></nav>
+  <nav id="rail"><button data-mode="notes" title="ノート">📝</button><button data-mode="diary" title="日記">📔</button><button data-mode="chat" title="チャットメモ">💬</button><button data-mode="pindex" title="紙のIndex（並べ替え）">🗂</button></nav>
   <aside>
     <div id="tabs"><button data-tab="d">デジタル</button><button data-tab="p">紙</button><button data-tab="u">未整理</button><button data-tab="i">Index</button></div>
     <div id="selbar"></div>
