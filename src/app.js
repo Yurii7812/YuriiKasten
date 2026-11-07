@@ -57,7 +57,7 @@ function links(mode, space) {
       }
       for (const m of text.matchAll(new RegExp(L.MDLINK.source, 'g'))) { // 添付・外部リンク。押すと既定のアプリで開く
         const rel = m[0].slice(m[0].lastIndexOf('](') + 2, -1);
-        items.push([m.index, m.index + m[0].length, { t: 'file', s: space, rel }, true, 'file']);
+        items.push([m.index, m.index + m[0].length, { t: 'file', rel }, true, 'file']);
       }
       // カーソルが外にあるとき、リンクは名前だけを見せる（![ や ](パス) を隠す）。カーソルを置くと元の記述が出る
       const sel = view.state.selection.main, rs = [];
@@ -95,16 +95,15 @@ function links(mode, space) {
     }
   });
 }
-// ![名前](パス) の行の下に、画像をそのまま表示する
-const vaultUrl = sp => 'file://' + vault.split('/').map(encodeURIComponent).join('/') + '/' + (sp === 'p' ? 'paper' : 'digital') + '/';
+// ![名前](パス) の行の下に、画像をそのまま表示する（見るだけ。押しても開かない）
+const vaultUrl = () => 'file://' + vault.split('/').map(encodeURIComponent).join('/') + '/';
 class ImgWidget extends WidgetType {
-  constructor(rel, sp) { super(); this.rel = rel; this.sp = sp; }
-  eq(o) { return o.rel === this.rel && o.sp === this.sp; }
+  constructor(rel) { super(); this.rel = rel; }
+  eq(o) { return o.rel === this.rel; }
   toDOM() {
     const d = document.createElement('div'); d.className = 'cm-img';
-    const i = new Image(); i.title = '押すと開く';
-    try { i.src = /^https?:|^data:/.test(this.rel) ? this.rel : new URL(this.rel, vaultUrl(this.sp)).href; } catch { }
-    i.onclick = () => api.openPath(this.sp, this.rel);
+    const i = new Image();
+    try { i.src = /^https?:|^data:/.test(this.rel) ? this.rel : new URL(this.rel, vaultUrl()).href; } catch { }
     d.append(i); return d;
   }
   ignoreEvent() { return true; }
@@ -113,7 +112,7 @@ const images = space => {
   const build = state => {
     const b = new RangeSetBuilder();
     for (const m of state.doc.toString().matchAll(/!\[[^\]\n]*\]\(([^)\s]*)\)/g)) {
-      b.add(state.doc.lineAt(m.index + m[0].length).to, state.doc.lineAt(m.index + m[0].length).to, Decoration.widget({ widget: new ImgWidget(m[1], space), block: true, side: 1 }));
+      b.add(state.doc.lineAt(m.index + m[0].length).to, state.doc.lineAt(m.index + m[0].length).to, Decoration.widget({ widget: new ImgWidget(m[1]), block: true, side: 1 }));
     }
     return b.finish();
   };
@@ -134,7 +133,7 @@ function jump(view, pos) {
 }
 async function follow(l, view) {
   if (l.t === 'self') { const p = L.selfTarget(view.state.doc.toString(), l.n, l.bare); if (p >= 0) jump(view, p); return; }
-  if (l.t === 'file') return api.openPath(l.s, l.rel);
+  if (l.t === 'file') return api.openPath(l.rel);
   if (l.t === 'topic') { if (topics.find(t => t.name === l.name)) openTopic(l.name); return; }
   if (get(l.s, l.id)) return openNote(l.s, l.id, l.n);
   if (confirm(`${SP[l.s]} ${l.id} はまだありません。作りますか？`)) create(l.s, l.id);
@@ -660,7 +659,7 @@ async function deleteNotes(items) {
   show(active);
 }
 
-// ===== 添付（ファイルは digital/files/<ID>/ にコピーし、本文のカーソル位置にリンクを入れる）=====
+// ===== 添付（ファイルは保存フォルダにそのままコピーし、本文のカーソル位置にリンクを入れる）=====
 // 画像は ![名前](パス)（本文の中に表示される）、ほかは [名前](パス)（押すと既定のアプリで開く）
 const PIC = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 const encRel = n => encodeURIComponent(n).replace(/[()]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
@@ -668,11 +667,11 @@ async function attach(note, files) {
   const list = [];
   for (const f of files) list.push({ name: f.name || 'image.png', bytes: await f.arrayBuffer() });
   if (!list.length) return;
-  const names = await api.addFiles(note.s, note.id, list);
+  const names = await api.addFiles(list);
   const view = lastView;
   if (!view || !view.dom.isConnected || !cur || cur.k !== 'note' || cur.id !== note.id || cur.s !== note.s) return;
   const head = view.state.selection.main.head, at = view.state.doc.lineAt(head);
-  const md = (head === at.from ? '' : '\n') + names.map(n => `${PIC.test(n) ? '!' : ''}[${n.replace(/[\[\]]/g, '')}](files/${encRel(note.id)}/${encRel(n)})`).join('\n') + '\n';
+  const md = (head === at.from ? '' : '\n') + names.map(n => `${PIC.test(n) ? '!' : ''}[${n.replace(/[\[\]]/g, '')}](${encRel(n)})`).join('\n') + '\n';
   view.dispatch({ changes: { from: head, insert: md }, selection: { anchor: head + md.length } }); view.focus();
 }
 const curNote = () => cur && cur.k === 'note' ? get(cur.s, cur.id) : null;

@@ -1,17 +1,19 @@
-// 保存フォルダの読み書き。Brave の Markdown Viewer でもたどれる .md を書き出す
-//   Index.md            … グローバルIndex（キーワード → ID）
-//   デジタル.md / 紙.md  … 先頭の ID だけの一覧
-//   digital/<ID>.md, paper/<ID>.md(+<ID>.jpg), topic/<名前>.md
+// 保存フォルダの読み書き。全部を1つのフォルダに平らに置く（サブフォルダは .trash だけ）
+//   D_<ID>.md          デジタルのノート
+//   P_<ID>.md          紙のノート（スキャン画像は P_<ID>.jpg）
+//   T_<名前>.md        トピックIndex
+//   Index.md / デジタル.md / 紙.md   グローバルIndex と、先頭のIDだけの一覧
+//   <名前>             添付（元の名前のまま。上の名前とぶつかるときだけ F_ を付ける）
 // ノートの下に 前・次・上・分岐・トピックIndex のリンクがあるので、リンクだけで全部に届く
+// .md は Brave の Markdown Viewer でも開ける（リンクはすべて同じフォルダの中）
 const fs = require('fs');
 const path = require('path');
 const L = require('./lib');
 
-const DIR = { d: 'digital', p: 'paper' };
+const PRE = { d: 'D_', p: 'P_' };
 const LIST = { d: 'デジタル.md', p: '紙.md' };
 const SP = { d: 'デジタル', p: '紙' };
 const IMG = ['.jpg', '.jpeg', '.png', '.webp'];
-const PICS = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i; // 添付の中で画像として見せるもの
 const validId = s => L.isId(s) && !/^\d{8,}$/.test(s); // 日時名のファイルは除外
 const enc = s => encodeURIComponent(s);
 const esc = s => String(s).replace(/([\\`*_[\]<>|#])/g, '\\$1'); // Markdown の中
@@ -22,74 +24,124 @@ const meta = (text, tag) => { const m = text.match(new RegExp(`^<!-- ${tag} (.*)
 const BODY = '<!-- body -->\n', NAV = '\n<!-- nav -->';
 const SUB = 'style="color:#888;font-size:.9em"';
 const sep = '　｜　';
+const MARK = '.pkm-layout'; // 平らな置き方になったことの印（昔の置き方を二度読まないため）
+
+// 添付の名前。D_ P_ T_ で始まる名前や、Index などとぶつかるときは F_ を付け、同名があれば -1, -2 …
+const RESERVED = /^(D_|P_|T_)|^(Index|デジタル|紙)\.md$|^\./;
+function uniqueName(dir, name) {
+  let base = path.basename(name).replace(/[\\/:*?"<>|]/g, '_') || 'file';
+  if (RESERVED.test(base)) base = 'F_' + base.replace(/^\.+/, '');
+  const ext = path.extname(base), stem = path.basename(base, ext);
+  let f = base, i = 0;
+  while (fs.existsSync(path.join(dir, f))) f = `${stem}-${++i}${ext}`;
+  return f;
+}
+const encRel = n => encodeURIComponent(n).replace(/[()]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+
+// ===== 昔の置き方を平らに移す =====
+// v1: 直下に <ID>.md / <ID>.jpg（frontmatter つき）  v2: digital/ paper/ topic/ files/
+function flatten(vault) {
+  const p = (...x) => path.join(vault, ...x);
+  const move = (from, to) => { if (fs.existsSync(to)) to = p(uniqueName(vault, path.basename(to))); fs.renameSync(from, to); return path.basename(to); };
+  const linkMap = { d: {}, p: {} };
+  // v2 のフォルダ
+  for (const [s, dir] of [['d', 'digital'], ['p', 'paper']]) {
+    if (!fs.existsSync(p(dir))) continue;
+    for (const f of fs.readdirSync(p(dir))) {
+      const full = p(dir, f); if (fs.statSync(full).isDirectory()) continue;
+      const e = path.extname(f).toLowerCase(), id = path.basename(f, e);
+      if (validId(id) && (e === '.md' || IMG.includes(e))) move(full, p(PRE[s] + id + e));
+      else move(full, p(f.endsWith('.old') ? PRE[s] + f : f)); // 昔の読み捨て（.old）など
+    }
+    const files = p(dir, 'files');
+    if (fs.existsSync(files)) {
+      for (const f of fs.readdirSync(files)) {
+        const full = path.join(files, f);
+        if (fs.statSync(full).isDirectory()) { // files/<ID>/名前
+          for (const g of fs.readdirSync(full)) linkMap[s][`files/${encRel(f)}/${encRel(g)}`] = encRel(move(path.join(full, g), p(uniqueName(vault, g))));
+          try { fs.rmdirSync(full); } catch { }
+        } else linkMap[s][`files/${encRel(f)}`] = encRel(move(full, p(uniqueName(vault, f))));
+      }
+      try { fs.rmdirSync(files); } catch { }
+    }
+    try { fs.rmdirSync(p(dir)); } catch { }
+  }
+  if (fs.existsSync(p('topic'))) {
+    for (const f of fs.readdirSync(p('topic'))) move(p('topic', f), p(f.endsWith('.md') ? 'T_' + f : f));
+    try { fs.rmdirSync(p('topic')); } catch { }
+  }
+  // 本文の添付リンクを書き換える
+  for (const s of ['d', 'p']) {
+    if (!Object.keys(linkMap[s]).length) continue;
+    for (const f of fs.readdirSync(vault)) {
+      if (!f.startsWith(PRE[s]) || !f.endsWith('.md')) continue;
+      const text = fs.readFileSync(p(f), 'utf8'); let out = text;
+      for (const [x, y] of Object.entries(linkMap[s])) out = out.split(`](${x})`).join(`](${y})`);
+      if (out !== text) fs.writeFileSync(p(f), out);
+    }
+  }
+  // v1: 直下の <ID>.md / <ID>.jpg
+  const legacy = [];
+  for (const f of fs.readdirSync(vault)) {
+    const e = path.extname(f).toLowerCase(), id = path.basename(f, e);
+    if (validId(id) && (e === '.md' || IMG.includes(e)) && fs.statSync(p(f)).isFile()) legacy.push([f, e, id]);
+  }
+  for (const [f, e, id] of legacy) {
+    const hasImg = IMG.some(x => fs.existsSync(p(id + x)));
+    const s = hasImg ? 'p' : 'd';
+    if (e !== '.md') { move(p(f), p(PRE.p + id + e)); continue; }
+    const text = fs.readFileSync(p(f), 'utf8');
+    const m = text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/), fm = {};
+    if (m) m[1].split('\n').forEach(l => { const i = l.indexOf(':'); if (i > 0) fm[l.slice(0, i).trim()] = l.slice(i + 1).trim(); });
+    const date = (fm.date || '').match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+    const created = s === 'd' ? (date ? `${date[1]}-${date[2].padStart(2, '0')}-${date[3].padStart(2, '0')} 00:00` : L.now(fs.statSync(p(f)).mtime)) : '';
+    const body = (m ? m[2] : text).replace(/\n$/, '');
+    fs.writeFileSync(p(PRE[s] + id + '.md'), `<!-- pkm ${J(s === 'd' ? { created, keywords: L.splitKw(fm.keywords) } : { keywords: L.splitKw(fm.keywords) })} -->\n# ${id}\n\n${BODY}${body}\n${NAV}\n`);
+    fs.renameSync(p(f), p(f + '.old'));
+  }
+}
 
 function openVault(vault) {
   const notes = new Map(), topics = new Map(), cache = new Map();
   let readings = {}; // キーワード → 読み（Index の並び）
   const key = (s, id) => s + ':' + id;
   const get = (s, id) => notes.get(key(s, id));
-  const abs = p => path.join(vault, p);
-  const notePath = (s, id) => `${DIR[s]}/${id}.md`;
-  const topicPath = name => `topic/${L.fileName(name)}.md`;
-  const topicHref = (name, up) => up + 'topic/' + enc(L.fileName(name)) + '.md';
+  const abs = f => path.join(vault, f);
+  const noteFile = (s, id) => `${PRE[s]}${id}.md`;
+  const topicFile = name => `T_${L.fileName(name)}.md`;
+  const topicHref = name => enc(topicFile(name));
+  const noteHref = (s, id) => enc(noteFile(s, id));
 
   // ===== 読み込み =====
-  for (const d of Object.values(DIR).concat('topic')) fs.mkdirSync(abs(d), { recursive: true });
-  migrate();
-  for (const s of ['d', 'p']) {
-    for (const f of fs.readdirSync(abs(DIR[s]))) {
-      const e = path.extname(f).toLowerCase(), id = path.basename(f, path.extname(f));
+  fs.mkdirSync(vault, { recursive: true });
+  if (!fs.existsSync(abs(MARK))) { flatten(vault); fs.writeFileSync(abs(MARK), 'flat1\n'); }
+  for (const f of fs.readdirSync(vault)) {
+    const m = f.match(/^([DP])_(.+?)(\.[^.]+)$/);
+    if (m) {
+      const s = m[1].toLowerCase(), id = m[2], e = m[3].toLowerCase();
       if (!validId(id)) continue;
       const n = get(s, id) || { s, id, created: '', keywords: [], body: '', img: null };
       notes.set(key(s, id), n);
       if (e === '.md') {
-        const text = fs.readFileSync(abs(`${DIR[s]}/${f}`), 'utf8'); cache.set(`${DIR[s]}/${f}`, text);
-        const m = meta(text, 'pkm') || {};
-        n.created = m.created || n.created; n.keywords = m.keywords || [];
+        const text = fs.readFileSync(abs(f), 'utf8'); cache.set(f, text);
+        const md = meta(text, 'pkm') || {};
+        n.created = md.created || n.created; n.keywords = md.keywords || [];
         const i = text.indexOf(BODY), j = text.indexOf(NAV);
         n.body = L.mdToBody(i >= 0 ? text.slice(i + BODY.length, j > i ? j : undefined) : text);
       } else if (IMG.includes(e)) n.img = f;
+    } else if (/^T_.+\.md$/.test(f)) {
+      const text = fs.readFileSync(abs(f), 'utf8'); cache.set(f, text);
+      const t = meta(text, 'pkm-topic');
+      if (t && t.name) topics.set(t.name, { name: t.name, entry: t.entry || (t.anchors || [])[0] || null, keyword: t.keyword || '', d: t.d || '', p: t.p || '' });
     }
   }
-  const filesDir = (s, id) => `${DIR[s]}/files/${id}`;
-  for (const d of Object.values(DIR)) { // ノートが無くても添付フォルダがあれば、ノートとして拾う
-    try { for (const id of fs.readdirSync(abs(`${d}/files`))) if (validId(id)) { const sp = d === DIR.d ? 'd' : 'p'; if (!get(sp, id)) notes.set(key(sp, id), { s: sp, id, created: '', keywords: [], body: '', img: null }); } } catch { }
-  }
   for (const n of notes.values()) if (n.s === 'd' && !n.created) {
-    const p = abs(notePath('d', n.id));
-    n.created = L.now(fs.existsSync(p) ? fs.statSync(p).mtime : new Date());
+    const f = abs(noteFile('d', n.id));
+    n.created = L.now(fs.existsSync(f) ? fs.statSync(f).mtime : new Date());
   }
-  for (const f of fs.readdirSync(abs('topic'))) {
-    if (!f.endsWith('.md')) continue;
-    const text = fs.readFileSync(abs('topic/' + f), 'utf8'); cache.set('topic/' + f, text);
-    const t = meta(text, 'pkm-topic');
-    if (t && t.name) topics.set(t.name, { name: t.name, entry: t.entry || (t.anchors || [])[0] || null, keyword: t.keyword || '', d: t.d || '', p: t.p || '' });
-  }
-
   if (fs.existsSync(abs('Index.md'))) {
     const text = fs.readFileSync(abs('Index.md'), 'utf8'); cache.set('Index.md', text);
     readings = (meta(text, 'pkm-index') || {}).readings || {};
-  }
-
-  // 前の版（フォルダ直下に <ID>.md / <ID>.jpg）を移す
-  function migrate() {
-    for (const f of fs.readdirSync(vault)) {
-      const e = path.extname(f).toLowerCase(), id = path.basename(f, path.extname(f));
-      if (!validId(id) || !(e === '.md' || IMG.includes(e))) continue;
-      const hasImg = IMG.some(x => fs.existsSync(abs(id + x)));
-      const s = hasImg ? 'p' : 'd';
-      if (e === '.md') {
-        const text = fs.readFileSync(abs(f), 'utf8');
-        const m = text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/), fm = {};
-        if (m) m[1].split('\n').forEach(l => { const i = l.indexOf(':'); if (i > 0) fm[l.slice(0, i).trim()] = l.slice(i + 1).trim(); });
-        const date = (fm.date || '').match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
-        notes.set(key(s, id), {
-          s, id, keywords: L.splitKw(fm.keywords), body: (m ? m[2] : text).replace(/\n$/, ''), img: null,
-          created: s === 'd' ? (date ? `${date[1]}-${date[2].padStart(2, '0')}-${date[3].padStart(2, '0')} 00:00` : L.now(fs.statSync(abs(f)).mtime)) : ''
-        });
-        fs.renameSync(abs(f), abs(`${DIR[s]}/${f}.old`));
-      } else fs.renameSync(abs(f), abs(`${DIR.p}/${f}`));
-    }
   }
 
   // ===== 書き出し =====
@@ -100,21 +152,21 @@ function openVault(vault) {
   function noteMd(n) {
     const list = ids(n.s), has = x => !!get(n.s, x), i = list.indexOf(n.id);
     const parent = L.parentIn(n.id, has), kids = list.filter(x => L.parentIn(x, has) === n.id);
-    const go = x => `${enc(x)}.md`, t = topicOf(n.s, n.id);
-    const sub = [n.s === 'd' && h(n.created), n.keywords.length && '索引 ' + n.keywords.map(k => a(`../Index.md#${L.kwAnchor(k)}`, h(k))).join('・')].filter(Boolean).join('　');
+    const go = x => noteHref(n.s, x), t = topicOf(n.s, n.id);
+    const sub = [n.s === 'd' && h(n.created), n.keywords.length && '索引 ' + n.keywords.map(k => a(`Index.md#${L.kwAnchor(k)}`, h(k))).join('・')].filter(Boolean).join('　');
     const nav1 = [
       i > 0 && a(go(list[i - 1]), '← ' + list[i - 1]),
       parent && a(go(parent), '↑ ' + parent),
       kids.length && '分岐 ' + kids.map(k => a(go(k), k)).join(' '),
       i < list.length - 1 && a(go(list[i + 1]), list[i + 1] + ' →')
     ].filter(Boolean).join(sep);
-    const nav2 = [t && a(topicHref(t.name, '../'), 'トピックIndex ' + h(t.name)), a('../Index.md', 'Index'), a('../' + enc(LIST[n.s]), SP[n.s] + '一覧')].filter(Boolean).join(sep);
+    const nav2 = [t && a(topicHref(t.name), 'トピックIndex ' + h(t.name)), a('Index.md', 'Index'), a(enc(LIST[n.s]), SP[n.s] + '一覧')].filter(Boolean).join(sep);
     return [
       `<!-- pkm ${J(n.s === 'd' ? { created: n.created, keywords: n.keywords } : { keywords: n.keywords })} -->`,
       `# ${n.s === 'p' ? '紙 ' : ''}${n.id}`, '',
       sub ? `<p ${SUB}>${sub}</p>\n` : null,
       n.img ? `![${n.id}](${enc(n.img)})\n` : null,
-      BODY + L.bodyToMd(n.body, x => enc(x) + '.md') + '\n' + NAV,
+      BODY + L.bodyToMd(n.body, x => noteHref(n.s, x)) + '\n' + NAV,
       '<hr>', '', `<p ${SUB}>${nav1 ? nav1 + '<br>' : ''}${nav2}</p>`, ''
     ].filter(x => x !== null).join('\n');
   }
@@ -124,7 +176,7 @@ function openVault(vault) {
     const has = x => !!get(s, x), o = s === 'd' ? 'p' : 'd';
     const roots = ids(s).filter(id => !L.parentIn(id, has));
     return [`# ${SP[s]}`, '', `<p ${SUB}>${a('Index.md', 'Index')}${sep}${a(enc(LIST[o]), SP[o] + '一覧')}</p>`, '',
-      roots.map(id => `[${id}](${DIR[s]}/${enc(id)}.md)`).join('　') || '（まだありません）', ''].join('\n');
+      roots.map(id => `[${id}](${noteHref(s, id)})`).join('　') || '（まだありません）', ''].join('\n');
   }
 
   function globalIndex() {
@@ -136,14 +188,14 @@ function openVault(vault) {
     const rd = k => readings[k];
     return [...m].sort((x, y) => L.byReading(rd)(x[0], y[0]));
   }
-  const idLinks = (s, list, up) => list.slice().sort(L.cmpId).map(x => `[${label(s, x)}](${up}${DIR[s]}/${enc(x)}.md)`).join(' ');
+  const idLinks = (s, list) => list.slice().sort(L.cmpId).map(x => `[${label(s, x)}](${noteHref(s, x)})`).join(' ');
   // k のトピックIndex があれば、その入口のIDの真上に赤い点（Index.md 用）
   const cell = (v, k) => {
     const t = k && [...topics.values()].find(x => x.keyword === k && x.entry);
     const one = (sp, x) => {
-      const link = `<a href="${DIR[sp]}/${enc(x)}.md">${label(sp, x)}</a>`;
+      const link = `<a href="${noteHref(sp, x)}">${label(sp, x)}</a>`;
       return t && t.entry.s === sp && t.entry.id === x
-        ? `<span style="display:inline-block;text-align:center;line-height:1.15"><a href="${topicHref(t.name, '')}" title="トピックIndex ${h(t.name)}" style="color:#c0392b;font-size:.7em;text-decoration:none">●</a><br>${link}</span>`
+        ? `<span style="display:inline-block;text-align:center;line-height:1.15"><a href="${topicHref(t.name)}" title="トピックIndex ${h(t.name)}" style="color:#c0392b;font-size:.7em;text-decoration:none">●</a><br>${link}</span>`
         : link;
     };
     return [['d', v.d], ['p', v.p]].flatMap(([sp, l]) => l.slice().sort(L.cmpId).map(x => one(sp, x))).join(' ');
@@ -173,32 +225,32 @@ function openVault(vault) {
     const { rows, stars } = L.mergeTopic(t), e = t.entry;
     const out = [
       `<!-- pkm-topic ${J(t)} -->`, `# ${esc(t.name)}`, '',
-      `<p ${SUB}>入口 ${e ? a(`../${DIR[e.s]}/${enc(e.id)}.md`, label(e.s, e.id)) : 'なし'}${t.keyword ? `　キーワード ${a(`../Index.md#${L.kwAnchor(t.keyword)}`, h(t.keyword))}` : ''}</p>`, ''
+      `<p ${SUB}>入口 ${e ? a(noteHref(e.s, e.id), label(e.s, e.id)) : 'なし'}${t.keyword ? `　キーワード ${a(`Index.md#${L.kwAnchor(t.keyword)}`, h(t.keyword))}` : ''}</p>`, ''
     ];
     if (rows.length) {
       out.push('| キーワード | ID |', '|---|---|');
-      for (const r of rows) out.push(`| ${esc(r.kw)} | ${[idLinks('d', r.d, '../'), idLinks('p', r.p, '../')].filter(Boolean).join(' ')} |`);
+      for (const r of rows) out.push(`| ${esc(r.kw)} | ${[idLinks('d', r.d), idLinks('p', r.p)].filter(Boolean).join(' ')} |`);
     }
-    if (stars.length) out.push('', ...stars.map(s => `★ [${esc(s)}](${enc(L.fileName(s))}.md)  `));
-    out.push('', '<hr>', '', `<p ${SUB}>${a('../Index.md', 'Index')}</p>`);
+    if (stars.length) out.push('', ...stars.map(s => `★ [${esc(s)}](${topicHref(s)})  `));
+    out.push('', '<hr>', '', `<p ${SUB}>${a('Index.md', 'Index')}</p>`);
     return out.join('\n') + '\n';
   }
 
   function rebuild() {
     const files = new Map([['Index.md', indexMd()], [LIST.d, listMd('d')], [LIST.p, listMd('p')]]);
-    for (const n of notes.values()) files.set(notePath(n.s, n.id), noteMd(n));
-    for (const t of topics.values()) files.set(topicPath(t.name), topicMd(t));
-    for (const [p, c] of files) if (cache.get(p) !== c) { fs.writeFileSync(abs(p), c); cache.set(p, c); }
+    for (const n of notes.values()) files.set(noteFile(n.s, n.id), noteMd(n));
+    for (const t of topics.values()) files.set(topicFile(t.name), topicMd(t));
+    for (const [f, c] of files) if (cache.get(f) !== c) { fs.writeFileSync(abs(f), c); cache.set(f, c); }
   }
-  function removeFile(p) { // 消すときはゴミ箱へ
-    if (!fs.existsSync(abs(p))) return;
+  function removeFile(f) { // 消すときはゴミ箱へ
+    if (!fs.existsSync(abs(f))) return;
     fs.mkdirSync(abs('.trash'), { recursive: true });
-    fs.renameSync(abs(p), abs(`.trash/${Date.now()}-${path.basename(p)}`));
-    cache.delete(p);
+    fs.renameSync(abs(f), abs(`.trash/${Date.now()}-${path.basename(f)}`));
+    cache.delete(f);
   }
 
   // ===== 画面とのやりとり =====
-  const url = n => n.img ? 'file://' + abs(`${DIR[n.s]}/${n.img}`).split('/').map(enc).join('/') + '?' + fs.statSync(abs(`${DIR[n.s]}/${n.img}`)).mtimeMs : null;
+  const url = n => n.img ? 'file://' + abs(n.img).split('/').map(enc).join('/') + '?' + fs.statSync(abs(n.img)).mtimeMs : null;
   const pub = n => ({ s: n.s, id: n.id, created: n.created, keywords: n.keywords, body: n.body, image: url(n) });
 
   rebuild();
@@ -215,52 +267,44 @@ function openVault(vault) {
       const n = get(s, from);
       if (!n || !validId(to) || get(s, to)) return false;
       notes.delete(key(s, from)); n.id = to; notes.set(key(s, to), n);
-      if (n.img) { const img = to + path.extname(n.img); fs.renameSync(abs(`${DIR[s]}/${n.img}`), abs(`${DIR[s]}/${img}`)); n.img = img; }
-      if (fs.existsSync(abs(filesDir(s, from)))) { fs.mkdirSync(abs(`${DIR[s]}/files`), { recursive: true }); fs.renameSync(abs(filesDir(s, from)), abs(filesDir(s, to))); }
-      if (fs.existsSync(abs(notePath(s, from)))) fs.unlinkSync(abs(notePath(s, from)));
-      cache.delete(notePath(s, from));
+      if (n.img) { const img = PRE[s] + to + path.extname(n.img); fs.renameSync(abs(n.img), abs(img)); n.img = img; }
+      if (fs.existsSync(abs(noteFile(s, from)))) fs.unlinkSync(abs(noteFile(s, from)));
+      cache.delete(noteFile(s, from));
       for (const t of topics.values()) if (t.entry && t.entry.s === s && t.entry.id === from) t.entry.id = to;
       rebuild(); return pub(n);
     },
     saveImage(s, id, buf) {
       const n = get(s, id) || { s, id, created: s === 'd' ? L.now() : '', keywords: [], body: '', img: null };
-      for (const e of IMG) { const p = abs(`${DIR[s]}/${id}${e}`); if (fs.existsSync(p)) fs.unlinkSync(p); }
-      n.img = id + '.jpg'; fs.writeFileSync(abs(`${DIR[s]}/${n.img}`), buf);
+      for (const e of IMG) { const f = abs(`${PRE[s]}${id}${e}`); if (fs.existsSync(f)) fs.unlinkSync(f); }
+      n.img = `${PRE[s]}${id}.jpg`; fs.writeFileSync(abs(n.img), buf);
       notes.set(key(s, id), n); rebuild(); return pub(n);
     },
-    // 添付をコピーする（同じ名前があれば -1, -2 …を付ける）。保存した名前を返す。リンクは本文に入れる（画面側）
-    addFiles(s, id, list) {
-      fs.mkdirSync(abs(filesDir(s, id)), { recursive: true });
-      const names = [];
-      for (const { name, bytes } of list) {
-        const base = path.basename(name).replace(/[\\/:*?"<>|]/g, '_') || 'file';
-        const ext = path.extname(base), stem = path.basename(base, ext);
-        let f = base, i = 0;
-        while (fs.existsSync(abs(`${filesDir(s, id)}/${f}`))) f = `${stem}-${++i}${ext}`;
-        fs.writeFileSync(abs(`${filesDir(s, id)}/${f}`), Buffer.from(bytes));
-        names.push(f);
-      }
-      return names;
+    // 添付をコピーする。保存した名前を返す。リンクは本文に入れる（画面側）
+    addFiles(list) {
+      return list.map(({ name, bytes }) => {
+        const f = uniqueName(vault, name);
+        fs.writeFileSync(abs(f), Buffer.from(bytes));
+        return f;
+      });
     },
     // oldName があれば名前の変更
     saveTopic(t, oldName) {
       if (t.entry && [...topics.values()].some(o => o.name !== (oldName || t.name) && o.entry && o.entry.s === t.entry.s && o.entry.id === t.entry.id)) return false;
       if (oldName && oldName !== t.name) {
         topics.delete(oldName);
-        if (topicPath(oldName) !== topicPath(t.name)) { if (fs.existsSync(abs(topicPath(oldName)))) fs.unlinkSync(abs(topicPath(oldName))); cache.delete(topicPath(oldName)); }
+        if (topicFile(oldName) !== topicFile(t.name)) { if (fs.existsSync(abs(topicFile(oldName)))) fs.unlinkSync(abs(topicFile(oldName))); cache.delete(topicFile(oldName)); }
       }
       topics.set(t.name, { name: t.name, entry: t.entry || null, keyword: t.keyword || '', d: t.d || '', p: t.p || '' });
       const en = t.keyword && t.entry && get(t.entry.s, t.entry.id); // 点を付けるIDは、そのキーワードの並びに入る
       if (en && !en.keywords.includes(t.keyword)) en.keywords.push(t.keyword);
       rebuild(); return true;
     },
-    // ノートを消す（ファイルは .trash へ）。入口だった索引は入口なしに、索引の行からも ID を外す
+    // ノートを消す（ファイルは .trash へ。添付は残す）。入口だった索引は入口なしに、索引の行からも ID を外す
     deleteNotes(items) {
       for (const { s, id } of items) {
         const n = get(s, id); if (!n) continue;
-        removeFile(notePath(s, id));
-        if (n.img) removeFile(`${DIR[s]}/${n.img}`);
-        if (fs.existsSync(abs(filesDir(s, id)))) removeFile(filesDir(s, id)); // 添付ごと .trash へ
+        removeFile(noteFile(s, id));
+        if (n.img) removeFile(n.img);
         notes.delete(key(s, id));
       }
       for (const t of topics.values()) {
@@ -269,7 +313,7 @@ function openVault(vault) {
       }
       rebuild(); return this.state();
     },
-    deleteTopic(name) { topics.delete(name); removeFile(topicPath(name)); rebuild(); return true; }
+    deleteTopic(name) { topics.delete(name); removeFile(topicFile(name)); rebuild(); return true; }
   };
 }
 
