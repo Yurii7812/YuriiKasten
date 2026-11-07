@@ -17,7 +17,14 @@ const topicOf = (s, id) => topics.find(t => t.entry && t.entry.s === s && t.entr
 const topicsWith = n => topics.map(t => ({ t, kws: L.mergeTopic(t).rows.filter(r => r[n.s].includes(n.id)).map(r => r.kw) })).filter(x => x.kws.length);
 const allKeywords = () => [...new Set(notes.flatMap(n => n.keywords))].sort(L.byReading(k => readings[k]));
 const yomi = k => readings[k] && readings[k] !== k ? `<small class="yomi">${esc(readings[k])}</small>` : '';
-const ixRow = ([k, v]) => `<div class="ix"><b>${esc(k)}</b>${yomi(k)} ${chips(v)}</div>`;
+const kwTopic = k => topics.find(t => t.keyword === k);
+// そのキーワードのトピックIndex があれば赤い点（押すと開く）。IDが2つ以上でまだ無ければ「作る」
+const ixRow = ([k, v]) => {
+  const t = kwTopic(k), n = v.d.length + v.p.length;
+  const mark = t ? `<span class="dot" data-topic="${esc(t.name)}" title="トピックIndex ${esc(t.name)}">●</span>`
+    : n >= 2 ? `<button class="mini mk-topic" data-kw="${esc(k)}" title="このキーワードのトピックIndexを作る">📑 作る</button>` : '';
+  return `<div class="ix">${mark}<b>${esc(k)}</b>${yomi(k)} ${chips(v)}</div>`;
+};
 
 // ===== 保存（少し待ってまとめて）=====
 const timers = {};
@@ -126,13 +133,14 @@ function renderList() {
     if (hit.length) out.push('<h4>ノート</h4>', ...hit.map(n => noteRow(n, true)));
     if (!out.length) out.push('<div class="none">見つかりません</div>');
   } else if (tab === 'i') {
+    out.push('<div class="ix"><button class="mini mk-topic" data-kw="">＋ トピックIndexを新しく作る</button></div>');
     let row = null;
     for (const e of globalIndex()) {
       const r = L.kanaRow(readings[e[0]] || e[0]);
       if (r !== row) { out.push(`<h4>${r}</h4>`); row = r; }
       out.push(ixRow(e));
     }
-    if (!out.length) out.push('<div class="none">ノートにキーワードを書くと、ここに並びます</div>');
+    if (out.length === 1) out.push('<div class="none">ノートにキーワードを書くと、ここに並びます</div>');
   } else {
     const list = notes.filter(n => n.s === tab).sort((a, b) => L.cmpId(a.id, b.id));
     for (const n of list) out.push(noteRow(n));
@@ -157,6 +165,7 @@ function onOpenClick(e) {
 document.addEventListener('click', onOpenClick);
 document.addEventListener('auxclick', e => { if (e.button === 1 && !e.target.closest('#tabbar')) onOpenClick(e); });
 // 一覧からトピックIndexの欄へドラッグすると ID が入る
+$('#list').addEventListener('click', e => { const b = e.target.closest('.mk-topic'); if (b) topicNewDialog(b.dataset.kw); });
 $('#list').addEventListener('dragstart', e => { const n = e.target.closest('[data-id]'); if (n) e.dataTransfer.setData('text/plain', n.dataset.id); });
 $('#tabs').onclick = e => { const b = e.target.closest('button'); if (b) { tab = b.dataset.tab; $('#q').value = ''; renderList(); } };
 $('#q').oninput = renderList;
@@ -367,6 +376,58 @@ function topicAddDialog(note) {
   };
   $('#modal').onkeydown = e => { if (e.key === 'Escape') close(); };
   draw(); $('#ta-q').focus();
+}
+// トピックIndexを単独で作る。入口は新しいノート（新しいID）か、既存のノート
+// キーワードを指定すると、そのキーワードのIDが最初から入り、Index に赤い点が付く（IDが2つ以上のときだけ）
+function topicNewDialog(kw = '') {
+  const rootFree = sp => { const r = notes.filter(n => n.s === sp && /^\d+$/.test(n.id)).map(n => +n.id); return free(sp, String((r.length ? Math.max(...r) : 0) + 1)); };
+  const idsOf = k => { const v = globalIndex().find(x => x[0] === k); return v ? v[1] : { d: [], p: [] }; };
+  $('#modal .box').innerHTML = `
+    <h3>トピックIndexを作る</h3>
+    <div class="sub">キーワード（任意）。同じキーワードのIDが2つ以上あるとき、それらをまとめます</div>
+    <input id="tn-kw" list="tn-kws" value="${esc(kw)}" placeholder="例: GUI"><datalist id="tn-kws">${globalIndex().filter(([, v]) => v.d.length + v.p.length >= 2).map(([k]) => `<option value="${esc(k)}">`).join('')}</datalist>
+    <div class="sub">入口のノート（無いIDなら、新しいノートを作ります）</div>
+    <div class="row"><select id="tn-s"><option value="d">デジタル</option><option value="p">紙</option></select><input id="tn-id" style="width:100px"><span id="tn-note" class="sub"></span></div>
+    <div class="sub">名前</div>
+    <input id="tn-name">
+    <div id="tn-pre" class="sub"></div>
+    <div class="row"><button id="tn-ok" class="p">作る</button><button id="tn-cancel">やめる</button></div>`;
+  $('#modal').style.display = 'flex';
+  const close = () => { $('#modal').style.display = 'none'; };
+  let nameTouched = false;
+  const refresh = () => {
+    const k = $('#tn-kw').value.trim(), sp = $('#tn-s').value, id = $('#tn-id').value.trim().toLowerCase();
+    const exists = !!get(sp, id);
+    $('#tn-note').textContent = !id ? '' : exists ? `既存のノート ${id} を入口にします` : `新しいノート ${id} を作ります`;
+    if (!nameTouched) $('#tn-name').value = id + (k ? '-' + k : '-');
+    const v = k ? idsOf(k) : null;
+    $('#tn-pre').textContent = v ? (v.d.length + v.p.length >= 2 ? `最初から入るID: ${[...v.d, ...v.p.map(x => '紙' + x)].join(' ')}　（Index に赤い点が付きます）` : 'このキーワードのIDは2つ未満です') : '';
+  };
+  $('#tn-s').value = 'd'; $('#tn-id').value = rootFree('d');
+  $('#tn-s').onchange = () => { $('#tn-id').value = rootFree($('#tn-s').value); refresh(); };
+  $('#tn-kw').oninput = refresh; $('#tn-id').oninput = refresh;
+  $('#tn-name').oninput = () => { nameTouched = true; };
+  $('#tn-ok').onclick = async () => {
+    const k = $('#tn-kw').value.trim(), sp = $('#tn-s').value, id = $('#tn-id').value.trim().toLowerCase(), name = $('#tn-name').value.trim();
+    if (!L.isId(id)) return alert('IDの形が違います（例: 12 や 3a）');
+    if (!name) return alert('名前を入れてください');
+    if (topics.find(t => t.name === name)) return alert('その名前は既にあります');
+    const other = topicOf(sp, id);
+    if (other) return alert(`${SP[sp]} ${id} は、もう「${other.name}」の入口です（1つのノートに索引は1つ）`);
+    let v = null;
+    if (k) {
+      v = idsOf(k);
+      if (v.d.length + v.p.length < 2) return alert('キーワードは、IDが2つ以上あるものだけです');
+      if (kwTopic(k)) return alert(`「${k}」のトピックIndexは、もう「${kwTopic(k).name}」があります`);
+    }
+    if (!get(sp, id)) notes.push(await api.saveNote({ s: sp, id, created: L.now(), keywords: [], body: '' }));
+    const t = { name, entry: { s: sp, id }, keyword: k, d: v && v.d.length ? k + ' ' + v.d.join(' ') : '', p: v && v.p.length ? k + ' ' + v.p.join(' ') : '' };
+    if (!(await api.saveTopic(t))) return alert('保存できませんでした');
+    topics.push(t); close(); renderList(); newTab = true; openTopic(name, 'edit');
+  };
+  $('#tn-cancel').onclick = close;
+  $('#modal').onkeydown = e => { if (e.key === 'Escape') close(); };
+  refresh(); $('#tn-kw').focus();
 }
 // mode: view（まとめて表示）| edit（デジタル欄・紙欄に書く）| conf（入口・名前を変える）
 function openTopic(name, mode = 'view', keep) {

@@ -55,6 +55,12 @@ test('保存フォルダ: 書き出しと読み直し', () => {
   assert.ok(!fs.existsSync(path.join(dir, 'topic/1a-PKM.md')));
   assert.doesNotMatch(r('digital/1a.md'), /トピックIndex/);
 
+  // キーワードのトピックIndex（赤い点）
+  v.saveNote({ s: 'd', id: '9', keywords: ['PKM'], body: '上位' });
+  v.saveTopic({ name: '9-PKM', entry: { s: 'd', id: '9' }, keyword: 'PKM', d: 'PKM 1 9', p: 'PKM 1' });
+  assert.match(r('Index.md'), /<a href="topic\/9-PKM.md"[^>]*>●<\/a> PKM/);
+  assert.match(r('topic/9-PKM.md'), /キーワード <a href="..\/Index.md#k-[a-z0-9]+">PKM<\/a>/);
+  assert.strictEqual(openVault(dir).state().topics.find(t => t.name === '9-PKM').keyword, 'PKM');
   // 入口は1ノートに1つ
   v.saveTopic({ name: 'A', entry: { s: 'd', id: '1' }, d: 'x 1 5', p: '' });
   assert.strictEqual(v.saveTopic({ name: 'B', entry: { s: 'd', id: '1' }, d: '', p: '' }), false);

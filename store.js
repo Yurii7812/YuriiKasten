@@ -58,7 +58,7 @@ function openVault(vault) {
     if (!f.endsWith('.md')) continue;
     const text = fs.readFileSync(abs('topic/' + f), 'utf8'); cache.set('topic/' + f, text);
     const t = meta(text, 'pkm-topic');
-    if (t && t.name) topics.set(t.name, { name: t.name, entry: t.entry || (t.anchors || [])[0] || null, d: t.d || '', p: t.p || '' });
+    if (t && t.name) topics.set(t.name, { name: t.name, entry: t.entry || (t.anchors || [])[0] || null, keyword: t.keyword || '', d: t.d || '', p: t.p || '' });
   }
 
   if (fs.existsSync(abs('Index.md'))) {
@@ -135,6 +135,8 @@ function openVault(vault) {
   const cell = v => [idLinks('d', v.d, ''), idLinks('p', v.p, '')].filter(Boolean).join(' ');
 
   // 読みのあいうえお順。行（あ・か・さ…）ごとに分ける
+  // そのキーワードのトピックIndex があるキーワードには赤い点（押すとそのトピックIndex へ）
+  const dot = k => { const t = [...topics.values()].find(x => x.keyword === k); return t ? `<a href="${topicHref(t.name, '')}" title="トピックIndex ${h(t.name)}" style="color:#c0392b;text-decoration:none">●</a> ` : ''; };
   function indexMd() {
     const out = [`<!-- pkm-index ${J({ readings: { ...readings } })} -->`, '# Index', '',
       `<p ${SUB}>${a(enc(LIST.d), 'デジタル一覧')}${sep}${a(enc(LIST.p), '紙一覧')}</p>`, ''];
@@ -148,7 +150,7 @@ function openVault(vault) {
     out.push([...groups.keys()].map((r, i) => `[${r}](#row${i})`).join('　'), '');
     [...groups].forEach(([r, list], i) => {
       out.push(`## <a id="row${i}"></a>${r}`, '', '| キーワード | ID |', '|---|---|');
-      for (const [k, v] of list) out.push(`| <a id="${L.kwAnchor(k)}"></a>${esc(k)}${readings[k] && readings[k] !== k ? ` <small style="color:#888">${h(readings[k])}</small>` : ''} | ${cell(v)} |`);
+      for (const [k, v] of list) out.push(`| <a id="${L.kwAnchor(k)}"></a>${dot(k)}${esc(k)}${readings[k] && readings[k] !== k ? ` <small style="color:#888">${h(readings[k])}</small>` : ''} | ${cell(v)} |`);
       out.push('');
     });
     return out.join('\n');
@@ -158,7 +160,7 @@ function openVault(vault) {
     const { rows, stars } = L.mergeTopic(t), e = t.entry;
     const out = [
       `<!-- pkm-topic ${J(t)} -->`, `# ${esc(t.name)}`, '',
-      `<p ${SUB}>入口 ${e ? a(`../${DIR[e.s]}/${enc(e.id)}.md`, label(e.s, e.id)) : 'なし'}</p>`, ''
+      `<p ${SUB}>入口 ${e ? a(`../${DIR[e.s]}/${enc(e.id)}.md`, label(e.s, e.id)) : 'なし'}${t.keyword ? `　キーワード ${a(`../Index.md#${L.kwAnchor(t.keyword)}`, h(t.keyword))}` : ''}</p>`, ''
     ];
     if (rows.length) {
       out.push('| キーワード | ID |', '|---|---|');
@@ -219,7 +221,7 @@ function openVault(vault) {
         topics.delete(oldName);
         if (topicPath(oldName) !== topicPath(t.name)) { if (fs.existsSync(abs(topicPath(oldName)))) fs.unlinkSync(abs(topicPath(oldName))); cache.delete(topicPath(oldName)); }
       }
-      topics.set(t.name, { name: t.name, entry: t.entry || null, d: t.d || '', p: t.p || '' });
+      topics.set(t.name, { name: t.name, entry: t.entry || null, keyword: t.keyword || '', d: t.d || '', p: t.p || '' });
       rebuild(); return true;
     },
     // ノートを消す（ファイルは .trash へ）。入口だった索引は入口なしに、索引の行からも ID を外す
