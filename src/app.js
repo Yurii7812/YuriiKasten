@@ -66,7 +66,10 @@ function links(mode, space) {
         rs.push(Decoration.mark({ class: 'lk' + (cls ? ' ' + cls : '') + (ok ? '' : ' miss'), attributes: { 'data-l': JSON.stringify(d) } }).range(f, t));
         if (cls === 'file' && !(sel.from <= t && sel.to >= f)) {
           const open = text[f] === '!' ? 2 : 1, close = text.lastIndexOf('](', t);
-          rs.push(Decoration.replace({}).range(f, f + open), Decoration.replace({}).range(close, t));
+          if (close === f + open) { // ![](ファイル名): 説明文が空なので、ファイル名を見せる
+            let nm = text.slice(close + 2, t - 1); try { nm = decodeURIComponent(nm); } catch { }
+            rs.push(Decoration.replace({ widget: new NameWidget(nm) }).range(f, t));
+          } else rs.push(Decoration.replace({}).range(f, f + open), Decoration.replace({}).range(close, t));
         }
       }
       return Decoration.set(rs, true);
@@ -88,7 +91,7 @@ function links(mode, space) {
     decorations: v => v.decorations,
     eventHandlers: {
       mousedown(e, view) {
-        const el = e.target.closest('.lk');
+        const el = e.target.closest('[data-l]');
         if (!el || e.button !== 0) return false;
         e.preventDefault(); follow(JSON.parse(el.dataset.l), view); return true;
       }
@@ -97,6 +100,11 @@ function links(mode, space) {
 }
 // ![名前](パス) の行の下に、画像をそのまま表示する（見るだけ。押しても開かない）
 const vaultUrl = () => 'file://' + vault.split('/').map(encodeURIComponent).join('/') + '/';
+class NameWidget extends WidgetType {
+  constructor(name) { super(); this.name = name; }
+  eq(o) { return o.name === this.name; }
+  toDOM() { const e = document.createElement('span'); e.className = 'imgname'; e.textContent = this.name; return e; }
+}
 class ImgWidget extends WidgetType {
   constructor(rel) { super(); this.rel = rel; }
   eq(o) { return o.rel === this.rel; }
@@ -662,7 +670,8 @@ async function deleteNotes(items) {
 // ===== 添付（ファイルは保存フォルダにそのままコピーし、本文のカーソル位置にリンクを入れる）=====
 // 画像は ![名前](パス)（本文の中に表示される）、ほかは [名前](パス)（押すと既定のアプリで開く）
 const PIC = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
-const encRel = n => encodeURIComponent(n).replace(/[()]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+// ファイル名はリンクを壊す文字（空白 ( ) < > % # ?）だけ置き換え、日本語などはそのまま書く
+const encRel = n => n.replace(/[\s()<>%#?\\]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0'));
 async function attach(note, files) {
   const list = [];
   for (const f of files) list.push({ name: f.name || 'image.png', bytes: await f.arrayBuffer() });
@@ -671,7 +680,7 @@ async function attach(note, files) {
   const view = lastView;
   if (!view || !view.dom.isConnected || !cur || cur.k !== 'note' || cur.id !== note.id || cur.s !== note.s) return;
   const head = view.state.selection.main.head, at = view.state.doc.lineAt(head);
-  const md = (head === at.from ? '' : '\n') + names.map(n => `${PIC.test(n) ? '!' : ''}[${n.replace(/[\[\]]/g, '')}](${encRel(n)})`).join('\n') + '\n';
+  const md = (head === at.from ? '' : '\n') + names.map(n => PIC.test(n) ? `![](${encRel(n)})` : `[${n.replace(/[\[\]]/g, '')}](${encRel(n)})`).join('\n') + '\n';
   view.dispatch({ changes: { from: head, insert: md }, selection: { anchor: head + md.length } }); view.focus();
 }
 const curNote = () => cur && cur.k === 'note' ? get(cur.s, cur.id) : null;
