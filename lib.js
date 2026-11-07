@@ -122,6 +122,20 @@ function mergeTopic(t) {
   return { rows: [...m.values()], stars };
 }
 
+// トピックIndex の欄に「キーワード ID」を足す（同じキーワードの行があればその行の後ろに）
+function addToTopic(text, kw, id) {
+  const lines = text ? text.split('\n') : [];
+  for (let i = 0; i < lines.length; i++) {
+    const r = topicLine(lines[i]);
+    if (r.star !== undefined || r.kw !== kw) continue;
+    if (!r.ids.some(x => x.id === id)) lines[i] = lines[i].replace(/\s+$/, '') + ' ' + id;
+    return lines.join('\n');
+  }
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  lines.push(kw + ' ' + id);
+  return lines.join('\n');
+}
+
 const kwAnchor = k => { let h = 5381; for (const c of k) h = (h * 33 + c.codePointAt(0)) >>> 0; return 'k-' + h.toString(36); };
 const fileName = name => name.replace(/[\\/:*?"<>|#%]/g, '_');
 const splitKw = s => (s || '').split(/[,、，]/).map(x => x.trim()).filter(Boolean);
@@ -133,5 +147,5 @@ const now = (d = new Date()) => {
 module.exports = {
   ID, isId, tok, cmpId, sibling, child, parentIn, root,
   tokens, anchorPos, selfTarget, bodyToMd, mdToBody,
-  topicLine, mergeTopic, kwAnchor, fileName, splitKw, now
+  topicLine, mergeTopic, addToTopic, kwAnchor, fileName, splitKw, now
 };

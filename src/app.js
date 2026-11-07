@@ -8,9 +8,13 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 const SP = { d: 'デジタル', p: '紙' };
 
 let notes = [], topics = [], tab = 'd', cur = null, vault = '';
+// 開いているタブ（Obsidian 風）。cur は今のタブ
+let tabs = [], active = -1, newTab = false;
 const get = (s, id) => notes.find(n => n.s === s && n.id === id);
 const free = (s, id) => { while (get(s, id)) id = L.sibling(id); return id; };
 const topicOf = (s, id) => topics.find(t => t.entry && t.entry.s === s && t.entry.id === id); // 入口は1つ
+const topicsWith = n => topics.map(t => ({ t, kws: L.mergeTopic(t).rows.filter(r => r[n.s].includes(n.id)).map(r => r.kw) })).filter(x => x.kws.length);
+const allKeywords = () => [...new Set(notes.flatMap(n => n.keywords))].sort((a, b) => a.localeCompare(b, 'ja'));
 
 // ===== 保存（少し待ってまとめて）=====
 const timers = {};
@@ -96,7 +100,7 @@ const tchip = name => `<span class="chip t" data-topic="${esc(name)}">${esc(name
 const firstLine = n => (n.body.split('\n').find(x => x.trim()) || '').trim().slice(0, 40);
 const kwTags = n => n.keywords.map(k => `<span class="tag">${esc(k)}</span>`).join('');
 const noteRow = (n, label = false) =>
-  `<div class="item${cur && cur.k === 'note' && cur.s === n.s && cur.id === n.id ? ' on' : ''}" data-s="${n.s}" data-id="${esc(n.id)}">` +
+  `<div class="item${cur && cur.k === 'note' && cur.s === n.s && cur.id === n.id ? ' on' : ''}" draggable="true" data-s="${n.s}" data-id="${esc(n.id)}">` +
   `${label ? `<span class="sp ${n.s}">${SP[n.s]}</span>` : ''}<b>${esc(n.id)}</b>${n.image ? '📷 ' : ''}<small>${esc(firstLine(n))}</small> ${kwTags(n)}</div>`;
 
 function renderList() {
@@ -127,64 +131,149 @@ function renderList() {
   }
   $('#list').innerHTML = out.join('');
 }
-document.addEventListener('click', e => {
+// Ctrl+クリック・中クリックは新しいタブで開く
+document.addEventListener('mousedown', e => { newTab = e.ctrlKey || e.metaKey || e.button === 1; }, true);
+function onOpenClick(e) {
+  if (e.target.closest('#modal')) return;
   const t = e.target.closest('[data-topic]'); if (t) return openTopic(t.dataset.topic);
   const n = e.target.closest('[data-id][data-s]');
   if (n && !e.target.closest('.cm-editor')) {
     if (get(n.dataset.s, n.dataset.id)) openNote(n.dataset.s, n.dataset.id);
     else if (confirm(`${SP[n.dataset.s]} ${n.dataset.id} はまだありません。作りますか？`)) create(n.dataset.s, n.dataset.id);
   }
-});
+}
+document.addEventListener('click', onOpenClick);
+document.addEventListener('auxclick', e => { if (e.button === 1 && !e.target.closest('#tabbar')) onOpenClick(e); });
+// 一覧からトピックIndexの欄へドラッグすると ID が入る
+$('#list').addEventListener('dragstart', e => { const n = e.target.closest('[data-id]'); if (n) e.dataTransfer.setData('text/plain', n.dataset.id); });
 $('#tabs').onclick = e => { const b = e.target.closest('button'); if (b) { tab = b.dataset.tab; $('#q').value = ''; renderList(); } };
 $('#q').oninput = renderList;
-document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'f') { e.preventDefault(); $('#q').focus(); $('#q').select(); } });
+document.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey) || $('#modal').style.display === 'flex') return;
+  if (e.key === 'f') { e.preventDefault(); $('#q').focus(); $('#q').select(); }
+  if (e.key === 'w') { e.preventDefault(); closeTab(active); }
+  if (e.key === 't') { e.preventDefault(); tabs.push({ k: 'empty' }); show(tabs.length - 1); }
+  if (e.key === 'Tab' && tabs.length) { e.preventDefault(); show((active + (e.shiftKey ? -1 : 1) + tabs.length) % tabs.length); }
+});
+
+// ===== タブ =====
+function rememberPos() {
+  const t = tabs[active];
+  if (t && t.k === 'note' && lastView && lastView.dom.isConnected) t.pos = lastView.state.selection.main.head;
+}
+// 今のタブに開く（Ctrl+クリックなら新しいタブ）。keep なら今のタブを描き直すだけ
+function place(t, keep) {
+  if (keep && tabs[active]) return tabs[active];
+  rememberPos();
+  if (newTab || active < 0 || !tabs[active]) { tabs.push(t); active = tabs.length - 1; }
+  else tabs[active] = t;
+  newTab = false;
+  return t;
+}
+function show(i) {
+  rememberPos();
+  active = Math.max(-1, Math.min(i, tabs.length - 1));
+  const t = tabs[active];
+  if (!t || t.k === 'empty') { cur = t || null; $('#pane').innerHTML = '<div class="none">左から選ぶか、「＋ 新規」で書き始めます。<br>Ctrl+クリックで新しいタブに開きます。</div>'; renderTabs(); return renderList(); }
+  if (t.k === 'note') openNote(t.s, t.id, null, true); else openTopic(t.name, t.mode, true);
+}
+function closeTab(i) {
+  if (i < 0 || i >= tabs.length) return;
+  if (i === active) rememberPos();
+  tabs.splice(i, 1);
+  if (active > i || active >= tabs.length) active--;
+  show(active < 0 && tabs.length ? 0 : active);
+}
+const tabLabel = t => t.k === 'note' ? `${t.s === 'p' ? '紙 ' : ''}${esc(t.id)}<small>${esc((firstLine(get(t.s, t.id) || { body: '' })).slice(0, 12))}</small>`
+  : t.k === 'topic' ? `📑 ${esc(t.name)}` : '新しいタブ';
+function renderTabs() {
+  $('#tabbar').innerHTML = tabs.map((t, i) => `<div class="tab${i === active ? ' on' : ''}" data-ti="${i}"><span>${tabLabel(t)}</span><b class="x" data-close="${i}" title="閉じる (Ctrl+W)">×</b></div>`).join('')
+    + '<button class="tab-new" title="新しいタブ (Ctrl+T)">＋</button>';
+  try { localStorage.setItem('pkm-tabs:' + vault, JSON.stringify({ tabs, active })); } catch { }
+}
+$('#tabbar').addEventListener('click', e => {
+  const x = e.target.closest('[data-close]'); if (x) return closeTab(+x.dataset.close);
+  if (e.target.closest('.tab-new')) { tabs.push({ k: 'empty' }); return show(tabs.length - 1); }
+  const t = e.target.closest('[data-ti]'); if (t) show(+t.dataset.ti);
+});
+$('#tabbar').addEventListener('auxclick', e => { const t = e.target.closest('[data-ti]'); if (t && e.button === 1) closeTab(+t.dataset.ti); });
 
 // ===== ノート =====
-function openNote(s, id, n) {
+function openNote(s, id, n, keep) {
   const note = get(s, id); if (!note) return;
-  cur = { k: 'note', s, id };
+  cur = place({ k: 'note', s, id }, keep);
   if (!$('#q').value) tab = s;
-  const t = topicOf(s, id);
   $('#pane').innerHTML = `
     <div class="row">
       <span class="sp ${s}">${SP[s]}</span>
       <input class="id" id="f-id" value="${esc(id)}" title="ID（変えると名前も変わります）">
       ${s === 'd' ? `<span class="date">${esc(note.created)}</span>` : ''}
       <span class="grow"></span>
-      <button data-act="sib" title="同じ段の次">並列 ${free(s, L.sibling(id))}</button>
-      <button data-act="chi" title="一段下">分岐 ${free(s, L.child(id))}</button>
-      <button data-act="topic">${t ? 'トピックIndex: ' + esc(t.name) : 'トピックIndex'}</button>
+      <button data-act="sib" title="同じ段の次（Ctrl+クリックで新しいタブ）">並列 ${free(s, L.sibling(id))}</button>
+      <button data-act="chi" title="一段下（Ctrl+クリックで新しいタブ）">分岐 ${free(s, L.child(id))}</button>
     </div>
-    <input class="kw" id="f-kw" value="${esc(note.keywords.join('、'))}" placeholder="キーワード（、で区切る。Index に入ります）">
+    <div class="meta" id="meta"></div>
     ${s === 'p' ? `<div class="paper"><div class="pic">${note.image ? `<img src="${note.image}">` : '<button data-act="img">画像を入れる</button>'}</div><div class="ed" id="ed"></div></div>` : '<div class="ed" id="ed"></div>'}`;
+  renderMeta(note);
   const view = editor($('#ed'), note.body, 'note', s, v => { note.body = v; saveNote(note); renderList(); },
     s === 'p' ? '紙の内容を文字で（テキスト化）' : '本文。続き :1a1　引用 (1) と (1):　別ノート 1a(1)　全体 1a:');
-  $('#f-kw').oninput = e => { note.keywords = L.splitKw(e.target.value); saveNote(note); renderList(); };
   $('#f-id').onchange = async e => {
     const v = e.target.value.trim().toLowerCase();
     if (v === id) return;
     await flush(); await api.saveNote(pubNote(note));
     const r = L.isId(v) && !get(s, v) && await api.rename(s, id, v);
     if (!r) { alert('そのIDは使えません（形が違うか、既にあります）'); e.target.value = id; return; }
-    Object.assign(note, r); for (const t of topics) if (t.entry && t.entry.s === s && t.entry.id === id) t.entry.id = v;
-    openNote(s, v);
+    Object.assign(note, r);
+    for (const t of topics) if (t.entry && t.entry.s === s && t.entry.id === id) t.entry.id = v;
+    for (const t of tabs) if (t.k === 'note' && t.s === s && t.id === id) t.id = v;
+    openNote(s, v, null, true);
   };
-  renderList();
+  renderTabs(); renderList();
   if (n) { const p = L.anchorPos(note.body, n); if (p >= 0) jump(view, p); }
+  else if (keep && cur.pos != null) jump(view, Math.min(cur.pos, view.state.doc.length));
   else if (s === 'd' && !note.body) view.focus();
+}
+// キーワードとトピックIndex（ボタンで足す）
+function renderMeta(note) {
+  const entry = topicOf(note.s, note.id);
+  $('#meta').innerHTML =
+    note.keywords.map(k => `<span class="kwc">#${esc(k)}<b data-kwdel="${esc(k)}" title="外す">×</b></span>`).join('') +
+    `<span id="kw-wrap"><button class="mini" data-act="kwadd">＋キーワード</button></span>` +
+    '<span class="vsep"></span>' +
+    (entry ? `<span class="chip t" data-topic="${esc(entry.name)}" title="このノートが入口">📑 ${esc(entry.name)}</span>` : '') +
+    topicsWith(note).filter(x => x.t !== entry).map(x => `<span class="chip t" data-topic="${esc(x.t.name)}">${esc(x.t.name)}<small> · ${x.kws.map(esc).join('、')}</small></span>`).join('') +
+    `<button class="mini" data-act="tadd">＋トピックIndex</button>`;
+}
+function addKeywordInput(note) {
+  $('#kw-wrap').innerHTML = `<input id="kw-in" list="kw-all" placeholder="キーワード（Enter）"><datalist id="kw-all">${allKeywords().map(k => `<option value="${esc(k)}">`).join('')}</datalist>`;
+  const inp = $('#kw-in'); inp.focus();
+  const done = () => renderMeta(note);
+  inp.onkeydown = e => {
+    if (e.key === 'Escape') return done();
+    if (e.key !== 'Enter') return;
+    for (const k of L.splitKw(inp.value)) if (!note.keywords.includes(k)) note.keywords.push(k);
+    saveNote(note); renderList(); done();
+  };
+  inp.onblur = () => setTimeout(() => { if ($('#kw-in') === inp) done(); }, 150);
 }
 async function create(s, id) {
   const n = await api.saveNote({ s, id, created: L.now(), keywords: [], body: '' });
   notes.push(n); openNote(s, id);
 }
 $('#pane').addEventListener('click', async e => {
+  const del = e.target.closest('[data-kwdel]');
+  if (del && cur && cur.k === 'note') {
+    const note = get(cur.s, cur.id); note.keywords = note.keywords.filter(k => k !== del.dataset.kwdel);
+    saveNote(note); renderMeta(note); return renderList();
+  }
   const a = e.target.closest('[data-act]'); if (!a || !cur) return;
   const act = a.dataset.act;
   if (cur.k === 'topic') return topicAct(act);
-  const { s, id } = cur;
+  const { s, id } = cur, note = get(s, id);
   if (act === 'sib') create(s, free(s, L.sibling(id)));
   if (act === 'chi') create(s, free(s, L.child(id)));
-  if (act === 'topic') { const t = topicOf(s, id); t ? openTopic(t.name) : topicDialog(s, id); }
+  if (act === 'kwadd') addKeywordInput(note);
+  if (act === 'tadd') topicAddDialog(note);
   if (act === 'img') pick(false, async f => { const r = await api.saveImage(s, id, await shrink(f[0])); Object.assign(get(s, id), r); openNote(s, id); });
 });
 $('#new').onclick = () => {
@@ -194,24 +283,63 @@ $('#new').onclick = () => {
 };
 
 // ===== トピックIndex =====
-function topicDialog(s, id) {
-  $('#m-name').value = id + '-';
-  $('#modal').style.display = 'flex'; $('#m-name').focus();
-  const done = () => { $('#modal').style.display = 'none'; };
-  $('#m-ok').onclick = async () => {
-    const name = $('#m-name').value.trim();
-    if (!name) return;
-    if (topics.find(t => t.name === name)) return alert('その名前は既にあります');
-    const t = { name, entry: { s, id }, d: '', p: '' };
-    topics.push(t); await api.saveTopic(t); done(); openTopic(name, 'edit');
+// このノートをトピックIndexに追加（検索して選び、キーワードを入れる）。新しく作ることもできる
+function topicAddDialog(note) {
+  const entry = topicOf(note.s, note.id), name = `${note.s === 'p' ? '紙 ' : ''}${note.id}`;
+  let sel = null;
+  $('#modal .box').innerHTML = `
+    <h3>${esc(name)} をトピックIndexに追加</h3>
+    <input id="ta-q" placeholder="トピックIndexを探す">
+    <div id="ta-list" class="ta-list"></div>
+    <div class="sub">キーワード</div>
+    <input id="ta-kw" list="ta-kws" placeholder="例: 英雄伝"><datalist id="ta-kws"></datalist>
+    <div class="row"><button id="ta-ok" class="p">追加</button><button id="ta-cancel">やめる</button></div>
+    ${entry ? '' : `<hr><div class="sub">新しいトピックIndexを作る（このノートが入口）</div>
+    <div class="row"><input id="ta-name" value="${esc(note.id)}-" style="flex:1"><button id="ta-new">作る</button></div>`}`;
+  $('#modal').style.display = 'flex';
+  const close = () => { $('#modal').style.display = 'none'; };
+  const draw = () => {
+    const q = $('#ta-q').value.trim().toLowerCase();
+    const list = topics.filter(t => t.name.toLowerCase().includes(q) || L.mergeTopic(t).rows.some(r => r.kw.toLowerCase().includes(q)))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+    if (sel && !list.includes(sel)) sel = null;
+    if (!sel && list.length) choose(list[0], false);
+    $('#ta-list').innerHTML = list.map(t => `<div class="ta-row${t === sel ? ' on' : ''}" data-name="${esc(t.name)}">📑 ${esc(t.name)}${t.entry ? `<small> 入口 ${t.entry.s === 'p' ? '紙' : ''}${esc(t.entry.id)}</small>` : ''}</div>`).join('')
+      || '<div class="sub" style="padding:6px">ありません</div>';
   };
-  $('#m-cancel').onclick = done;
-  $('#m-name').onkeydown = e => { if (e.key === 'Enter') $('#m-ok').click(); if (e.key === 'Escape') done(); };
+  function choose(t, redraw = true) {
+    sel = t;
+    $('#ta-kws').innerHTML = L.mergeTopic(t).rows.map(r => `<option value="${esc(r.kw)}">`).join('');
+    if (redraw) draw();
+  }
+  $('#ta-list').onclick = e => { const r = e.target.closest('[data-name]'); if (r) { choose(topics.find(t => t.name === r.dataset.name)); $('#ta-kw').focus(); } };
+  $('#ta-q').oninput = draw;
+  $('#ta-q').onkeydown = e => { if (e.key === 'Enter') $('#ta-kw').focus(); };
+  $('#ta-kw').onkeydown = e => { if (e.key === 'Enter') $('#ta-ok').click(); };
+  $('#ta-ok').onclick = async () => {
+    const kw = $('#ta-kw').value.trim();
+    if (!sel) return alert('トピックIndexを選んでください');
+    if (!kw) return $('#ta-kw').focus();
+    await flush();
+    sel[note.s] = L.addToTopic(sel[note.s], kw, note.id);
+    await api.saveTopic(sel); close(); renderMeta(note);
+  };
+  $('#ta-cancel').onclick = close;
+  if ($('#ta-new')) $('#ta-new').onclick = async () => {
+    const nm = $('#ta-name').value.trim();
+    if (!nm) return;
+    if (topics.find(t => t.name === nm)) return alert('その名前は既にあります');
+    const t = { name: nm, entry: { s: note.s, id: note.id }, d: '', p: '' };
+    topics.push(t); await api.saveTopic(t); close(); renderMeta(note);
+    newTab = true; openTopic(nm, 'edit');
+  };
+  $('#modal').onkeydown = e => { if (e.key === 'Escape') close(); };
+  draw(); $('#ta-q').focus();
 }
 // mode: view（まとめて表示）| edit（デジタル欄・紙欄に書く）| conf（入口・名前を変える）
-function openTopic(name, mode = 'view') {
+function openTopic(name, mode = 'view', keep) {
   const t = topics.find(x => x.name === name); if (!t) return;
-  cur = { k: 'topic', name, mode };
+  cur = place({ k: 'topic', name, mode }, keep); cur.mode = mode;
   const { rows, stars } = L.mergeTopic(t), e = t.entry;
   let body;
   if (mode === 'edit') body = `<div class="sub">1行に「キーワード ID ID …」。★ で始めると別のトピックIndexへの案内。デジタルと紙は別々に書き、表示はまとめます。</div>
@@ -237,18 +365,19 @@ function openTopic(name, mode = 'view') {
     if (s === 'd') v.focus();
   }
   if (mode === 'conf') $('#t-id').focus();
-  renderList();
+  renderTabs(); renderList();
 }
 async function topicAct(act) {
   const t = topics.find(x => x.name === cur.name); if (!t) return;
-  if (act === 'tedit') return openTopic(t.name, cur.mode === 'edit' ? 'view' : 'edit');
-  if (act === 'tconf') return openTopic(t.name, 'conf');
-  if (act === 'tcancel') return openTopic(t.name);
+  if (act === 'tedit') return openTopic(t.name, cur.mode === 'edit' ? 'view' : 'edit', true);
+  if (act === 'tconf') return openTopic(t.name, 'conf', true);
+  if (act === 'tcancel') return openTopic(t.name, 'view', true);
   if (act === 'tdel') {
     if (!confirm(`トピックIndex「${t.name}」を削除しますか？（ファイルは .trash に移ります）`)) return;
     await flush(); await api.deleteTopic(t.name);
-    topics = topics.filter(x => x !== t); cur = null;
-    $('#pane').innerHTML = '<div class="none">削除しました。</div>'; return renderList();
+    topics = topics.filter(x => x !== t);
+    for (let i = tabs.length - 1; i >= 0; i--) if (tabs[i].k === 'topic' && tabs[i].name === t.name) { tabs.splice(i, 1); if (active >= i) active--; }
+    return show(Math.max(0, active));
   }
   if (act === 'tsave') {
     const name = $('#t-name').value.trim(), s = $('#t-s').value, id = $('#t-id').value.trim().toLowerCase();
@@ -259,7 +388,9 @@ async function topicAct(act) {
     if (other && other !== t) return alert(`${SP[s]} ${id} は、もう「${other.name}」の入口です（1つのIDに1つの索引）`);
     await flush();
     const old = t.name; t.name = name; t.entry = { s, id };
-    await api.saveTopic(t, old); openTopic(name);
+    await api.saveTopic(t, old);
+    for (const x of tabs) if (x.k === 'topic' && x.name === old) x.name = name;
+    openTopic(name, 'view', true);
   }
 }
 
@@ -314,10 +445,17 @@ $('#scan').onkeydown = e => {
 
 // ===== 保存フォルダ =====
 function loaded(st) {
-  ({ notes, topics, vault } = st); cur = null;
+  ({ notes, topics, vault } = st); cur = null; tabs = []; active = -1;
   $('#vault').textContent = '📁 ' + vault.split('/').pop(); $('#vault').title = vault + '\n（Brave では Index.md を開くと全部たどれます）';
-  $('#pane').innerHTML = '<div class="none">左から選ぶか、「＋ 新規」で書き始めます。</div>';
-  renderList();
+  try {
+    const saved = JSON.parse(localStorage.getItem('pkm-tabs:' + vault) || 'null');
+    if (saved) {
+      tabs = saved.tabs.filter(t => t.k === 'empty' || (t.k === 'note' && get(t.s, t.id)) || (t.k === 'topic' && topics.find(x => x.name === t.name)));
+      tabs.forEach(t => { if (t.k === 'topic') t.mode = 'view'; });
+      active = Math.min(saved.active, tabs.length - 1);
+    }
+  } catch { tabs = []; active = -1; }
+  show(active);
 }
 $('#vault').onclick = async () => { const st = await api.chooseVault(); if (st) loaded(st); };
 api.load().then(loaded);

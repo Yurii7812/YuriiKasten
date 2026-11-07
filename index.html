@@ -30,10 +30,28 @@ aside{width:290px;display:flex;flex-direction:column;border-right:1px solid var(
 .chip{display:inline-block;margin:1px 5px 1px 0;padding:0 8px;border:1px solid var(--line);border-radius:11px;color:var(--red);cursor:pointer;font-size:14px}
 .chip.p{color:var(--paper);border-color:#e6d6c0}.chip.t{color:var(--acc)}.chip.miss{opacity:.45}
 .chip:hover{background:var(--hl)}
+#right{flex:1;display:flex;flex-direction:column;min-width:0}
+#tabbar{display:flex;align-items:flex-end;gap:2px;padding:6px 8px 0;background:#f6f7f9;border-bottom:1px solid var(--line);overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;flex-shrink:0}
+.tab{display:flex;align-items:center;gap:6px;max-width:200px;padding:5px 8px 5px 12px;border:1px solid transparent;border-bottom:0;border-radius:7px 7px 0 0;color:var(--sub);cursor:pointer;white-space:nowrap;font-size:14px}
+.tab span{overflow:hidden;text-overflow:ellipsis}.tab small{margin-left:6px;color:#aaa}
+.tab:hover{background:#eceef2}.tab.on{background:#fff;border-color:var(--line);color:var(--fg);margin-bottom:-1px;padding-bottom:6px}
+.tab .x{font-weight:400;color:#aaa;padding:0 3px;border-radius:4px}.tab .x:hover{background:#e3e5ea;color:var(--fg)}
+.tab-new{border:0;background:none;color:var(--sub);padding:3px 9px;margin-bottom:3px}
 #pane{flex:1;overflow:auto;padding:14px 22px}
+.meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:-2px 0 12px;min-height:28px}
+.kwc{font-size:13px;color:#555;background:#f1f3f6;border-radius:12px;padding:1px 4px 1px 10px}
+.kwc b{font-weight:400;color:#aaa;cursor:pointer;padding:0 5px;margin-left:2px;border-radius:8px}.kwc b:hover{color:var(--red)}
+.mini{font-size:13px;padding:1px 9px;color:var(--sub);border-style:dashed}
+.meta input{font:inherit;font-size:13px;padding:2px 8px;border:1px solid var(--line);border-radius:12px;width:180px}
+.vsep{width:1px;height:18px;background:var(--line);margin:0 4px}
+.chip small{color:var(--sub)}
+.ta-list{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:6px}
+.ta-row{padding:5px 10px;cursor:pointer;border-bottom:1px solid #f2f2f2}.ta-row:hover{background:var(--hl)}
+.ta-row.on{background:#e6edfb}.ta-row small{color:var(--sub);margin-left:6px}
+.modal hr{border:0;border-top:1px solid var(--line);width:100%;margin:4px 0}
 .row{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
 .row h2{margin:0 8px 0 0;font-size:20px}.grow{flex:1}
-.id{font-size:20px;font-weight:700;color:var(--acc);width:120px;border:1px solid transparent;border-radius:6px;padding:2px 6px}
+.id{font-size:20px;font-weight:700;color:var(--acc);width:110px;border:1px solid transparent;border-radius:6px;padding:2px 6px}
 .id:hover,.id:focus{border-color:var(--line)}
 .date{color:var(--sub);font-variant-numeric:tabular-nums}
 .kw{width:100%;padding:5px 9px;border:1px solid var(--line);border-radius:6px;font:inherit;margin-bottom:10px}
@@ -55,7 +73,7 @@ table.ti{border-collapse:collapse;width:100%;margin-top:6px}
 button.danger{color:var(--red);border-color:#efc9c4}
 .sub{color:var(--sub);font-size:13px}.none{color:var(--sub);padding:30px 12px;text-align:center}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.25);display:none;align-items:center;justify-content:center;z-index:10}
-.modal .box{background:#fff;border-radius:10px;padding:18px 20px;width:380px;display:flex;flex-direction:column;gap:8px}
+.modal .box{background:#fff;border-radius:10px;padding:18px 20px;width:440px;display:flex;flex-direction:column;gap:8px}
 .modal h3{margin:0}.modal input{padding:6px 9px;border:1px solid var(--line);border-radius:6px;font:inherit}
 .m-add{margin:3px 4px 0 0}
 #scan{position:fixed;inset:0;background:#fff;display:none;flex-direction:column;z-index:9}
@@ -77,15 +95,10 @@ button.danger{color:var(--red);border-color:#efc9c4}
     <div id="tabs"><button data-tab="d">デジタル</button><button data-tab="p">紙</button><button data-tab="i">Index</button></div>
     <div id="list"></div>
   </aside>
-  <div id="pane"></div>
+  <section id="right"><div id="tabbar"></div><div id="pane"></div></section>
 </main>
 
-<div id="modal" class="modal"><div class="box">
-  <h3>トピックIndex を作る</h3>
-  <div class="sub">名前（ID-主題。例: 7-PKM）</div>
-  <input id="m-name">
-  <div class="row"><button id="m-ok" class="p">作る</button><button id="m-cancel">やめる</button></div>
-</div></div>
+<div id="modal" class="modal"><div class="box"></div></div>
 
 <div id="scan">
   <div class="top">

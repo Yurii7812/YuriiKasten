@@ -47,3 +47,10 @@ test('トピックIndex の行', () => {
   assert.deepStrictEqual(m.rows, [{ kw: 'PKM', d: ['1a', '3'], p: ['2'] }, { kw: '紙だけ', d: [], p: ['5'] }]);
   assert.deepStrictEqual(m.stars, ['9-x']);
 });
+
+test('トピックIndex に足す', () => {
+  assert.strictEqual(L.addToTopic('', '英雄伝', '1a'), '英雄伝 1a');
+  assert.strictEqual(L.addToTopic('英雄伝 1a\n漢字 1', '英雄伝', '2'), '英雄伝 1a 2\n漢字 1');
+  assert.strictEqual(L.addToTopic('英雄伝 1a', '英雄伝', '1a'), '英雄伝 1a');
+  assert.strictEqual(L.addToTopic('英雄伝 1a\n\n', '新しい', '3'), '英雄伝 1a\n新しい 3');
+});
