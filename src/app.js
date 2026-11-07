@@ -733,7 +733,7 @@ function topicNewDialog(kw = '') {
 function openGraph(keep) {
   cur = place({ k: 'graph' }, keep); mode = 'notes';
   $('#pane').innerHTML = GR.html(notes, titleOf, topics, L.mergeTopic, topicLabel);
-  GR.attach($('#gsvg'), (s, id, e, topic) => topic ? openTopic(topic) : openNote(s, id));
+  GR.attach($('#gsvg'), (s, id, e, topic) => topic ? openTopic(topic) : openNote(s, id), cur.vb, (g => v => { g.vb = v; })(cur));
   renderTabs(); renderList();
 }
 function openTopic(name, tmode = 'view', keep) {

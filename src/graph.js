@@ -73,10 +73,11 @@ export function html(notes, titleOf, topics, mergeTopic, topicLabel) {
 }
 
 // ドラッグ・ホイール
-export function attach(svg, onOpen) {
+export function attach(svg, onOpen, vb0, onView) {
   if (!svg) return;
-  let vb = svg.dataset.vb.split(' ').map(Number), drag = null, moved = false;
-  const set = () => svg.setAttribute('viewBox', vb.join(' '));
+  let vb = vb0 || svg.dataset.vb.split(' ').map(Number), drag = null, moved = false;
+  const set = () => { svg.setAttribute('viewBox', vb.join(' ')); if (onView) onView([...vb]); };   // 見ている場所を覚える（戻ったとき同じ場所）
+  if (vb0) svg.setAttribute('viewBox', vb.join(' '));
   svg.addEventListener('wheel', e => {
     e.preventDefault(); const r = svg.getBoundingClientRect(), f = e.deltaY > 0 ? 1.15 : 1 / 1.15;
     const mx = vb[0] + (e.clientX - r.left) / r.width * vb[2], my = vb[1] + (e.clientY - r.top) / r.height * vb[3];
