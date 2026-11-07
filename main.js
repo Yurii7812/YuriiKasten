@@ -127,7 +127,7 @@ exec "${exec}" "$@"
   if (fs.existsSync(desk)) { const f = path.join(desk, 'YuriiKasten.desktop'); fs.writeFileSync(f, entry, { mode: 0o755 }); onDesk = true; try { require('child_process').execFileSync('gio', ['set', f, 'metadata::trusted', 'true'], { stdio: 'ignore' }); } catch { } }
   return `アプリ一覧${onDesk ? 'と、デスクトップ' : ''}にショートカットを作りました。端末では YuriiKasten で開けます（更新は YuriiKasten --update）`;
 }
-if (argv.includes('--install')) { app.whenReady().then(() => { console.log(installShortcuts()); app.exit(0); }); }
+if (argv.includes('--install') || argv.includes('--install-shortcuts')) { app.whenReady().then(() => { console.log(installShortcuts()); app.exit(0); }); }
 
 // アプリの情報・更新（ユーザーが押したときだけ。自動では確認も更新もしない）
 ipcMain.handle('appInfo', () => ({ version: app.getVersion(), platform: process.platform, selfUpdate: !!(process.env.APPIMAGE || info().devDir), mode: info().devDir ? 'git' : process.env.APPIMAGE ? 'appimage' : 'installer' }));

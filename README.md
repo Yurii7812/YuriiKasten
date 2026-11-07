@@ -3,19 +3,18 @@
 紙のPKM（ツェッテルカステン）をデジタルでやるアプリ。ノート・日記・チャットメモ・なりきりチャット・キャンバスを、1つのフォルダに平らに保存します。
 方法: https://yurii7812.github.io/homepage/ja/paper-pkm/
 
-## インストール（コマンド1行）
+## インストール（コマンド1行・リリース不要）
 | OS | ターミナルに貼る |
 |---|---|
-| **Linux / macOS** | `curl -fsSL https://raw.githubusercontent.com/Yurii7812/YuriiKasten/main/install/bootstrap.sh \| sh` |
-| **Windows**（PowerShell） | `irm https://raw.githubusercontent.com/Yurii7812/YuriiKasten/main/install/bootstrap.ps1 \| iex` |
+| **Linux / macOS** | `curl -fsSL https://raw.githubusercontent.com/Yurii7812/YuriiKasten/master/install/bootstrap.sh \| sh` |
+| **Windows**（PowerShell） | `irm https://raw.githubusercontent.com/Yurii7812/YuriiKasten/master/install/bootstrap.ps1 \| iex` |
 
-最新のリリースから本体を取ってきて入れ、ショートカットも作ります。自分で作りたいときは `npm run dist:linux`（`release/` にできます）。
+GitHub からソースを取ってきて、その場で組み立てます（git と Node.js 18 以上が無ければ、自動で用意します。初回は数分）。デスクトップとアプリ一覧にショートカットができ、端末では `YuriiKasten` で開きます。もう一度同じ1行を実行すると最新になります。インストーラー（AppImage / exe / dmg）を自分で作りたいときは `npm run dist:linux` など（`release/` にできます）。
 
 ## 更新（自動では何もしません）
 確認も更新も、**自分で押したときだけ**。
-- **Linux**: アプリの「⋯」→「更新を確認」→ 新しいバージョンがあれば、確認のあとで更新（AppImage を最新のものに置き換え）。端末では **`YuriiKasten --update`**（確認だけなら `--check`、バージョンは `--version`）。更新したらアプリを開き直す
-- **Windows / Mac**: 「⋯」→「更新を確認」→ 新しければ、最新のインストーラーのページが開く。ダウンロードして実行すると更新される（データは別のフォルダなので、そのまま）
-- 開発用に git のフォルダで動かしているときは、`git pull`・`npm install`・ビルドまで行う
+- **コマンド1行で入れたとき（Linux / Mac / Windows）**: 端末で **`YuriiKasten --update`**（確認だけなら `--check`、バージョンは `--version`）か、アプリの「⋯」→「更新を確認」。`git pull`・`npm install`・ビルドまで行います。更新したらアプリを開き直す
+- AppImage / インストーラーで入れたとき（`npm run dist` で作ったもの）は、置き換え式の更新です
 
 ## 開発
 `npm install`（初回のみ）→ `./yuriikasten.sh`。試験は `npm test`。インストーラーは `npm run dist`（動かしている OS 用）。
