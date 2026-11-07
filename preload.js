@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('api', {
   saveNote: n => r.invoke('saveNote', n),
   rename: (s, a, b) => r.invoke('rename', s, a, b),
   saveImage: (s, id, bytes) => r.invoke('saveImage', s, id, bytes),
-  saveTopic: t => r.invoke('saveTopic', t),
+  saveTopic: (t, old) => r.invoke('saveTopic', t, old),
+  deleteTopic: name => r.invoke('deleteTopic', name),
   chooseVault: () => r.invoke('chooseVault')
 });

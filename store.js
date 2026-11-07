@@ -1,7 +1,8 @@
 // 保存フォルダの読み書き。Brave の Markdown Viewer でもたどれる .md を書き出す
-//   Index.md       … 入口。グローバルIndex（キーワード → ID）とトピックIndexの一覧
-//   デジタル.md / 紙.md … ID の木の一覧
+//   Index.md            … グローバルIndex（キーワード → ID）
+//   デジタル.md / 紙.md  … 先頭の ID だけの一覧
 //   digital/<ID>.md, paper/<ID>.md(+<ID>.jpg), topic/<名前>.md
+// ノートの下に 前・次・上・分岐・トピックIndex のリンクがあるので、リンクだけで全部に届く
 const fs = require('fs');
 const path = require('path');
 const L = require('./lib');
@@ -12,10 +13,14 @@ const SP = { d: 'デジタル', p: '紙' };
 const IMG = ['.jpg', '.jpeg', '.png', '.webp'];
 const validId = s => L.isId(s) && !/^\d{8,}$/.test(s); // 日時名のファイルは除外
 const enc = s => encodeURIComponent(s);
-const esc = s => String(s).replace(/([\\`*_[\]<>|#])/g, '\\$1');
+const esc = s => String(s).replace(/([\\`*_[\]<>|#])/g, '\\$1'); // Markdown の中
+const h = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); // HTML の中
+const a = (href, text) => `<a href="${href}">${text}</a>`;
 const J = o => JSON.stringify(o).replace(/--/g, '-\\u002d');
 const meta = (text, tag) => { const m = text.match(new RegExp(`^<!-- ${tag} (.*) -->`, 'm')); try { return m ? JSON.parse(m[1]) : null; } catch { return null; } };
-const BODY = '<!-- body -->\n';
+const BODY = '<!-- body -->\n', NAV = '\n<!-- nav -->';
+const SUB = 'style="color:#888;font-size:.9em"';
+const sep = '　｜　';
 
 function openVault(vault) {
   const notes = new Map(), topics = new Map(), cache = new Map();
@@ -24,6 +29,7 @@ function openVault(vault) {
   const abs = p => path.join(vault, p);
   const notePath = (s, id) => `${DIR[s]}/${id}.md`;
   const topicPath = name => `topic/${L.fileName(name)}.md`;
+  const topicHref = (name, up) => up + 'topic/' + enc(L.fileName(name)) + '.md';
 
   // ===== 読み込み =====
   for (const d of Object.values(DIR).concat('topic')) fs.mkdirSync(abs(d), { recursive: true });
@@ -38,8 +44,8 @@ function openVault(vault) {
         const text = fs.readFileSync(abs(`${DIR[s]}/${f}`), 'utf8'); cache.set(`${DIR[s]}/${f}`, text);
         const m = meta(text, 'pkm') || {};
         n.created = m.created || n.created; n.keywords = m.keywords || [];
-        const i = text.indexOf(BODY);
-        n.body = L.mdToBody(i >= 0 ? text.slice(i + BODY.length) : text);
+        const i = text.indexOf(BODY), j = text.indexOf(NAV);
+        n.body = L.mdToBody(i >= 0 ? text.slice(i + BODY.length, j > i ? j : undefined) : text);
       } else if (IMG.includes(e)) n.img = f;
     }
   }
@@ -51,7 +57,7 @@ function openVault(vault) {
     if (!f.endsWith('.md')) continue;
     const text = fs.readFileSync(abs('topic/' + f), 'utf8'); cache.set('topic/' + f, text);
     const t = meta(text, 'pkm-topic');
-    if (t && t.name) topics.set(t.name, { name: t.name, anchors: t.anchors || [], d: t.d || '', p: t.p || '' });
+    if (t && t.name) topics.set(t.name, { name: t.name, entry: t.entry || (t.anchors || [])[0] || null, d: t.d || '', p: t.p || '' });
   }
 
   // 前の版（フォルダ直下に <ID>.md / <ID>.jpg）を移す
@@ -77,56 +83,37 @@ function openVault(vault) {
 
   // ===== 書き出し =====
   const ids = s => [...notes.values()].filter(n => n.s === s).map(n => n.id).sort(L.cmpId);
-  const topicsOf = (s, id) => [...topics.values()].filter(t => t.anchors.some(a => a.s === s && a.id === id));
-  const summary = n => { const l = (n.body.split('\n').find(x => x.trim()) || '').trim(); return esc(l.length > 40 ? l.slice(0, 40) + '…' : l); };
-  const kwLinks = (kws, up) => kws.map(k => `[${esc(k)}](${up}Index.md#${L.kwAnchor(k)})`).join(' ');
+  const topicOf = (s, id) => [...topics.values()].find(t => t.entry && t.entry.s === s && t.entry.id === id);
+  const label = (s, id) => (s === 'p' ? '紙' : '') + id;
 
   function noteMd(n) {
     const list = ids(n.s), has = x => !!get(n.s, x), i = list.indexOf(n.id);
     const parent = L.parentIn(n.id, has), kids = list.filter(x => L.parentIn(x, has) === n.id);
-    const link = x => `[${x}](${enc(x)}.md)`;
-    const nav = [
-      '[Index](../Index.md)',
-      n.s === 'd' ? '[デジタル一覧](../デジタル.md)' : `[紙一覧](../紙.md#n${L.root(n.id)})`,
-      parent && '上 ' + link(parent),
-      i > 0 && '前 ' + link(list[i - 1]),
-      i < list.length - 1 && '次 ' + link(list[i + 1]),
-      kids.length && '下 ' + kids.map(link).join(' '),
-      ...topicsOf(n.s, n.id).map(t => `トピックIndex [${esc(t.name)}](../${topicPath(t.name).split('/').map(enc).join('/')})`)
-    ].filter(Boolean).join(' · ');
-    const info = [n.s === 'd' && n.created, n.keywords.length && 'キーワード: ' + kwLinks(n.keywords, '../')].filter(Boolean).join(' · ');
+    const go = x => `${enc(x)}.md`, t = topicOf(n.s, n.id);
+    const sub = [n.s === 'd' && h(n.created), ...n.keywords.map(k => a(`../Index.md#${L.kwAnchor(k)}`, '#' + h(k)))].filter(Boolean).join('　');
+    const nav1 = [
+      i > 0 && a(go(list[i - 1]), '← ' + list[i - 1]),
+      parent && a(go(parent), '↑ ' + parent),
+      kids.length && '分岐 ' + kids.map(k => a(go(k), k)).join(' '),
+      i < list.length - 1 && a(go(list[i + 1]), list[i + 1] + ' →')
+    ].filter(Boolean).join(sep);
+    const nav2 = [t && a(topicHref(t.name, '../'), 'トピックIndex ' + h(t.name)), a('../Index.md', 'Index'), a('../' + enc(LIST[n.s]), SP[n.s] + '一覧')].filter(Boolean).join(sep);
     return [
       `<!-- pkm ${J(n.s === 'd' ? { created: n.created, keywords: n.keywords } : { keywords: n.keywords })} -->`,
       `# ${n.s === 'p' ? '紙 ' : ''}${n.id}`, '',
-      info && info + '  ', nav, '',
+      sub ? `<p ${SUB}>${sub}</p>\n` : null,
       n.img ? `![${n.id}](${enc(n.img)})\n` : null,
-      BODY + L.bodyToMd(n.body, x => enc(x) + '.md'), ''
-    ].filter(x => x !== null && x !== 0 && x !== false).join('\n');
+      BODY + L.bodyToMd(n.body, x => enc(x) + '.md') + '\n' + NAV,
+      '<hr>', '', `<p ${SUB}>${nav1 ? nav1 + '<br>' : ''}${nav2}</p>`, ''
+    ].filter(x => x !== null).join('\n');
   }
 
-  function treeLines(s, dir) {
-    const list = ids(s), has = x => !!get(s, x), depth = {};
-    return list.map(id => {
-      const p = L.parentIn(id, has); depth[id] = p ? depth[p] + 1 : 0;
-      const n = get(s, id);
-      const extra = [s === 'd' && n.created.slice(0, 10), n.img && '📷', summary(n), n.keywords.length && '— ' + n.keywords.map(esc).join('、')].filter(Boolean).join(' ');
-      return `${'  '.repeat(depth[id])}- [${id}](${dir}/${enc(id)}.md) ${extra}`;
-    });
-  }
-
+  // 一覧: 先頭の ID（祖先の無いもの）だけ
   function listMd(s) {
-    const nav = `[Index](Index.md) · [${SP[s === 'd' ? 'p' : 'd']}一覧](${LIST[s === 'd' ? 'p' : 'd']})`;
-    if (s === 'd') return [`# デジタル`, '', nav, '', ...treeLines('d', 'digital'), ''].join('\n');
-    // 紙は先頭の番号ごとに分ける
-    const groups = new Map();
-    for (const line of treeLines('p', 'paper')) {
-      const id = line.match(/\[([^\]]+)\]/)[1], r = L.root(id);
-      if (!groups.has(r)) groups.set(r, []);
-      groups.get(r).push(line);
-    }
-    const out = ['# 紙', '', nav, '', [...groups.keys()].map(r => `[${r}](#n${r})`).join(' · '), ''];
-    for (const [r, lines] of groups) out.push(`## <a id="n${r}"></a>${r}`, '', ...lines, '');
-    return out.join('\n');
+    const has = x => !!get(s, x), o = s === 'd' ? 'p' : 'd';
+    const roots = ids(s).filter(id => !L.parentIn(id, has));
+    return [`# ${SP[s]}`, '', `<p ${SUB}>${a('Index.md', 'Index')}${sep}${a(enc(LIST[o]), SP[o] + '一覧')}</p>`, '',
+      roots.map(id => `[${id}](${DIR[s]}/${enc(id)}.md)`).join('　') || '（まだありません）', ''].join('\n');
   }
 
   function globalIndex() {
@@ -135,31 +122,34 @@ function openVault(vault) {
       if (!m.has(k)) m.set(k, { d: [], p: [] });
       m.get(k)[n.s].push(n.id);
     }
-    return [...m].sort((a, b) => a[0].localeCompare(b[0], 'ja'));
+    return [...m].sort((x, y) => x[0].localeCompare(y[0], 'ja'));
   }
-  const idLinks = (s, list, up) => list.slice().sort(L.cmpId).map(x => `[${s === 'p' ? '紙' : ''}${x}](${up}${DIR[s]}/${enc(x)}.md)`).join(' ');
+  const idLinks = (s, list, up) => list.slice().sort(L.cmpId).map(x => `[${label(s, x)}](${up}${DIR[s]}/${enc(x)}.md)`).join(' ');
+  const cell = v => [idLinks('d', v.d, ''), idLinks('p', v.p, '')].filter(Boolean).join(' ');
 
   function indexMd() {
-    const out = ['# Index', '', '[デジタル一覧](デジタル.md) · [紙一覧](紙.md) · [トピックIndex](#topics)', '', '## キーワード', ''];
-    for (const [k, v] of globalIndex()) out.push(`- <a id="${L.kwAnchor(k)}"></a>**${esc(k)}**　${[idLinks('d', v.d, ''), idLinks('p', v.p, '')].filter(Boolean).join(' · ')}`);
-    out.push('', '## <a id="topics"></a>トピックIndex', '');
-    for (const t of [...topics.values()].sort((a, b) => a.name.localeCompare(b.name, 'ja'))) {
-      const anch = t.anchors.map(a => idLinks(a.s, [a.id], '')).join(' ');
-      out.push(`- [${esc(t.name)}](${topicPath(t.name).split('/').map(enc).join('/')})${anch ? ' — 入口 ' + anch : ''}`);
+    const out = ['# Index', '', `<p ${SUB}>${a(enc(LIST.d), 'デジタル一覧')}${sep}${a(enc(LIST.p), '紙一覧')}</p>`, ''];
+    const gi = globalIndex();
+    if (!gi.length) out.push('（キーワードはまだありません）');
+    else {
+      out.push('| キーワード | ID |', '|---|---|');
+      for (const [k, v] of gi) out.push(`| <a id="${L.kwAnchor(k)}"></a>${esc(k)} | ${cell(v)} |`);
     }
     return out.join('\n') + '\n';
   }
 
   function topicMd(t) {
-    const { rows, stars } = L.mergeTopic(t);
-    const anch = t.anchors.map(a => idLinks(a.s, [a.id], '../')).join(' ');
+    const { rows, stars } = L.mergeTopic(t), e = t.entry;
     const out = [
       `<!-- pkm-topic ${J(t)} -->`, `# ${esc(t.name)}`, '',
-      `[Index](../Index.md#topics)${anch ? ' · 入口 ' + anch : ''}`, '',
-      '| キーワード | ID |', '|---|---|'
+      `<p ${SUB}>入口 ${e ? a(`../${DIR[e.s]}/${enc(e.id)}.md`, label(e.s, e.id)) : 'なし'}</p>`, ''
     ];
-    for (const r of rows) out.push(`| ${esc(r.kw)} | ${[idLinks('d', r.d, '../'), idLinks('p', r.p, '../')].filter(Boolean).join(' · ')} |`);
+    if (rows.length) {
+      out.push('| キーワード | ID |', '|---|---|');
+      for (const r of rows) out.push(`| ${esc(r.kw)} | ${[idLinks('d', r.d, '../'), idLinks('p', r.p, '../')].filter(Boolean).join(' ')} |`);
+    }
     if (stars.length) out.push('', ...stars.map(s => `★ [${esc(s)}](${enc(L.fileName(s))}.md)  `));
+    out.push('', '<hr>', '', `<p ${SUB}>${a('../Index.md', 'Index')}</p>`);
     return out.join('\n') + '\n';
   }
 
@@ -168,6 +158,12 @@ function openVault(vault) {
     for (const n of notes.values()) files.set(notePath(n.s, n.id), noteMd(n));
     for (const t of topics.values()) files.set(topicPath(t.name), topicMd(t));
     for (const [p, c] of files) if (cache.get(p) !== c) { fs.writeFileSync(abs(p), c); cache.set(p, c); }
+  }
+  function removeFile(p) { // 消すときはゴミ箱へ
+    if (!fs.existsSync(abs(p))) return;
+    fs.mkdirSync(abs('.trash'), { recursive: true });
+    fs.renameSync(abs(p), abs(`.trash/${Date.now()}-${path.basename(p)}`));
+    cache.delete(p);
   }
 
   // ===== 画面とのやりとり =====
@@ -183,14 +179,14 @@ function openVault(vault) {
       n.keywords = x.keywords || []; n.body = x.body || '';
       notes.set(key(x.s, x.id), n); rebuild(); return pub(n);
     },
-    rename(s, a, b) {
-      const n = get(s, a);
-      if (!n || !validId(b) || get(s, b)) return false;
-      notes.delete(key(s, a)); n.id = b; notes.set(key(s, b), n);
-      if (n.img) { const img = b + path.extname(n.img); fs.renameSync(abs(`${DIR[s]}/${n.img}`), abs(`${DIR[s]}/${img}`)); n.img = img; }
-      if (fs.existsSync(abs(notePath(s, a)))) fs.unlinkSync(abs(notePath(s, a)));
-      cache.delete(notePath(s, a));
-      for (const t of topics.values()) for (const x of t.anchors) if (x.s === s && x.id === a) x.id = b;
+    rename(s, from, to) {
+      const n = get(s, from);
+      if (!n || !validId(to) || get(s, to)) return false;
+      notes.delete(key(s, from)); n.id = to; notes.set(key(s, to), n);
+      if (n.img) { const img = to + path.extname(n.img); fs.renameSync(abs(`${DIR[s]}/${n.img}`), abs(`${DIR[s]}/${img}`)); n.img = img; }
+      if (fs.existsSync(abs(notePath(s, from)))) fs.unlinkSync(abs(notePath(s, from)));
+      cache.delete(notePath(s, from));
+      for (const t of topics.values()) if (t.entry && t.entry.s === s && t.entry.id === from) t.entry.id = to;
       rebuild(); return pub(n);
     },
     saveImage(s, id, buf) {
@@ -199,10 +195,16 @@ function openVault(vault) {
       n.img = id + '.jpg'; fs.writeFileSync(abs(`${DIR[s]}/${n.img}`), buf);
       notes.set(key(s, id), n); rebuild(); return pub(n);
     },
-    saveTopic(t) {
-      topics.set(t.name, { name: t.name, anchors: t.anchors || [], d: t.d || '', p: t.p || '' });
+    // oldName があれば名前の変更
+    saveTopic(t, oldName) {
+      if (oldName && oldName !== t.name) {
+        topics.delete(oldName);
+        if (topicPath(oldName) !== topicPath(t.name)) { if (fs.existsSync(abs(topicPath(oldName)))) fs.unlinkSync(abs(topicPath(oldName))); cache.delete(topicPath(oldName)); }
+      }
+      topics.set(t.name, { name: t.name, entry: t.entry || null, d: t.d || '', p: t.p || '' });
       rebuild(); return true;
-    }
+    },
+    deleteTopic(name) { topics.delete(name); removeFile(topicPath(name)); rebuild(); return true; }
   };
 }
 

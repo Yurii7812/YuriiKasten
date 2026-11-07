@@ -10,7 +10,7 @@ const SP = { d: 'デジタル', p: '紙' };
 let notes = [], topics = [], tab = 'd', cur = null, vault = '';
 const get = (s, id) => notes.find(n => n.s === s && n.id === id);
 const free = (s, id) => { while (get(s, id)) id = L.sibling(id); return id; };
-const topicOf = (s, id) => topics.find(t => t.anchors.some(a => a.s === s && a.id === id));
+const topicOf = (s, id) => topics.find(t => t.entry && t.entry.s === s && t.entry.id === id); // 入口は1つ
 
 // ===== 保存（少し待ってまとめて）=====
 const timers = {};
@@ -95,8 +95,8 @@ const chips = v => v.d.map(x => chip('d', x)).join('') + v.p.map(x => chip('p', 
 const tchip = name => `<span class="chip t" data-topic="${esc(name)}">${esc(name)}</span>`;
 const firstLine = n => (n.body.split('\n').find(x => x.trim()) || '').trim().slice(0, 40);
 const kwTags = n => n.keywords.map(k => `<span class="tag">${esc(k)}</span>`).join('');
-const noteRow = (n, depth = 0, label = false) =>
-  `<div class="item${cur && cur.k === 'note' && cur.s === n.s && cur.id === n.id ? ' on' : ''}" data-s="${n.s}" data-id="${esc(n.id)}" style="padding-left:${12 + depth * 14}px">` +
+const noteRow = (n, label = false) =>
+  `<div class="item${cur && cur.k === 'note' && cur.s === n.s && cur.id === n.id ? ' on' : ''}" data-s="${n.s}" data-id="${esc(n.id)}">` +
   `${label ? `<span class="sp ${n.s}">${SP[n.s]}</span>` : ''}<b>${esc(n.id)}</b>${n.image ? '📷 ' : ''}<small>${esc(firstLine(n))}</small> ${kwTags(n)}</div>`;
 
 function renderList() {
@@ -115,16 +115,14 @@ function renderList() {
     if (ti.length) out.push('<h4>トピックIndex</h4>', ...ti.sort((a, b) => a[0] - b[0]).map(x => x[1]));
     const hit = notes.filter(n => [n.id, n.body, n.keywords.join(' ')].join('\n').toLowerCase().includes(q))
       .sort((a, b) => a.s.localeCompare(b.s) || L.cmpId(a.id, b.id));
-    if (hit.length) out.push('<h4>ノート</h4>', ...hit.map(n => noteRow(n, 0, true)));
+    if (hit.length) out.push('<h4>ノート</h4>', ...hit.map(n => noteRow(n, true)));
     if (!out.length) out.push('<div class="none">見つかりません</div>');
   } else if (tab === 'i') {
     out.push('<h4>Index</h4>', ...globalIndex().map(([k, v]) => `<div class="ix"><b>${esc(k)}</b> ${chips(v)}</div>`));
-    out.push('<h4>トピックIndex</h4>', ...topics.slice().sort((a, b) => a.name.localeCompare(b.name, 'ja'))
-      .map(t => `<div class="ix${cur && cur.k === 'topic' && cur.name === t.name ? ' on' : ''}">${tchip(t.name)} ${t.anchors.map(a => chip(a.s, a.id)).join('')}</div>`));
-    if (out.length === 2) out.push('<div class="none">ノートにキーワードを書くと、ここに並びます</div>');
+    if (out.length === 1) out.push('<div class="none">ノートにキーワードを書くと、ここに並びます</div>');
   } else {
-    const list = notes.filter(n => n.s === tab).sort((a, b) => L.cmpId(a.id, b.id)), has = x => !!get(tab, x), depth = {};
-    for (const n of list) { const p = L.parentIn(n.id, has); depth[n.id] = p ? depth[p] + 1 : 0; out.push(noteRow(n, depth[n.id])); }
+    const list = notes.filter(n => n.s === tab).sort((a, b) => L.cmpId(a.id, b.id));
+    for (const n of list) out.push(noteRow(n));
     if (!list.length) out.push(`<div class="none">${tab === 'p' ? '「📷 スキャン取り込み」で紙を入れます' : '「＋ 新規」で書き始めます'}</div>`);
   }
   $('#list').innerHTML = out.join('');
@@ -168,7 +166,7 @@ function openNote(s, id, n) {
     await flush(); await api.saveNote(pubNote(note));
     const r = L.isId(v) && !get(s, v) && await api.rename(s, id, v);
     if (!r) { alert('そのIDは使えません（形が違うか、既にあります）'); e.target.value = id; return; }
-    Object.assign(note, r); for (const t of topics) for (const a of t.anchors) if (a.s === s && a.id === id) a.id = v;
+    Object.assign(note, r); for (const t of topics) if (t.entry && t.entry.s === s && t.entry.id === id) t.entry.id = v;
     openNote(s, v);
   };
   renderList();
@@ -182,7 +180,7 @@ async function create(s, id) {
 $('#pane').addEventListener('click', async e => {
   const a = e.target.closest('[data-act]'); if (!a || !cur) return;
   const act = a.dataset.act;
-  if (cur.k === 'topic') { if (act === 'tedit') openTopic(cur.name, !cur.edit); return; }
+  if (cur.k === 'topic') return topicAct(act);
   const { s, id } = cur;
   if (act === 'sib') create(s, free(s, L.sibling(id)));
   if (act === 'chi') create(s, free(s, L.child(id)));
@@ -198,46 +196,71 @@ $('#new').onclick = () => {
 // ===== トピックIndex =====
 function topicDialog(s, id) {
   $('#m-name').value = id + '-';
-  $('#m-list').innerHTML = topics.length ? '<div class="sub">または、今あるものに入口として足す</div>' +
-    topics.map(t => `<button class="m-add" data-name="${esc(t.name)}">${esc(t.name)}</button>`).join('') : '';
   $('#modal').style.display = 'flex'; $('#m-name').focus();
   const done = () => { $('#modal').style.display = 'none'; };
   $('#m-ok').onclick = async () => {
     const name = $('#m-name').value.trim();
     if (!name) return;
     if (topics.find(t => t.name === name)) return alert('その名前は既にあります');
-    const t = { name, anchors: [{ s, id }], d: '', p: '' };
-    topics.push(t); await api.saveTopic(t); done(); openTopic(name, true);
-  };
-  $('#m-list').onclick = async e => {
-    const b = e.target.closest('.m-add'); if (!b) return;
-    const t = topics.find(x => x.name === b.dataset.name);
-    t.anchors.push({ s, id }); await api.saveTopic(t); done(); openTopic(t.name);
+    const t = { name, entry: { s, id }, d: '', p: '' };
+    topics.push(t); await api.saveTopic(t); done(); openTopic(name, 'edit');
   };
   $('#m-cancel').onclick = done;
   $('#m-name').onkeydown = e => { if (e.key === 'Enter') $('#m-ok').click(); if (e.key === 'Escape') done(); };
 }
-function openTopic(name, edit = false) {
+// mode: view（まとめて表示）| edit（デジタル欄・紙欄に書く）| conf（入口・名前を変える）
+function openTopic(name, mode = 'view') {
   const t = topics.find(x => x.name === name); if (!t) return;
-  cur = { k: 'topic', name, edit };
-  if (!$('#q').value) tab = 'i';
-  const { rows, stars } = L.mergeTopic(t);
+  cur = { k: 'topic', name, mode };
+  const { rows, stars } = L.mergeTopic(t), e = t.entry;
+  let body;
+  if (mode === 'edit') body = `<div class="sub">1行に「キーワード ID ID …」。★ で始めると別のトピックIndexへの案内。デジタルと紙は別々に書き、表示はまとめます。</div>
+      <div class="two"><div><h4>デジタル</h4><div class="ed" id="ed-d"></div></div><div><h4>紙</h4><div class="ed" id="ed-p"></div></div></div>`;
+  else if (mode === 'conf') body = `<div class="conf">
+      <label>名前 <input id="t-name" value="${esc(t.name)}"></label>
+      <label>入口 <select id="t-s"><option value="d"${e && e.s === 'd' ? ' selected' : ''}>デジタル</option><option value="p"${e && e.s === 'p' ? ' selected' : ''}>紙</option></select>
+        <input id="t-id" value="${e ? esc(e.id) : ''}" style="width:90px"></label>
+      <div class="row"><button data-act="tsave" class="p">決定</button><button data-act="tcancel">やめる</button>
+        <span class="grow"></span><button data-act="tdel" class="danger">このトピックIndexを削除</button></div></div>`;
+  else body = `<table class="ti">${rows.map(r => `<tr><td>${esc(r.kw)}</td><td>${chips(r)}</td></tr>`).join('') || '<tr><td class="none">まだ空です。「編集」で書きます</td></tr>'}</table>
+      ${stars.map(x => `<div class="star">★ ${tchip(x)}</div>`).join('')}`;
   $('#pane').innerHTML = `
     <div class="row">
       <h2>${esc(name)}</h2>
-      <span class="sub">入口</span>${t.anchors.map(a => chip(a.s, a.id)).join('')}
+      <span class="sub">入口</span>${e ? chip(e.s, e.id) : '<span class="sub">なし</span>'}
       <span class="grow"></span>
-      <button data-act="tedit" class="${edit ? 'p' : ''}">${edit ? '完了' : '編集'}</button>
-    </div>
-    ${edit ? `<div class="sub">1行に「キーワード ID ID …」。★ で始めると別のトピックIndexへの案内。デジタルと紙は別々に書き、表示はまとめます。</div>
-      <div class="two"><div><h4>デジタル</h4><div class="ed" id="ed-d"></div></div><div><h4>紙</h4><div class="ed" id="ed-p"></div></div></div>`
-    : `<table class="ti">${rows.map(r => `<tr><td>${esc(r.kw)}</td><td>${chips(r)}</td></tr>`).join('') || '<tr><td class="none">まだ空です。「編集」で書きます</td></tr>'}</table>
-      ${stars.map(x => `<div class="star">★ ${tchip(x)}</div>`).join('')}`}`;
-  if (edit) for (const s of ['d', 'p']) {
+      ${mode === 'conf' ? '' : `<button data-act="tconf">入口・名前</button>
+      <button data-act="tedit" class="${mode === 'edit' ? 'p' : ''}">${mode === 'edit' ? '完了' : '編集'}</button>`}
+    </div>${body}`;
+  if (mode === 'edit') for (const s of ['d', 'p']) {
     const v = editor($('#ed-' + s), t[s], 'topic', s, x => { t[s] = x; saveTopic(t); }, s === 'd' ? 'PKM 1a 3' : 'PKM 2');
     if (s === 'd') v.focus();
   }
+  if (mode === 'conf') $('#t-id').focus();
   renderList();
+}
+async function topicAct(act) {
+  const t = topics.find(x => x.name === cur.name); if (!t) return;
+  if (act === 'tedit') return openTopic(t.name, cur.mode === 'edit' ? 'view' : 'edit');
+  if (act === 'tconf') return openTopic(t.name, 'conf');
+  if (act === 'tcancel') return openTopic(t.name);
+  if (act === 'tdel') {
+    if (!confirm(`トピックIndex「${t.name}」を削除しますか？（ファイルは .trash に移ります）`)) return;
+    await flush(); await api.deleteTopic(t.name);
+    topics = topics.filter(x => x !== t); cur = null;
+    $('#pane').innerHTML = '<div class="none">削除しました。</div>'; return renderList();
+  }
+  if (act === 'tsave') {
+    const name = $('#t-name').value.trim(), s = $('#t-s').value, id = $('#t-id').value.trim().toLowerCase();
+    if (!name) return alert('名前を入れてください');
+    if (name !== t.name && topics.find(x => x.name === name)) return alert('その名前は既にあります');
+    if (!get(s, id)) return alert(`${SP[s]} ${id} というノートはありません`);
+    const other = topicOf(s, id);
+    if (other && other !== t) return alert(`${SP[s]} ${id} は、もう「${other.name}」の入口です（1つのIDに1つの索引）`);
+    await flush();
+    const old = t.name; t.name = name; t.entry = { s, id };
+    await api.saveTopic(t, old); openTopic(name);
+  }
 }
 
 // ===== スキャン取り込み（紙）=====

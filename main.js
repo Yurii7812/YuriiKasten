@@ -16,7 +16,8 @@ ipcMain.handle('load', () => open());
 ipcMain.handle('saveNote', (_e, n) => v.saveNote(n));
 ipcMain.handle('rename', (_e, s, a, b) => v.rename(s, a, b));
 ipcMain.handle('saveImage', (_e, s, id, bytes) => v.saveImage(s, id, Buffer.from(bytes)));
-ipcMain.handle('saveTopic', (_e, t) => v.saveTopic(t));
+ipcMain.handle('saveTopic', (_e, t, old) => v.saveTopic(t, old));
+ipcMain.handle('deleteTopic', (_e, name) => v.deleteTopic(name));
 ipcMain.handle('chooseVault', async () => {
   const r = await dialog.showOpenDialog({ title: 'ノートを保存するフォルダ', defaultPath: vault, properties: ['openDirectory', 'createDirectory'] });
   if (r.canceled) return null;

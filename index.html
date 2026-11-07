@@ -50,6 +50,9 @@ aside{width:290px;display:flex;flex-direction:column;border-right:1px solid var(
 table.ti{border-collapse:collapse;width:100%;margin-top:6px}
 .ti td{border-bottom:1px solid #f0f0f0;padding:5px 8px;vertical-align:top}.ti td:first-child{width:40%;font-weight:600}
 .star{margin-top:8px}
+.conf{display:flex;flex-direction:column;gap:10px;max-width:460px;margin-top:8px}.conf label{display:flex;gap:8px;align-items:center}
+.conf input,.conf select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;font:inherit}
+button.danger{color:var(--red);border-color:#efc9c4}
 .sub{color:var(--sub);font-size:13px}.none{color:var(--sub);padding:30px 12px;text-align:center}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.25);display:none;align-items:center;justify-content:center;z-index:10}
 .modal .box{background:#fff;border-radius:10px;padding:18px 20px;width:380px;display:flex;flex-direction:column;gap:8px}
@@ -82,7 +85,6 @@ table.ti{border-collapse:collapse;width:100%;margin-top:6px}
   <div class="sub">名前（ID-主題。例: 7-PKM）</div>
   <input id="m-name">
   <div class="row"><button id="m-ok" class="p">作る</button><button id="m-cancel">やめる</button></div>
-  <div id="m-list"></div>
 </div></div>
 
 <div id="scan">

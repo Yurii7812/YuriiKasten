@@ -12,33 +12,47 @@ test('保存フォルダ: 書き出しと読み直し', () => {
   v.saveNote({ s: 'd', id: '1a', created: '2026-10-10 11:13', keywords: [], body: '1(1) を引用' });
   v.saveImage('p', '1', Buffer.from([0xff, 0xd8, 0xff]));
   v.saveNote({ s: 'p', id: '1', keywords: ['PKM', '紙'], body: '紙の文字 :1a' });
-  v.saveTopic({ name: '1-PKM', anchors: [{ s: 'd', id: '1' }], d: 'PKM 1 1a\n★ 2-x', p: 'PKM 1' });
+  v.saveTopic({ name: '1-PKM', entry: { s: 'd', id: '1' }, d: 'PKM 1 1a\n★ 2-x', p: 'PKM 1' });
 
   const r = p => fs.readFileSync(path.join(dir, p), 'utf8');
-  assert.match(r('digital/1.md'), /2026-10-10 11:12/);
-  assert.match(r('digital/1.md'), /下 \[1a\]\(1a\.md\)/);
-  assert.match(r('digital/1.md'), /トピックIndex \[1-PKM\]/);
+  const d1 = r('digital/1.md');
+  assert.match(d1, /<p style="color:#888;font-size:.9em">2026-10-10 11:12　<a href="..\/Index.md#k-[a-z0-9]+">#PKM<\/a><\/p>/);
+  assert.match(d1, /分岐 <a href="1a.md">1a<\/a>/);
+  assert.match(d1, /<a href="..\/topic\/1-PKM.md">トピックIndex 1-PKM<\/a>/);
   assert.match(r('digital/1a.md'), /\[1\(1\)\]\(1\.md#c1\)/);
+  assert.match(r('digital/1a.md'), /<a href="1.md">← 1<\/a>/);
   assert.match(r('paper/1.md'), /!\[1\]\(1\.jpg\)/);
   assert.doesNotMatch(r('paper/1.md'), /\d{4}-\d\d-\d\d \d\d:\d\d/); // 紙に日付は無い
-  assert.match(r('Index.md'), /\*\*PKM\*\*　\[1\]\(digital\/1\.md\) · \[紙1\]\(paper\/1\.md\)/);
-  assert.match(r('Index.md'), /\[1-PKM\]\(topic\/1-PKM\.md\)/);
-  assert.match(r('topic/1-PKM.md'), /\| PKM \| \[1\]\(\.\.\/digital\/1\.md\) \[1a\]\(\.\.\/digital\/1a\.md\) · \[紙1\]\(\.\.\/paper\/1\.md\) \|/);
-  assert.match(r('紙.md'), /## <a id="n1"><\/a>1/);
-  assert.match(r('デジタル.md'), /^  - \[1a\]\(digital\/1a\.md\)/m);
+  assert.match(r('Index.md'), /\| <a id="k-[a-z0-9]+"><\/a>PKM \| \[1\]\(digital\/1\.md\) \[紙1\]\(paper\/1\.md\) \|/);
+  assert.doesNotMatch(r('Index.md'), /トピックIndex|1-PKM/); // Index にトピックIndexは出さない
+  assert.match(r('topic/1-PKM.md'), /入口 <a href="..\/digital\/1.md">1<\/a>/);
+  assert.match(r('topic/1-PKM.md'), /\| PKM \| \[1\]\(\.\.\/digital\/1\.md\) \[1a\]\(\.\.\/digital\/1a\.md\) \[紙1\]\(\.\.\/paper\/1\.md\) \|/);
+  assert.match(r('デジタル.md'), /\[1\]\(digital\/1\.md\)　\[5\]\(digital\/5\.md\)/); // 先頭の ID だけ
+  assert.doesNotMatch(r('デジタル.md'), /1a/);
 
   v = openVault(dir); // 読み直し
   const st = v.state(), n = st.notes.find(x => x.s === 'd' && x.id === '1');
   assert.strictEqual(n.body, '最初(1)\n(1):説明 :1a');
   assert.deepStrictEqual(n.keywords, ['PKM']);
   assert.strictEqual(n.created, '2026-10-10 11:12');
+  assert.strictEqual(st.notes.find(x => x.s === 'd' && x.id === '1a').body, '1(1) を引用');
   const old = st.notes.find(x => x.s === 'd' && x.id === '5');
   assert.strictEqual(old.body, '昔の本文'); assert.strictEqual(old.created, '2026-11-07 00:00');
   assert.ok(st.notes.find(x => x.s === 'p' && x.id === '1').image.startsWith('file://'));
-  assert.strictEqual(st.topics[0].p, 'PKM 1');
+  assert.deepStrictEqual(st.topics[0].entry, { s: 'd', id: '1' });
+
+  // 入口と名前を変える → 古いファイルは消える
+  v.saveTopic({ name: '1a-PKM', entry: { s: 'd', id: '1a' }, d: 'PKM 1', p: '' }, '1-PKM');
+  assert.ok(!fs.existsSync(path.join(dir, 'topic/1-PKM.md')));
+  assert.match(r('digital/1a.md'), /トピックIndex 1a-PKM/);
+  assert.doesNotMatch(r('digital/1.md'), /トピックIndex/);
+  // 削除
+  v.deleteTopic('1a-PKM');
+  assert.ok(!fs.existsSync(path.join(dir, 'topic/1a-PKM.md')));
+  assert.doesNotMatch(r('digital/1a.md'), /トピックIndex/);
 
   assert.ok(v.rename('d', '1a', '1b'));
   assert.ok(!fs.existsSync(path.join(dir, 'digital/1a.md')));
-  assert.match(r('digital/1.md'), /下 \[1b\]/);
+  assert.match(r('digital/1.md'), /分岐 <a href="1b.md">1b<\/a>/);
   fs.rmSync(dir, { recursive: true });
 });
