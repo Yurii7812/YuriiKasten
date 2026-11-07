@@ -7,6 +7,7 @@ let note = null;           // 開いているなりきりチャットのノー�
 let roles = [];            // ライブラリ [{id,name,icon:{emoji|file}}]
 let speaker = null;        // 話す役の id
 let draftQuote = null;     // 次に送る発言に付ける引用
+let draftReply = null;     // 次に送る発言が返信する発言の id
 let draft = '';
 const PALETTE = ['#2456c8', '#c0392b', '#2e8b57', '#b8860b', '#8e44ad', '#16a085', '#d35400', '#566573'];
 
@@ -31,7 +32,7 @@ const PIC = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 // container に、なりきりチャットを描く（ノートの上の欄は、ふつうのノートと同じ）
 export function render(container, n, mid) {
   note = n; if (!n.data || !n.data.cast) n.data = { ...emptyData(), ...(n.data || {}) };
-  draftQuote = null; draft = '';
+  draftQuote = null; draftReply = null; draft = '';
   const c = conv(); if (!speaker || !c.cast.some(r => r.id === speaker)) speaker = c.cast[0] && c.cast[0].id;
   container.innerHTML = '<div class="chat rp" id="rp-root"></div>'; drawRoot();
   if (mid) setTimeout(() => { const el = document.querySelector(`[data-mid="${mid}"]`); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); } }, 50);
@@ -45,6 +46,7 @@ function drawRoot() {
       </div>
       <div id="c-msgs"></div>
       <div id="rp-quote"></div>
+      <div id="rp-mention" class="mnlist"></div>
       <div class="rp-speakers" id="rp-sp"></div>
       <div class="c-compose"><button data-r="quote" title="ノートや、ほかの会話を引用する">❝ 引用</button><button data-r="attach" title="画像などを付ける">📎</button>
         <textarea id="c-in" rows="1" placeholder="発言を書く（Enter で送る、Shift+Enter で改行、Tab で話す役を切り替え）"></textarea><button class="p" data-r="send">送る</button></div>`;
@@ -59,8 +61,10 @@ function speakers() {
 }
 function quoteBar() {
   const el = $('#rp-quote'); if (!el) return;
-  el.innerHTML = draftQuote ? `<span>❝ ${esc(quoteTitle(draftQuote))}を引用して送る</span><b data-r="noquote">×</b>` : '';
-  el.style.display = draftQuote ? 'flex' : 'none';
+  const rm = draftReply && conv().messages.find(x => x.id === draftReply), rr = rm && (conv().cast.find(x => x.id === rm.role) || { name: rm.name || '?' });
+  el.innerHTML = (draftQuote ? `<div class="qrow"><span>❝ ${esc(quoteTitle(draftQuote))}を引用して送る</span><b data-r="noquote">×</b></div>` : '')
+    + (rm ? `<div class="qrow"><span>↩ ${esc(rr.name)} の発言に返信: ${esc((rm.text || '').split('\n')[0].slice(0, 30))}</span><b data-r="noreply">×</b></div>` : '');
+  el.style.display = draftQuote || rm ? 'block' : 'none';
 }
 const quoteTitle = q => q.kind === 'note' ? `${q.s === 'p' ? '紙' : ''}ノート ${q.id}` : `会話「${q.title}」の発言`;
 function quoteCard(q) {
@@ -75,27 +79,48 @@ function paint() {
   const c = conv();
   box.innerHTML = c.messages.length ? c.messages.map(m => {
     const r = c.cast.find(x => x.id === m.role) || { id: m.role, name: m.name || '?', icon: null };
-    const right = c.cast[0] && c.cast[0].id === r.id;
-    return `<div class="rmsg${right ? ' right' : ''}" data-mid="${m.id}">${avatar(r)}<div class="rbody"><div class="b-meta"><b>${esc(r.name)}</b> ${hm(m.t)}</div>
-      <div class="bub rb">${m.quote ? quoteCard(m.quote) : ''}${m.text ? `<div class="b-body md">${renderMd(m.text)}</div>` : ''}</div></div></div>`;
+    const right = r.id === speaker;                       // いま話す役が右、ほかは左
+    const rp = m.reply && c.messages.find(x => x.id === m.reply), rpr = rp && (c.cast.find(x => x.id === rp.role) || { name: rp.name || '?' });
+    return `<div class="rmsg${right ? ' right' : ''}" data-mid="${m.id}">${avatar(r)}<div class="rbody"><div class="b-meta"><b>${esc(r.name)}</b> ${hm(m.t)} <span class="rpl" data-reply="${m.id}" title="この発言に返信">↩</span></div>
+      <div class="bub rb">${m.reply ? `<div class="rreply" data-goto="${m.reply}">↩ ${rp ? `${esc(rpr.name)}: ${esc((rp.text || '').split('\n')[0].slice(0, 40))}` : '（消された発言）'}</div>` : ''}${m.quote ? quoteCard(m.quote) : ''}${m.text ? `<div class="b-body md">${renderMd(m.text)}</div>` : ''}</div></div></div>`;
   }).join('') : '<div class="none">役を決めて、発言を書いてみましょう。Q&A・議論・相談のどれにも使えます</div>';
+  decorateMentions(box);
   box.scrollTop = box.scrollHeight;
+}
+// 本文の @役名 を、目立たせる
+function decorateMentions(box) {
+  const names = conv().cast.map(r => r.name).filter(Boolean).sort((a, b) => b.length - a.length); if (!names.length) return;
+  const re = new RegExp('@(' + names.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'g');
+  for (const body of box.querySelectorAll('.b-body')) {
+    const w = document.createTreeWalker(body, NodeFilter.SHOW_TEXT), hits = [];
+    for (let t = w.nextNode(); t; t = w.nextNode()) if (re.test(t.nodeValue) && !t.parentElement.closest('a,code')) hits.push(t); 
+    for (const t of hits) {
+      const f = document.createDocumentFragment(); let last = 0; re.lastIndex = 0; let m;
+      while ((m = re.exec(t.nodeValue))) { f.append(t.nodeValue.slice(last, m.index)); const sp = document.createElement('span'); sp.className = 'mention'; sp.textContent = m[0]; f.append(sp); last = m.index + m[0].length; }
+      f.append(t.nodeValue.slice(last)); t.replaceWith(f);
+    }
+  }
 }
 
 // ===== 送る =====
 function send() {
   const inp = $('#c-in'), text = inp.value.trim(), c = conv();
-  if (!text && !draftQuote) return;
+  if (!text && !draftQuote && !draftReply) return;
   if (!speaker) return alert('話す役がいません。「＋ 役」で加えてください');
   const m = { id: uid(), role: speaker, t: Date.now(), text };
   if (draftQuote) { m.quote = draftQuote; draftQuote = null; }
+  if (draftReply) { m.reply = draftReply; draftReply = null; }
   c.messages.push(m); c.updated = m.t; save();
   inp.value = ''; draft = ''; fit(inp); paint(); quoteBar(); ctx.renderList();
+}
+function setSpeaker(id) {          // 話す役を変えると、左右が入れ替わる（その役から見た会話）
+  speaker = id; speakers();
+  const box = $('#c-msgs'), top = box ? box.scrollTop : 0; paint(); if (box) box.scrollTop = top;
 }
 function cycle(dir) {
   const c = conv(); if (c.cast.length < 2) return;
   const i = c.cast.findIndex(r => r.id === speaker);
-  speaker = c.cast[(i + dir + c.cast.length) % c.cast.length].id; speakers();
+  setSpeaker(c.cast[(i + dir + c.cast.length) % c.cast.length].id);
 }
 
 // ===== 会話を作る・役 =====
@@ -215,6 +240,7 @@ function quoteToNote(m) {
 function menuFor(e, el) {
   const m = conv().messages.find(x => x.id === el.dataset.mid); if (!m) return;
   popMenu(e, [
+    ['返信する', () => { draftReply = m.id; quoteBar(); $('#c-in').focus(); }],
     ['書き直す', () => editMsg(el, m)],
     ...(m.text ? [['ノートに引用する', () => quoteToNote(m)], ['コピー', () => navigator.clipboard.writeText(m.text)]] : []),
     ['消す', () => { if (!confirm('この発言を消しますか？')) return; conv().messages = conv().messages.filter(x => x !== m); save(); paint(); ctx.renderList(); }, true]
@@ -241,11 +267,15 @@ document.addEventListener('click', e => {
     const k = a.dataset.r;
     if (k === 'send') send(); if (k === 'quote') quoteDialog(); if (k === 'attach') ctx.pick(true, attach, '*');
     if (k === 'noquote') { draftQuote = null; quoteBar(); }
+    if (k === 'noreply') { draftReply = null; quoteBar(); }
     if (k === 'addrole') addRoleDialog();
     if (k === 'roles') rolesDialog();
     return;
   }
-  const sp = e.target.closest('[data-spk]'); if (sp) { speaker = sp.dataset.spk; speakers(); $('#c-in').focus(); return; }
+  const sp = e.target.closest('[data-spk]'); if (sp) { setSpeaker(sp.dataset.spk); $('#c-in').focus(); return; }
+  const gt = e.target.closest('[data-goto]'); if (gt) { const el = document.querySelector(`.chat.rp [data-mid="${gt.dataset.goto}"]`); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1500); } return; }
+  const mn = e.target.closest('[data-mention]'); if (mn) { pickMention(mn.dataset.mention); return; }
+  const rb = e.target.closest('[data-reply]'); if (rb) { draftReply = rb.dataset.reply; quoteBar(); $('#c-in').focus(); return; }
   const ch = e.target.closest('[data-role]'); if (ch) { const r = roles.find(x => x.id === ch.dataset.role) || conv().cast.find(x => x.id === ch.dataset.role); if (r) roleDialog(r, nr => { const c = conv(); const i = c.cast.findIndex(x => x.id === nr.id); if (i >= 0) c.cast[i] = snapshot(nr); save(); drawRoot(); }); return; }
   const qn = e.target.closest('[data-qnote]'); if (qn) { const [s, ...id] = qn.dataset.qnote.split(':'); if (ctx.get(s, id.join(':'))) ctx.openNote(s, id.join(':')); return; }
   const qr = e.target.closest('[data-qrp]'); if (qr) { const [s2, ...i2] = qr.dataset.qrp.split(':'); if (ctx.get(s2, i2.join(':'))) ctx.openNote(s2, i2.join(':'), null, false, qr.dataset.qmid); return; }
@@ -255,12 +285,27 @@ document.addEventListener('contextmenu', e => {
   const el = e.target.closest('.chat.rp .rmsg'); if (!el || e.target.closest('textarea')) return;
   e.preventDefault(); menuFor(e, el);
 });
+// @ で役を指名する（候補が出る。Tab / Enter / 押して決める）
+let mentionOn = [];
+function mentionList() {
+  const inp = $('#c-in'), box = $('#rp-mention'); if (!inp) return;
+  const before = inp.value.slice(0, inp.selectionStart), m = before.match(/@([^\s@]*)$/);
+  mentionOn = m ? conv().cast.filter(r => r.name.startsWith(m[1])) : [];
+  if (!box) return;
+  box.innerHTML = mentionOn.map((r, i) => `<div class="mn${i === 0 ? ' on' : ''}" data-mention="${esc(r.name)}">${avatar(r, 22)} @${esc(r.name)}</div>`).join(''); box.style.display = mentionOn.length ? 'block' : 'none';
+}
+function pickMention(name) {
+  const inp = $('#c-in'), pos = inp.selectionStart, before = inp.value.slice(0, pos).replace(/@([^\s@]*)$/, '@' + name + ' ');
+  inp.value = before + inp.value.slice(pos); inp.selectionStart = inp.selectionEnd = before.length; draft = inp.value; mentionList(); inp.focus(); fit(inp);
+}
 document.addEventListener('input', e => {
-  if (e.target.id === 'c-in' && e.target.closest('.chat.rp')) { draft = e.target.value; fit(e.target); }
+  if (e.target.id === 'c-in' && e.target.closest('.chat.rp')) { draft = e.target.value; fit(e.target); mentionList(); }
 });
 document.addEventListener('keydown', e => {
   if (!e.target.closest || !e.target.closest('.chat.rp')) return;
   if (e.target.id === 'c-in') {
+    if (mentionOn.length && (e.key === 'Tab' || (e.key === 'Enter' && !e.isComposing))) { e.preventDefault(); pickMention(mentionOn[0].name); return; }
+    if (e.key === 'Escape' && mentionOn.length) { mentionOn = []; mentionList(); }
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
     else if (e.key === 'Tab') { e.preventDefault(); cycle(e.shiftKey ? -1 : 1); }
   }
