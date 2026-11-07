@@ -36,7 +36,7 @@ export function mdClick(e) {
   const a = e.target.closest('a'); if (!a) return false;
   e.preventDefault();
   if (a.dataset.ref) { if (ctx.get('d', a.dataset.ref)) ctx.openNote('d', a.dataset.ref); }
-  else if (a.dataset.file) ctx.api.openPath(a.dataset.file);
+  else if (a.dataset.file) ctx.openLink(a.dataset.file);
   return true;
 }
 // 右クリックのメニュー。items: [[名前, 関数]]

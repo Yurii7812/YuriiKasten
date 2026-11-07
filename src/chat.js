@@ -292,7 +292,7 @@ export async function attach(files) {
 
 // ===== イベント =====
 document.addEventListener('click', e => {
-  const pane = e.target.closest('.chat'); if (!pane) return;
+  const pane = e.target.closest('.chat'); if (!pane || pane.classList.contains('rp')) return; // なりきりは roleplay.js
   const c = e.target.closest('[data-c]');
   if (c) {
     const a = c.dataset.c;
@@ -312,10 +312,10 @@ document.addEventListener('click', e => {
   }
 });
 document.addEventListener('contextmenu', e => {
-  const bub = e.target.closest('.chat .bub'); if (!bub || e.target.closest('textarea')) return;
+  const bub = e.target.closest('.chat:not(.rp) .bub'); if (!bub || e.target.closest('textarea')) return;
   e.preventDefault(); menuFor(e, bub);
 });
-document.addEventListener('input', e => { if (e.target.id === 'c-in') { draft = e.target.value; fit(e.target); } });
+document.addEventListener('input', e => { if (e.target.id === 'c-in' && !e.target.closest('.rp')) { draft = e.target.value; fit(e.target); } });
 document.addEventListener('keydown', e => {
-  if (e.target.id === 'c-in' && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
+  if (e.target.id === 'c-in' && !e.target.closest('.rp') && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
 });
