@@ -441,6 +441,8 @@ function openTopic(name, mode = 'view', keep) {
       <label>名前 <input id="t-name" value="${esc(t.name)}"></label>
       <label>入口 <select id="t-s"><option value="d"${e && e.s === 'd' ? ' selected' : ''}>デジタル</option><option value="p"${e && e.s === 'p' ? ' selected' : ''}>紙</option></select>
         <input id="t-id" value="${e ? esc(e.id) : ''}" style="width:90px"></label>
+      <label>赤い点 <input id="t-kw" list="t-kws" value="${esc(t.keyword || '')}" placeholder="キーワード（空なら点なし）"><datalist id="t-kws">${globalIndex().filter(([, v]) => v.d.length + v.p.length >= 2).map(([k]) => `<option value="${esc(k)}">`).join('')}</datalist></label>
+      <div class="sub">Index のそのキーワードに赤い点が付き、押すとこのトピックIndex へ飛びます（IDが2つ以上のキーワードだけ。1つのキーワードに1つ）</div>
       <div class="row"><button data-act="tsave" class="p">決定</button><button data-act="tcancel">やめる</button>
         <span class="grow"></span><button data-act="tdel" class="danger">このトピックIndexを削除</button></div></div>`;
   else body = `<table class="ti">${rows.map(r => `<tr><td>${esc(r.kw)}</td><td>${chips(r)}</td></tr>`).join('') || '<tr><td class="none">まだ空です。「編集」で書きます</td></tr>'}</table>
@@ -479,7 +481,15 @@ async function topicAct(act) {
     if (!get(s, id)) return alert(`${SP[s]} ${id} というノートはありません`);
     const other = topicOf(s, id);
     if (other && other !== t) return alert(`${SP[s]} ${id} は、もう「${other.name}」の入口です（1つのIDに1つの索引）`);
+    const kw = $('#t-kw').value.trim();
+    if (kw) {
+      const v = globalIndex().find(x => x[0] === kw);
+      if (!v || v[1].d.length + v[1].p.length < 2) return alert('赤い点は、IDが2つ以上あるキーワードだけに付けられます');
+      const o = kwTopic(kw);
+      if (o && o !== t) return alert(`「${kw}」の赤い点は、もう「${o.name}」に付いています`);
+    }
     await flush();
+    t.keyword = kw;
     const old = t.name; t.name = name; t.entry = { s, id };
     await api.saveTopic(t, old);
     for (const x of tabs) if (x.k === 'topic' && x.name === old) x.name = name;
