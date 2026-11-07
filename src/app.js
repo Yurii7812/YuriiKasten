@@ -708,8 +708,8 @@ function topicNewDialog(kw = '') {
 // mode: view（まとめて表示）| edit（デジタル欄・紙欄に書く）| conf（入口・名前を変える）
 function openGraph(keep) {
   cur = place({ k: 'graph' }, keep); mode = 'notes';
-  $('#pane').innerHTML = GR.html(notes, titleOf);
-  GR.attach($('#gsvg'), (s, id) => openNote(s, id));
+  $('#pane').innerHTML = GR.html(notes, titleOf, topics, L.mergeTopic, topicLabel);
+  GR.attach($('#gsvg'), (s, id, e, topic) => topic ? openTopic(topic) : openNote(s, id));
   renderTabs(); renderList();
 }
 function openTopic(name, tmode = 'view', keep) {
