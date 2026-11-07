@@ -24,11 +24,11 @@ export function render(container, n) {
   container.innerHTML = `
     <div class="cvbox">
       <div class="row cv-bar">
-        <button data-v="text">＋ テキスト</button><button data-v="note">＋ ノート</button><button data-v="image">＋ 画像</button>
+        <button data-v="link" id="cv-link" title="箱を選んで、このボタン → つなぎたい相手の箱をクリック">↗ 線</button><button data-v="note">＋ ノート</button><button data-v="image">＋ 画像</button>
         <span class="grow"></span><button data-v="zout" title="縮小">−</button><span id="cv-zoom" class="sub"></span><button data-v="zin" title="拡大">＋</button><button data-v="fit">全体</button>
       </div>
       <div id="cv-wrap"><div id="cv-world"><svg id="cv-svg" width="1" height="1"></svg><div id="cv-cards"></div></div>
-        <div id="cv-hint">背景をダブルクリック: テキストカード　／　辺の●からドラッグ: 線　／　Ctrl+ホイール: 拡大縮小　／　Delete: 消す</div></div>
+        <div id="cv-hint">何もないところをクリック: 文字を書く　／　箱を選んで「線」→ 相手の箱: つなぐ　／　Ctrl+ホイール: 拡大縮小　／　Delete: 消す</div></div>
     </div>`;
   drawAll(); applyView();
 }
@@ -44,11 +44,17 @@ function cardHtml(n) {
   else if (n.type === 'note') {
     const note = ctx.get(n.s, n.nid);
     inner = `<div class="cv-nh" data-open="${n.s}:${esc(n.nid)}" title="ノートを開く">${n.s === 'p' ? '紙 ' : ''}ノート ${esc(n.nid)}</div><div class="cv-body md">${note ? renderMd(note.body.slice(0, 1200)) : '（ノートがありません）'}</div>`;
-  } else inner = `<div class="cv-body md">${n.text ? renderMd(n.text) : '<span class="sub">ダブルクリックで書く</span>'}</div>`;
+  } else inner = `<div class="cv-body md">${n.text ? renderMd(n.type === 'text' ? n.text.replace(/\n/g, '  \n') : n.text) : ''}</div>`;
   const on = sel && sel.kind === 'node' && sel.id === n.id;
-  return `<div class="cv-card ${n.type}${on ? ' sel' : ''}" data-n="${n.id}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px">${inner}<i class="cv-rs"></i>${SIDES.map(s => `<i class="cv-h ${s}" data-side="${s}"></i>`).join('')}</div>`;
+  return `<div class="cv-card ${n.type}${on ? ' sel' : ''}" data-n="${n.id}" style="left:${n.x}px;top:${n.y}px;${n.type === 'text' ? '' : `width:${n.w}px;height:${n.h}px`}">${inner}${n.type === 'text' ? '' : '<i class="cv-rs"></i>'}</div>`;
 }
-function drawCards() { $('#cv-cards').innerHTML = cv().nodes.map(cardHtml).join(''); }
+function drawCards() { $('#cv-cards').innerHTML = cv().nodes.map(cardHtml).join(''); measureAll(); linkBtn(); }
+// 文字の箱は、中の文字の大きさに合わせる（線のつなぎ先に使うので、大きさを測っておく）
+function measure(n) { if (n.type !== 'text') return; const el = document.querySelector(`.cv-card[data-n="${n.id}"]`); if (el) { n.w = el.offsetWidth; n.h = el.offsetHeight; } }
+function measureAll() { cv().nodes.forEach(measure); }
+const linkBtn = () => { const b = $('#cv-link'); if (b) { b.disabled = !(sel && sel.kind === 'node') && !drag; b.classList.toggle('p', !!linking); } };
+let editing = false;           // 文字を入力している最中
+let linking = null;             // 線を引いている最中: つなぐ元の箱の id
 const anchor = (n, side) => side === 'top' ? [n.x + n.w / 2, n.y] : side === 'bottom' ? [n.x + n.w / 2, n.y + n.h] : side === 'left' ? [n.x, n.y + n.h / 2] : [n.x + n.w, n.y + n.h / 2];
 const normal = side => side === 'top' ? [0, -1] : side === 'bottom' ? [0, 1] : side === 'left' ? [-1, 0] : [1, 0];
 function path(a, as, b, bs) {
@@ -60,12 +66,12 @@ function drawEdges() {
   let h = '<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6b7a99"/></marker><marker id="arrs" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2456c8"/></marker></defs>';
   for (const e of cv().edges) {
     const a = node(e.from), b = node(e.to); if (!a || !b) continue;
-    const pa = anchor(a, e.fromSide), pb = anchor(b, e.toSide), d = path(pa, e.fromSide, pb, e.toSide), on = sel && sel.kind === 'edge' && sel.id === e.id;
+    const ca = [b.x + b.w / 2, b.y + b.h / 2], cb = [a.x + a.w / 2, a.y + a.h / 2], pa = anchor(a, nearestSide(a, ca)), pb = anchor(b, nearestSide(b, cb)), d = `M${pa[0]},${pa[1]} L${pb[0]},${pb[1]}`, on = sel && sel.kind === 'edge' && sel.id === e.id;
     h += `<g data-e="${e.id}"><path d="${d}" class="cv-hit"/><path d="${d}" class="cv-edge${on ? ' sel' : ''}" ${e.arrow !== false ? `marker-end="url(#${on ? 'arrs' : 'arr'})"` : ''}/>`;
     if (e.label) h += `<text x="${(pa[0] + pb[0]) / 2}" y="${(pa[1] + pb[1]) / 2 - 6}" class="cv-label" text-anchor="middle">${esc(e.label)}</text>`;
     h += '</g>';
   }
-  if (drag && drag.t === 'connect' && drag.to) { const a = node(drag.from); h += `<path d="${path(anchor(a, drag.side), drag.side, drag.to, drag.toSide || 'left')}" class="cv-edge tmp"/>`; }
+  if (linking && linking.to) { const a = node(linking.from), pa = anchor(a, nearestSide(a, linking.to)); h += `<path d="M${pa[0]},${pa[1]} L${linking.to[0]},${linking.to[1]}" class="cv-edge tmp"/>`; }
   svg.innerHTML = h;
 }
 // 画面の座標 → キャンバスの座標
@@ -79,7 +85,7 @@ function addNode(n, edit) {
   const node1 = { id: uid(), w: 240, h: 130, ...n }; cv().nodes.push(node1); sel = { kind: 'node', id: node1.id };
   touch(); drawAll(); if (edit) editText(node1.id); return node1;
 }
-function addText(at) { const [x, y] = at || center(); addNode({ type: 'text', x: Math.round(x - 120), y: Math.round(y - 40), text: '' }, true); }
+function addText(at) { const [x, y] = at || center(); addNode({ type: 'text', x: Math.round(x), y: Math.round(y - 14), text: '' }, true); }
 function addNoteDialog(at) {
   dialog(`<h3>ノートを引用する</h3><input id="cn-q" placeholder="さがす（ID・本文）"><div id="cn-list" class="ta-list"></div><div class="row"><button id="cn-no">やめる</button></div>`, close => {
     const draw = () => {
@@ -110,19 +116,23 @@ export const attach = files => addImages([...files]);
 // ===== テキストの編集 =====
 function editText(id) {
   const n = node(id), el = document.querySelector(`.cv-card[data-n="${id}"] .cv-body`); if (!n || !el || n.type !== 'text') return;
-  el.innerHTML = '<textarea class="cv-edit"></textarea>';
-  const ta = el.querySelector('textarea'); ta.value = n.text || ''; ta.focus();
+  el.innerHTML = '<textarea class="cv-edit" rows="1"></textarea>';
+  const ta = el.querySelector('textarea'); ta.value = n.text || ''; ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  ta.oninput = () => { measure(n); drawEdges(); };
   const done = () => {
     n.text = ta.value.trim();
     if (!n.text && !n.keep) { cv().nodes = cv().nodes.filter(x => x !== n); cv().edges = cv().edges.filter(e => e.from !== id && e.to !== id); sel = null; }
     n.keep = true; touch(); drawAll();
   };
   ta.onblur = done; ta.onkeydown = e => { if (e.key === 'Escape') { e.preventDefault(); ta.blur(); } e.stopPropagation(); };
+  editing = true; const was = ta.onblur; ta.onblur = () => { editing = false; was(); };
 }
 
 // ===== 操作 =====
-function removeSel() {
+function removeSel(ask = true) {
   if (!sel) return;
+  const nd = sel.kind === 'node' && node(sel.id);
+  if (ask && !confirm(sel.kind === 'node' ? `この箱を消しますか？${nd && nd.text ? '\n「' + nd.text.slice(0, 30) + '」' : ''}` : 'この線を消しますか？')) return;
   if (sel.kind === 'node') { cv().nodes = cv().nodes.filter(n => n.id !== sel.id); cv().edges = cv().edges.filter(e => e.from !== sel.id && e.to !== sel.id); }
   else cv().edges = cv().edges.filter(e => e.id !== sel.id);
   sel = null; touch(); drawAll();
@@ -145,24 +155,33 @@ function zoomAt(f, cx, cy) {
 }
 document.addEventListener('mousedown', e => {
   const wrap = e.target.closest('#cv-wrap'); if (!wrap || e.button !== 0 || e.target.closest('textarea')) return;
-  const h = e.target.closest('.cv-h'), rs = e.target.closest('.cv-rs'), card = e.target.closest('.cv-card'), ed = e.target.closest('[data-e]');
+  if (editing && document.activeElement && document.activeElement.blur) document.activeElement.blur();   // 入力中なら、いったん確定
+  const empty = cv().nodes.filter(n => n.type === 'text' && !n.text);                                          // 空の箱は残さない
+  if (empty.length) { cv().nodes = cv().nodes.filter(n => !empty.includes(n)); cv().edges = cv().edges.filter(x => !empty.some(n => n.id === x.from || n.id === x.to)); drawAll(); }
+  const rs = e.target.closest('.cv-rs'), card = e.target.closest('.cv-card'), ed = e.target.closest('[data-e]');
   const [wx, wy] = toWorld(e.clientX, e.clientY);
-  if (h) { e.preventDefault(); const id = h.closest('.cv-card').dataset.n; sel = { kind: 'node', id }; drag = { t: 'connect', from: id, side: h.dataset.side, to: [wx, wy] }; return; }
   if (rs) { e.preventDefault(); const n = node(rs.closest('.cv-card').dataset.n); drag = { t: 'resize', n, sx: e.clientX, sy: e.clientY, w: n.w, h: n.h }; return; }
+  if (card && linking) { // 線: 相手の箱を押した
+    e.preventDefault(); const tn = node(card.dataset.n);
+    if (tn && tn.id !== linking.from && !cv().edges.some(x => (x.from === linking.from && x.to === tn.id) || (x.from === tn.id && x.to === linking.from))) {
+      const ed = { id: uid(), from: linking.from, to: tn.id, label: '', arrow: true }; cv().edges.push(ed); touch();
+    }
+    linking = null; sel = { kind: 'node', id: tn.id }; drawAll(); return;
+  }
   if (card) {
-    const n = node(card.dataset.n); sel = { kind: 'node', id: n.id };
+    const n = node(card.dataset.n); sel = { kind: 'node', id: n.id }; linkBtn();
     document.querySelectorAll('.cv-card.sel').forEach(c => c.classList.remove('sel')); card.classList.add('sel'); drawEdges();
     if (!e.target.closest('a')) { e.preventDefault(); drag = { t: 'move', n, sx: e.clientX, sy: e.clientY, x: n.x, y: n.y, moved: false }; }
     return;
   }
   if (ed) { sel = { kind: 'edge', id: ed.dataset.e }; document.querySelectorAll('.cv-card.sel').forEach(c => c.classList.remove('sel')); drawEdges(); return; }
-  sel = null; document.querySelectorAll('.cv-card.sel').forEach(c => c.classList.remove('sel')); drawEdges();
-  e.preventDefault(); const v = cv().view; drag = { t: 'pan', sx: e.clientX, sy: e.clientY, x: v.x, y: v.y };
+  linking = null; sel = null; document.querySelectorAll('.cv-card.sel').forEach(c => c.classList.remove('sel')); drawEdges(); linkBtn();
+    e.preventDefault(); const v = cv().view; drag = { t: 'pan', sx: e.clientX, sy: e.clientY, x: v.x, y: v.y, at: [wx, wy], blank: true, moved: false };
 });
 document.addEventListener('mousemove', e => {
   if (!drag) return;
   const z = cv().view.z;
-  if (drag.t === 'pan') { cv().view.x = drag.x + e.clientX - drag.sx; cv().view.y = drag.y + e.clientY - drag.sy; applyView(); }
+  if (drag.t === 'pan') { if (Math.abs(e.clientX - drag.sx) + Math.abs(e.clientY - drag.sy) > 4) drag.moved = true; cv().view.x = drag.x + e.clientX - drag.sx; cv().view.y = drag.y + e.clientY - drag.sy; applyView(); }
   else if (drag.t === 'move') {
     const dx = (e.clientX - drag.sx) / z, dy = (e.clientY - drag.sy) / z; if (Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true;
     drag.n.x = Math.round(drag.x + dx); drag.n.y = Math.round(drag.y + dy);
@@ -170,28 +189,19 @@ document.addEventListener('mousemove', e => {
   } else if (drag.t === 'resize') {
     drag.n.w = Math.max(80, Math.round(drag.w + (e.clientX - drag.sx) / z)); drag.n.h = Math.max(50, Math.round(drag.h + (e.clientY - drag.sy) / z));
     const el = document.querySelector(`.cv-card[data-n="${drag.n.id}"]`); if (el) { el.style.width = drag.n.w + 'px'; el.style.height = drag.n.h + 'px'; } drawEdges();
-  } else if (drag.t === 'connect') {
-    drag.to = toWorld(e.clientX, e.clientY); const t = document.elementFromPoint(e.clientX, e.clientY), c = t && t.closest && t.closest('.cv-card');
-    const tn = c && node(c.dataset.n); drag.toSide = tn && tn.id !== drag.from ? nearestSide(tn, drag.to) : null; drawEdges();
   }
 });
+document.addEventListener('mousemove', e => { if (linking && $('#cv-wrap')) { linking.to = toWorld(e.clientX, e.clientY); drawEdges(); } });
 document.addEventListener('mouseup', e => {
   if (!drag) return; const d = drag; drag = null;
-  if (d.t === 'connect') {
-    const t = document.elementFromPoint(e.clientX, e.clientY), c = t && t.closest && t.closest('.cv-card'), tn = c && node(c.dataset.n);
-    if (tn && tn.id !== d.from && !cv().edges.some(x => x.from === d.from && x.to === tn.id)) {
-      const ed = { id: uid(), from: d.from, fromSide: d.side, to: tn.id, toSide: nearestSide(tn, toWorld(e.clientX, e.clientY)), label: '', arrow: true };
-      cv().edges.push(ed); sel = { kind: 'edge', id: ed.id }; touch();
-    }
-    drawAll();
-  } else if (d.t === 'move' || d.t === 'resize' || d.t === 'pan') save();
+  if (d.t === 'pan' && !d.moved && d.blank) { addText(d.at); return; }   // 何もないところを1回クリック → そこに文字の箱
+  if (d.t === 'move' || d.t === 'resize' || d.t === 'pan') save();
 });
 document.addEventListener('dblclick', e => {
   const wrap = e.target.closest('#cv-wrap'); if (!wrap) return;
   const card = e.target.closest('.cv-card'), ed = e.target.closest('[data-e]');
   if (card) { const n = node(card.dataset.n); if (n.type === 'text') editText(n.id); return; }
   if (ed) { edgeLabelDialog(edge(ed.dataset.e)); return; }
-  addText(toWorld(e.clientX, e.clientY));
 });
 document.addEventListener('contextmenu', e => {
   if (!e.target.closest('#cv-wrap')) return;
@@ -213,14 +223,15 @@ document.addEventListener('wheel', e => {
 document.addEventListener('keydown', e => {
   if (!$('#cv-wrap') || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || '')) || $('#modal').style.display === 'flex') return;
   if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeSel(); }
-  if (e.key === 'Escape') { sel = null; drawAll(); }
+  if (e.key === 'Escape') { linking = null; sel = null; drawAll(); }
 });
 document.addEventListener('click', e => {
   if (!e.target.closest('.cvbox')) return;
   const b = e.target.closest('[data-v]');
   if (b) {
     const k = b.dataset.v;
-    if (k === 'text') addText(); if (k === 'note') addNoteDialog(); if (k === 'image') ctx.pick(true, fs => addImages(fs), 'image/*');
+    if (k === 'link') { if (sel && sel.kind === 'node') { linking = { from: sel.id, to: null }; toast('つなぎたい相手の箱をクリック（Esc でやめる）'); linkBtn(); } return; }
+    if (k === 'note') addNoteDialog(); if (k === 'image') ctx.pick(true, fs => addImages(fs), 'image/*');
     if (k === 'zin') { const r = $('#cv-wrap').getBoundingClientRect(); zoomAt(1.2, r.left + r.width / 2, r.top + r.height / 2); }
     if (k === 'zout') { const r = $('#cv-wrap').getBoundingClientRect(); zoomAt(1 / 1.2, r.left + r.width / 2, r.top + r.height / 2); }
     if (k === 'fit') fit();
