@@ -199,6 +199,32 @@ function diaryTree(dates) {
   return [...out].map(([y, ms]) => ({ label: y, months: ms }));
 }
 
+// ===== IDなしのノート（とりあえず書いて、あとで整理する）=====
+// ファイル名は D_u20261107-143521.md のように日時。ID の形（数字で始まる）と区別できる
+const NOID = /^u\d{8}-\d{6}(-\d+)?$/;
+const isNoid = s => NOID.test(s);
+const noidStem = (d = new Date()) => `u${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+
+// ===== ノートの種類: text（文章）/ rp（なりきりチャット）/ canvas（キャンバス）=====
+// なりきり・キャンバスはデータ（data）を持ち、本文はそこから作る（検索やMarkdownで文字が見えるように）
+const KINDS = { text: '', rp: '🎭', canvas: '🗺' };
+function deriveBody(kind, data) {
+  data = data || {};
+  if (kind === 'rp') {
+    const cast = data.cast || [];
+    return `# ${data.title || '会話'}\n\n` + (data.messages || []).map(m => {
+      const r = cast.find(x => x.id === m.role) || { name: m.name || '?' };
+      const q = m.quote ? `> 引用: ${m.quote.kind === 'note' ? `ノート ${m.quote.id}` : `会話「${m.quote.title}」`}\n` : '';
+      return `**${r.name}**: ${q}${m.text || ''}`.trim();
+    }).join('\n\n');
+  }
+  if (kind === 'canvas') {
+    const ns = [...(data.nodes || [])].sort((a, b) => a.y - b.y || a.x - b.x);
+    return `# ${data.title || 'キャンバス'}\n\n` + ns.map(n => n.type === 'text' ? (n.text || '') : n.type === 'note' && n.s === 'd' ? `:${n.nid}` : '').filter(Boolean).join('\n\n');
+  }
+  return '';
+}
+
 const kwAnchor = k => { let h = 5381; for (const c of k) h = (h * 33 + c.codePointAt(0)) >>> 0; return 'k-' + h.toString(36); };
 const fileName = name => name.replace(/[\\/:*?"<>|#%]/g, '_');
 const splitKw = s => (s || '').split(/[,、，]/).map(x => x.trim()).filter(Boolean);
@@ -210,5 +236,5 @@ const now = (d = new Date()) => {
 module.exports = {
   MDLINK, ID, isId, tok, cmpId, sibling, child, parentIn, root,
   tokens, anchorPos, selfTarget, bodyToMd, mdToBody,
-  DAY_START, todayStr, dayOf, weekday, isDate, addToSection, diaryTree, topicLine, mergeTopic, addToTopic, removeFromTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
+  isNoid, noidStem, KINDS, deriveBody, DAY_START, todayStr, dayOf, weekday, isDate, addToSection, diaryTree, topicLine, mergeTopic, addToTopic, removeFromTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
 };

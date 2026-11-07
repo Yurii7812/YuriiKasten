@@ -3,7 +3,8 @@
 //   P_<ID>.md          紙のノート（スキャン画像は P_<ID>.jpg）
 //   T_<名前>.md        トピックIndex
 //   D_2026-11-07-タイトル.md   日記（タイトルは任意）  P_2026-11-07.jpg / P_2026-11-07_2.jpg  紙の日記
-//   C_ R_ K_ V_ *.json   チャット・なりきり・役・キャンバス
+//   D_u20261107-143521.md   IDなしのノート（あとでIDを付ける）
+//   C_ K_ *.json   チャットメモ・役のライブラリ（なりきり・キャンバスはノートの一種で、データはノートの中）
 //   Index.md / デジタル.md / 紙.md / 日記.md   グローバルIndex と、一覧
 //   <名前>             添付（元の名前のまま。上の名前とぶつかるときだけ F_ を付ける）
 // ノートの下に 前・次・上・分岐・トピックIndex のリンクがあるので、リンクだけで全部に届く
@@ -15,10 +16,11 @@ const L = require('./lib');
 const PRE = { d: 'D_', p: 'P_' };
 const LIST = { d: 'デジタル.md', p: '紙.md' };
 const DIARY_LIST = '日記.md';
-const DOC_PRE = /^(C|R|K|V)_.+\.json$/; // チャット・なりきり・役・キャンバス（JSON）
+const DOC_PRE = /^(C|K)_.+\.json$/; // チャットメモ・役のライブラリ（JSON）。なりきり・キャンバスは今はノート
 const SP = { d: 'デジタル', p: '紙' };
 const IMG = ['.jpg', '.jpeg', '.png', '.webp'];
 const validId = s => L.isId(s) && !/^\d{8,}$/.test(s); // 日時名のファイルは除外
+const isStem = s => validId(s) || L.isNoid(s); // ノートのファイル名（IDか、IDなしの日時名）
 const enc = s => encodeURIComponent(s);
 const esc = s => String(s).replace(/([\\`*_[\]<>|#])/g, '\\$1'); // Markdown の中
 const h = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); // HTML の中
@@ -115,6 +117,8 @@ function openVault(vault) {
   const topicFile = name => `T_${L.fileName(name)}.md`;
   const topicHref = name => enc(topicFile(name));
   const noteHref = (s, id) => enc(noteFile(s, id));
+  // IDなしのノートの名前（日時。同じ秒なら -1, -2）
+  const freeStem = (date = new Date()) => { let st = L.noidStem(date), x = st, i = 0; while (get('d', x) || fs.existsSync(abs(`D_${x}.md`))) x = `${st}-${++i}`; return x; };
   const diaryFile = d => `D_${d.date}${d.title ? '-' + L.fileName(d.title) : ''}.md`;
   const diaryHref = d => enc(diaryFile(d));
 
@@ -133,19 +137,28 @@ function openVault(vault) {
       if (!pages.has(dm[1])) pages.set(dm[1], []);
       pages.get(dm[1]).push(f); continue;
     }
+    if ((dm = f.match(/^([RV])_.+\.json$/))) { // 昔の なりきり・キャンバス（ファイル）→ IDなしのノート
+      try {
+        const d = JSON.parse(fs.readFileSync(abs(f), 'utf8')), kind = dm[1] === 'R' ? 'rp' : 'canvas', stem = freeStem(new Date(d.created || Date.now()));
+        notes.set(key('d', stem), { s: 'd', id: stem, created: L.now(new Date(d.created || Date.now())), keywords: [], kind, data: d, body: L.deriveBody(kind, d), img: null });
+        removeFile(f);
+      } catch { }
+      continue;
+    }
     if (DOC_PRE.test(f)) { try { docs.set(f.replace(/\.json$/, ''), JSON.parse(fs.readFileSync(abs(f), 'utf8'))); } catch { } continue; }
     const m = f.match(/^([DP])_(.+?)(\.[^.]+)$/);
     if (m) {
       const s = m[1].toLowerCase(), id = m[2], e = m[3].toLowerCase();
-      if (!validId(id)) continue;
-      const n = get(s, id) || { s, id, created: '', keywords: [], body: '', img: null };
+      if (!isStem(id)) continue;
+      const n = get(s, id) || { s, id, created: '', keywords: [], body: '', img: null, kind: 'text', data: null };
       notes.set(key(s, id), n);
       if (e === '.md') {
         const text = fs.readFileSync(abs(f), 'utf8'); cache.set(f, text);
         const md = meta(text, 'pkm') || {};
-        n.created = md.created || n.created; n.keywords = md.keywords || [];
+        n.created = md.created || n.created; n.keywords = md.keywords || []; n.kind = md.kind || 'text';
         const i = text.indexOf(BODY), j = text.indexOf(NAV);
-        n.body = L.mdToBody(i >= 0 ? text.slice(i + BODY.length, j > i ? j : undefined) : text);
+        if (n.kind && n.kind !== 'text') { n.data = meta(text, 'pkm-data') || {}; n.body = L.deriveBody(n.kind, n.data); }
+        else n.body = L.mdToBody(i >= 0 ? text.slice(i + BODY.length, j > i ? j : undefined) : text);
       } else if (IMG.includes(e)) n.img = f;
     } else if (/^T_.+\.md$/.test(f)) {
       const text = fs.readFileSync(abs(f), 'utf8'); cache.set(f, text);
@@ -164,11 +177,18 @@ function openVault(vault) {
   }
 
   // ===== 書き出し =====
-  const ids = s => [...notes.values()].filter(n => n.s === s).map(n => n.id).sort(L.cmpId);
+  const ids = s => [...notes.values()].filter(n => n.s === s && !L.isNoid(n.id)).map(n => n.id).sort(L.cmpId);
+  const noidNotes = () => [...notes.values()].filter(n => n.s === 'd' && L.isNoid(n.id)).sort((a, b) => (b.created || '').localeCompare(a.created || ''));
   const topicOf = (s, id) => [...topics.values()].find(t => t.entry && t.entry.s === s && t.entry.id === id);
   const label = (s, id) => (s === 'p' ? '紙' : '') + id;
 
+  const titleOfNote = n => n.kind && n.kind !== 'text' ? ((n.data && n.data.title) || (n.kind === 'rp' ? '会話' : 'キャンバス')) : (n.body.split('\n').find(x => x.trim()) || '').replace(/^#+\s*/, '').slice(0, 30);
   function noteMd(n) {
+    if (L.isNoid(n.id)) { // IDなし: 前後・上下は無い
+      return [`<!-- pkm ${J({ created: n.created, keywords: [], kind: n.kind })} -->`, n.data ? `<!-- pkm-data ${J(n.data)} -->` : null,
+        `# 未整理 ${n.created}`, '', BODY + L.bodyToMd(n.body, x => noteHref(n.s, x)) + '\n' + NAV, '<hr>', '',
+        `<p ${SUB}>${[a('Index.md', 'Index'), a(enc(LIST.d), 'デジタル一覧'), a(enc(DIARY_LIST), '日記一覧')].join(sep)}</p>`, ''].filter(x => x !== null).join('\n');
+    }
     const list = ids(n.s), has = x => !!get(n.s, x), i = list.indexOf(n.id);
     const parent = L.parentIn(n.id, has), kids = list.filter(x => L.parentIn(x, has) === n.id);
     const go = x => noteHref(n.s, x), t = topicOf(n.s, n.id);
@@ -181,7 +201,8 @@ function openVault(vault) {
     ].filter(Boolean).join(sep);
     const nav2 = [t && a(topicHref(t.name), 'トピックIndex ' + h(t.name)), a('Index.md', 'Index'), a(enc(LIST[n.s]), SP[n.s] + '一覧')].filter(Boolean).join(sep);
     return [
-      `<!-- pkm ${J(n.s === 'd' ? { created: n.created, keywords: n.keywords } : { keywords: n.keywords })} -->`,
+      `<!-- pkm ${J(n.s === 'd' ? { created: n.created, keywords: n.keywords, kind: n.kind } : { keywords: n.keywords })} -->`,
+      n.data ? `<!-- pkm-data ${J(n.data)} -->` : null,
       `# ${n.s === 'p' ? '紙 ' : ''}${n.id}`, '',
       sub ? `<p ${SUB}>${sub}</p>\n` : null,
       n.img ? `![${n.id}](${enc(n.img)})\n` : null,
@@ -194,8 +215,10 @@ function openVault(vault) {
   function listMd(s) {
     const has = x => !!get(s, x), o = s === 'd' ? 'p' : 'd';
     const roots = ids(s).filter(id => !L.parentIn(id, has));
+    const un = s === 'd' ? noidNotes() : [];
     return [`# ${SP[s]}`, '', `<p ${SUB}>${a('Index.md', 'Index')}${sep}${a(enc(LIST[o]), SP[o] + '一覧')}</p>`, '',
-      roots.map(id => `[${id}](${noteHref(s, id)})`).join('　') || '（まだありません）', ''].join('\n');
+      roots.map(id => `[${id}](${noteHref(s, id)})`).join('　') || '（まだありません）', '',
+      ...(un.length ? ['## 未整理（IDなし）', '', ...un.map(n => `- [${esc(titleOfNote(n) || n.created)}](${noteHref('d', n.id)}) <small>${n.created}</small>`), ''] : [])].join('\n');
   }
 
   function diaryMd(d) {
@@ -222,7 +245,7 @@ function openVault(vault) {
 
   function globalIndex() {
     const m = new Map();
-    for (const n of notes.values()) for (const k of n.keywords) {
+    for (const n of notes.values()) if (!L.isNoid(n.id)) for (const k of n.keywords) {
       if (!m.has(k)) m.set(k, { d: [], p: [] });
       m.get(k)[n.s].push(n.id);
     }
@@ -293,7 +316,7 @@ function openVault(vault) {
 
   // ===== 画面とのやりとり =====
   const url = n => n.img ? 'file://' + abs(n.img).split('/').map(enc).join('/') + '?' + fs.statSync(abs(n.img)).mtimeMs : null;
-  const pub = n => ({ s: n.s, id: n.id, created: n.created, keywords: n.keywords, body: n.body, image: url(n) });
+  const pub = n => ({ s: n.s, id: n.id, created: n.created, keywords: n.keywords, body: n.body, image: url(n), kind: n.kind || 'text', data: n.data || null, noid: L.isNoid(n.id) });
 
   const pubDiary = d => ({ date: d.date, title: d.title, body: d.body, pages: pages.get(d.date) || [] });
   const ensureDiary = date => { if (!diaries.has(date)) diaries.set(date, { date, title: '', body: '' }); return diaries.get(date); };
@@ -301,6 +324,10 @@ function openVault(vault) {
   const linkNote = n => {
     const date = L.dayOf(n.created); if (!date) return;
     const d = ensureDiary(date);
+    if (L.isNoid(n.id)) { // IDなしは :ID で書けないので、ファイルへのリンクにする（ID を付けたとき :ID に直す）
+      if (!d.body.includes(`](${noteHref('d', n.id)})`)) d.body = L.addToSection(d.body, '今日のノート', `- [未整理 ${n.created.slice(11)}](${noteHref('d', n.id)})`);
+      return;
+    }
     const has = L.tokens(d.body).some(t => t.k === 'ref' && t.id === n.id && !t.n);
     if (!has) d.body = L.addToSection(d.body, '今日のノート', `- :${n.id}`);
   };
@@ -337,31 +364,44 @@ function openVault(vault) {
     },
     // ===== JSON の文書（チャット・なりきり・役・キャンバス）=====
     saveDoc(name, obj) {
-      if (!/^(C|R|K|V)_[^\\/]+$/.test(name)) return false;
+      if (!/^(C|K)_[^\\/]+$/.test(name)) return false;
       docs.set(name, obj); fs.writeFileSync(abs(name + '.json'), JSON.stringify(obj, null, 1)); return true;
     },
     deleteDoc(name) { if (!docs.has(name)) return false; docs.delete(name); removeFile(name + '.json'); return true; },
     setReading(k, r) { if (r) readings[k] = r; else delete readings[k]; rebuild(); return true; },
     saveNote(x) {
-      const n = get(x.s, x.id) || { s: x.s, id: x.id, created: x.s === 'd' ? (x.created || L.now()) : '', img: null };
+      const n = get(x.s, x.id) || { s: x.s, id: x.id, created: x.s === 'd' ? (x.created || L.now()) : '', img: null, kind: 'text', data: null };
       const fresh = !get(x.s, x.id);
       n.keywords = x.keywords || []; n.body = x.body || '';
+      if (x.kind) n.kind = x.kind;
+      if (x.data !== undefined) n.data = x.data;
+      if (n.kind && n.kind !== 'text') n.body = L.deriveBody(n.kind, n.data);
       notes.set(key(x.s, x.id), n);
       if (fresh && n.s === 'd') linkNote(n); // 作った日の日記に載る
       rebuild(); return pub(n);
     },
+    // IDなしのノートを作る（kind: text / rp / canvas）。ID を渡せば、その ID で作る
+    createNote({ kind = 'text', id, data = null, body = '', created } = {}) {
+      const stem = id || freeStem(), n = { s: 'd', id: stem, created: created || L.now(), keywords: [], kind, data, img: null, body: kind === 'text' ? body : L.deriveBody(kind, data) };
+      notes.set(key('d', stem), n); linkNote(n); rebuild(); return pub(n);
+    },
     rename(s, from, to) {
       const n = get(s, from);
-      if (!n || !validId(to) || get(s, to)) return false;
+      if (!n || !isStem(to) || get(s, to)) return false;
       notes.delete(key(s, from)); n.id = to; notes.set(key(s, to), n);
       if (n.img) { const img = PRE[s] + to + path.extname(n.img); fs.renameSync(abs(n.img), abs(img)); n.img = img; }
       if (fs.existsSync(abs(noteFile(s, from)))) fs.unlinkSync(abs(noteFile(s, from)));
       cache.delete(noteFile(s, from));
       for (const t of topics.values()) if (t.entry && t.entry.s === s && t.entry.id === from) t.entry.id = to;
+      if (s === 'd') { // この名前へのリンクを書き換える（日記の「今日のノート」は :ID に、ほかは D_<名前>.md のまま新しい名前に）
+        const was = noteHref('d', from), now = noteHref('d', to);
+        for (const d of diaries.values()) d.body = d.body.split('\n').map(l => l.trim().match(/^- \[[^\]]*\]\(/) && l.includes(`](${was})`) && !L.isNoid(to) ? `- :${to}` : l).join('\n');
+        for (const m of notes.values()) if (m.kind === 'text' && m.body.includes(`](${was}`)) m.body = m.body.split(`](${was}`).join(`](${now}`);
+      }
       rebuild(); return pub(n);
     },
     saveImage(s, id, buf) {
-      const n = get(s, id) || { s, id, created: s === 'd' ? L.now() : '', keywords: [], body: '', img: null };
+      const n = get(s, id) || { s, id, created: s === 'd' ? L.now() : '', keywords: [], body: '', img: null, kind: 'text', data: null };
       for (const e of IMG) { const f = abs(`${PRE[s]}${id}${e}`); if (fs.existsSync(f)) fs.unlinkSync(f); }
       n.img = `${PRE[s]}${id}.jpg`; fs.writeFileSync(abs(n.img), buf);
       notes.set(key(s, id), n); rebuild(); return pub(n);

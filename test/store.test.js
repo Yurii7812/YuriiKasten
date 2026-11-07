@@ -141,10 +141,54 @@ test('日記: ノートを作ると作った日の日記に載り、紙の日記
   // 過去の日付の日記を作る
   assert.strictEqual(v.openDiary('2020-01-02').date, '2020-01-02');
   assert.deepStrictEqual(L_tree(v), ['2026', '2020'].length ? ['2026', '2020'] : []);
-  // JSON の文書
-  assert.ok(v.saveDoc('R_会話', { title: '会話', messages: [{ text: 'やあ' }] }));
-  assert.ok(!v.saveDoc('../x', {}));
-  assert.deepStrictEqual(openVault(dir).state().docs['R_会話'].messages, [{ text: 'やあ' }]);
+  // JSON の文書（チャットメモ・役）。R_ と V_ は、今はノートの一種なのでここでは保存しない
+  assert.ok(v.saveDoc('C_チャット', { topics: [], messages: [{ text: 'やあ' }] }));
+  assert.ok(!v.saveDoc('R_会話', {}) && !v.saveDoc('../x', {}));
+  assert.deepStrictEqual(openVault(dir).state().docs['C_チャット'].messages, [{ text: 'やあ' }]);
   fs.rmSync(dir, { recursive: true });
 });
 function L_tree(v) { return require('../lib').diaryTree(v.state().diaries.map(d => d.date)).map(g => g.label); }
+
+test('IDなしのノート・なりきり・キャンバスもノート。ID はあとから付ける', () => {
+  const dir = tmp(), r = f => fs.readFileSync(path.join(dir, f), 'utf8');
+  let v = openVault(dir);
+  v.saveNote({ s: 'd', id: '1', created: '2026-11-07 10:00', keywords: ['PKM'], body: 'ID つき' });
+  const a = v.createNote({ created: '2026-11-07 11:00', body: 'とりあえず書いた' });                     // IDなし
+  const rp = v.createNote({ kind: 'rp', created: '2026-11-07 11:05', data: { title: '論語', cast: [{ id: 'x', name: '孔子' }], messages: [{ role: 'x', text: '学ぶとは' }] } });
+  const cv = v.createNote({ kind: 'canvas', created: '2026-11-07 11:10', data: { title: '案', nodes: [{ id: 'n1', type: 'text', x: 0, y: 0, text: 'メモ' }], edges: [] } });
+  assert.ok(a.noid && rp.noid && cv.noid && /^u\d{8}-\d{6}/.test(a.id) && a.kind === 'text' && rp.kind === 'rp' && cv.kind === 'canvas');
+  assert.ok(rp.body.includes('**孔子**: 学ぶとは') && cv.body.includes('メモ')); // 本文は種類ごとに作られる（検索に出る）
+  assert.ok(fs.existsSync(path.join(dir, `D_${a.id}.md`)));
+  assert.match(r(`D_${rp.id}.md`), /<!-- pkm-data \{.*"title":"論語"/);
+  assert.doesNotMatch(r('Index.md'), new RegExp(a.id));                // IDなしは Index に出ない
+  assert.match(r('デジタル.md'), /## 未整理（IDなし）[\s\S]*とりあえず書いた/);
+  assert.match(r('D_2026-11-07.md'), /- \[未整理 11:00\]\(D_u\d{8}-\d{6}\.md\)/);   // 日記には日時のリンク
+  // 読み直し: 種類・データ・IDなしのまま
+  v = openVault(dir); const st = v.state(), rp2 = st.notes.find(n => n.id === rp.id);
+  assert.strictEqual(rp2.kind, 'rp'); assert.strictEqual(rp2.data.messages[0].text, '学ぶとは'); assert.ok(rp2.noid);
+  // ID を付ける（ファイル名が変わり、日記のリンクは :ID になる。種類とデータは残る）
+  const b = v.rename('d', rp.id, '2');
+  assert.ok(b && b.id === '2' && !b.noid && b.kind === 'rp' && b.data.title === '論語');
+  assert.ok(fs.existsSync(path.join(dir, 'D_2.md')) && !fs.existsSync(path.join(dir, `D_${rp.id}.md`)));
+  assert.match(r('D_2026-11-07.md'), /\[:2\]\(D_2\.md\)/);   // 日記のリンクは :2 になる（ファイル上はリンク表記）
+  assert.ok(v.state().diaries[0].body.includes('- :2'));
+  assert.match(r('Index.md'), /./);
+  assert.ok(!v.rename('d', a.id, 'abc'));   // ID の形でないものは付けられない
+  // ほかのノートの D_<名前>.md へのリンクも、新しい名前に書き換わる
+  v.saveNote({ s: 'd', id: '1', created: '2026-11-07 10:00', keywords: [], body: `引用 [↩ 会話](D_${cv.id}.md#m1)` });
+  v.rename('d', cv.id, '3');
+  assert.ok(v.state().notes.find(n => n.id === '1').body.includes('](D_3.md#m1)'));
+  fs.rmSync(dir, { recursive: true });
+});
+
+test('昔の R_ / V_ のファイルは、IDなしのノートに移る', () => {
+  const dir = tmp();
+  fs.writeFileSync(path.join(dir, 'R_論語.json'), JSON.stringify({ title: '論語', created: Date.UTC(2026, 10, 7), cast: [{ id: 'a', name: '孔子' }], messages: [{ id: 'm', role: 'a', t: 1, text: 'やあ' }] }));
+  fs.writeFileSync(path.join(dir, 'V_案.json'), JSON.stringify({ title: '案', nodes: [], edges: [], view: { x: 0, y: 0, z: 1 } }));
+  const v = openVault(dir), ns = v.state().notes;
+  assert.deepStrictEqual(ns.map(n => n.kind).sort(), ['canvas', 'rp']);
+  assert.ok(ns.every(n => n.noid) && ns.find(n => n.kind === 'rp').body.includes('やあ'));
+  assert.ok(!fs.existsSync(path.join(dir, 'R_論語.json')) && !fs.existsSync(path.join(dir, 'V_案.json')));
+  assert.strictEqual(openVault(dir).state().notes.length, 2); // 二度目は増えない
+  fs.rmSync(dir, { recursive: true });
+});

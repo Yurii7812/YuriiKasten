@@ -157,7 +157,9 @@ label.rad{display:flex;gap:8px;align-items:center;font-size:14px}
 .rolerow{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #f2f2f2}
 
 #vlist .ci{margin-right:8px}#vlist .item small{float:right;color:var(--sub)}#vlist .dtop{padding:8px 10px;border-bottom:1px solid var(--line)}
-#pane:has(.cvbox){display:flex;flex-direction:column;overflow:hidden;padding:10px 14px}
+#pane:has(.cvbox),#pane:has(.chat.rp){display:flex;flex-direction:column;overflow:hidden}
+#nbody{flex:1;min-height:0;display:flex;flex-direction:column}#nbody>.chat,#nbody>.cvbox{flex:1;min-height:0}
+.noid-hint{color:var(--sub);font-size:13px;margin:-2px 0 10px}.kind{font-size:18px}
 .cvbox{display:flex;flex-direction:column;height:100%;min-height:0}.cv-bar{flex-shrink:0}
 #cv-wrap{flex:1;position:relative;overflow:hidden;border:1px solid var(--line);border-radius:8px;min-height:0;cursor:grab;user-select:none;
  background-color:#fafbfd;background-image:radial-gradient(#d5dbe8 1px,transparent 1px);background-size:24px 24px}
@@ -187,9 +189,9 @@ label.rad{display:flex;gap:8px;align-items:center;font-size:14px}
   <button id="vault">📁</button>
 </header>
 <main>
-  <nav id="rail"><button data-mode="notes" title="ノート">📝</button><button data-mode="diary" title="日記">📔</button><button data-mode="chat" title="チャットメモ">💬</button><button data-mode="rp" title="なりきりチャット">🎭</button><button data-mode="canvas" title="キャンバス">🗺</button></nav>
+  <nav id="rail"><button data-mode="notes" title="ノート">📝</button><button data-mode="diary" title="日記">📔</button><button data-mode="chat" title="チャットメモ">💬</button></nav>
   <aside>
-    <div id="tabs"><button data-tab="d">デジタル</button><button data-tab="p">紙</button><button data-tab="i">Index</button></div>
+    <div id="tabs"><button data-tab="d">デジタル</button><button data-tab="p">紙</button><button data-tab="u">未整理</button><button data-tab="i">Index</button></div>
     <div id="selbar"></div>
     <div id="list"></div>
   </aside>

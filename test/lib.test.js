@@ -85,3 +85,14 @@ test('日記の日付・節・階層', () => {
   assert.deepStrictEqual(L.diaryTree(['2026-11-07', '2026-11-05', '2026-10-30']), [{ label: '2026-11', days: ['2026-11-07', '2026-11-05'] }, { label: '2026-10', days: ['2026-10-30'] }]);
   assert.deepStrictEqual(L.diaryTree(['2027-01-02', '2026-12-31']).map(y => y.label), ['2027', '2026']);
 });
+
+test('IDなしのノート・種類ごとの本文', () => {
+  assert.ok(L.isNoid('u20261107-143521') && L.isNoid('u20261107-143521-2'));
+  assert.ok(!L.isNoid('1a') && !L.isNoid('2026') && !L.isId('u20261107-143521')); // ID の形と取り違えない
+  assert.strictEqual(L.noidStem(new Date(2026, 10, 7, 14, 35, 21)), 'u20261107-143521');
+  const rp = { title: '論語', cast: [{ id: 'a', name: '孔子' }, { id: 'b', name: '私' }], messages: [{ role: 'a', text: '学ぶとは' }, { role: 'b', text: '復習', quote: { kind: 'note', id: '1' } }] };
+  assert.strictEqual(L.deriveBody('rp', rp), '# 論語\n\n**孔子**: 学ぶとは\n\n**私**: > 引用: ノート 1\n復習');
+  const cv = { title: '案', nodes: [{ type: 'text', x: 5, y: 9, text: '下' }, { type: 'text', x: 0, y: 0, text: '上' }, { type: 'note', s: 'd', nid: '1a', x: 0, y: 5 }, { type: 'image', file: 'a.png', x: 0, y: 1 }] };
+  assert.strictEqual(L.deriveBody('canvas', cv), '# 案\n\n上\n\n:1a\n\n下');
+  assert.strictEqual(L.deriveBody('text', null), '');
+});

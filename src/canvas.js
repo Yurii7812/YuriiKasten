@@ -1,53 +1,37 @@
 // キャンバス（Obsidian のキャンバス風）。テキスト・ノートの引用・画像のカードを、矢印の線でつなぐ
-// 保存: V_<名前>.json  { title, nodes:[{id,x,y,w,h,type,text|s,nid|file}], edges:[{id,from,fromSide,to,toSide,label,arrow}], view:{x,y,z} }
+// キャンバスは、ふつうのノート（kind: 'canvas'）。データはノートの中（note.data）:
+//   { title, nodes:[{id,x,y,w,h,type,text|s,nid|file}], edges:[{id,from,fromSide,to,toSide,label,arrow}], view:{x,y,z} }
 import { ctx, $, esc, uid, vaultUrl, renderMd, mdClick, popMenu, toast, dialog } from './shared.js';
 import L from '../lib.js';
 
-let docs = {}, cur = null;
+let note = null;                // 開いているキャンバスのノート
 let sel = null;                 // { kind:'node'|'edge', id }
 let drag = null;                // 操作中: pan / move / resize / connect
 const SIDES = ['top', 'right', 'bottom', 'left'];
 const PIC = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 
-export function init(d) { docs = {}; for (const [k, v] of Object.entries(d)) if (k.startsWith('V_')) docs[k] = v; }
-export const has = key => !!docs[key];
-export const titleOf = key => (docs[key] && docs[key].title) || key.slice(2);
-const cv = () => docs[cur];
-const save = () => ctx.later('doc:' + cur, () => ctx.api.saveDoc(cur, docs[cur]));
-const keyOf = t => 'V_' + L.fileName(t);
+export const emptyData = () => ({ title: 'キャンバス', nodes: [], edges: [], view: { x: 60, y: 60, z: 1 } });
+const cv = () => note.data;
+// 変えたら、本文（検索や Markdown 用の文字）も作り直して、ノートとして保存する
+const save = () => { note.body = L.deriveBody('canvas', note.data); ctx.touchNote(note); };
 const node = id => cv().nodes.find(n => n.id === id);
 const edge = id => cv().edges.find(e => e.id === id);
 
-// ===== 左の一覧 =====
-export function listHtml() {
-  const list = Object.entries(docs).sort((a, b) => (b[1].updated || 0) - (a[1].updated || 0));
-  return `<div id="vlist"><div class="dtop"><button class="p" id="cv-new">＋ 新しいキャンバス</button></div>`
-    + (list.map(([k, c]) => `<div class="item${cur === k && ctx.cur() && ctx.cur().k === 'canvas' ? ' on' : ''}" data-cv="${esc(k)}"><span class="ci">🗺</span><b style="color:var(--fg)">${esc(c.title)}</b><small>${c.nodes.length}</small></div>`).join('')
-      || '<div class="none">キャンバスはまだありません</div>') + '</div>';
-}
-export function newCanvas() {
-  let title = 'キャンバス', n = 1; while (docs[keyOf(title)]) title = `キャンバス-${++n}`;
-  const key = keyOf(title); docs[key] = { title, created: Date.now(), updated: Date.now(), nodes: [], edges: [], view: { x: 60, y: 60, z: 1 } };
-  cur = key; save(); open(key);
-}
-
-// ===== 画面 =====
-export function open(key, keep) {
-  if (!docs[key]) return;
-  cur = key; sel = null; drag = null;
-  ctx.setCur(ctx.place({ k: 'canvas', key }, keep)); ctx.setMode('canvas');
-  $('#pane').innerHTML = `
+// ===== ノートの中の画面 =====
+export function render(container, n) {
+  note = n; sel = null; drag = null;
+  if (!n.data || !n.data.nodes) n.data = { ...emptyData(), ...(n.data || {}) };
+  container.innerHTML = `
     <div class="cvbox">
       <div class="row cv-bar">
         <input id="cv-title" class="kw" style="font-size:16px;font-weight:700;width:240px;margin:0" value="${esc(cv().title)}">
         <button data-v="text">＋ テキスト</button><button data-v="note">＋ ノート</button><button data-v="image">＋ 画像</button>
         <span class="grow"></span><button data-v="zout" title="縮小">−</button><span id="cv-zoom" class="sub"></span><button data-v="zin" title="拡大">＋</button><button data-v="fit">全体</button>
-        <button data-v="del" class="danger">消す</button>
       </div>
       <div id="cv-wrap"><div id="cv-world"><svg id="cv-svg" width="1" height="1"></svg><div id="cv-cards"></div></div>
         <div id="cv-hint">背景をダブルクリック: テキストカード　／　辺の●からドラッグ: 線　／　Ctrl+ホイール: 拡大縮小　／　Delete: 消す</div></div>
     </div>`;
-  drawAll(); applyView(); ctx.renderTabs(); ctx.renderList();
+  drawAll(); applyView();
 }
 function applyView() {
   const v = cv().view, w = $('#cv-world'); if (!w) return;
@@ -160,12 +144,9 @@ function zoomAt(f, cx, cy) {
   const v = cv().view, r = $('#cv-wrap').getBoundingClientRect(), z = Math.min(3, Math.max(.15, v.z * f)), px = cx - r.left, py = cy - r.top;
   v.x = px - (px - v.x) * z / v.z; v.y = py - (py - v.y) * z / v.z; v.z = z; applyView(); save();
 }
-function rename(t) {
+function rename(t) { // 題は、ノートの中の名前（ファイル名は変わらない）
   t = t.trim(); if (!t || t === cv().title) return;
-  let name = t, n = 1; while (docs[keyOf(name)] && keyOf(name) !== cur) name = `${t}-${++n}`;
-  const old = cur, key = keyOf(name), d = cv(); d.title = name;
-  if (key !== old) { docs[key] = d; delete docs[old]; cur = key; ctx.api.saveDoc(key, d); ctx.api.deleteDoc(old); ctx.renameCanvasTab(old, key); } else save();
-  ctx.renderTabs(); ctx.renderList();
+  cv().title = t; save(); ctx.renderTabs(); ctx.renderList();
 }
 
 document.addEventListener('mousedown', e => {
@@ -249,7 +230,6 @@ document.addEventListener('click', e => {
     if (k === 'zin') { const r = $('#cv-wrap').getBoundingClientRect(); zoomAt(1.2, r.left + r.width / 2, r.top + r.height / 2); }
     if (k === 'zout') { const r = $('#cv-wrap').getBoundingClientRect(); zoomAt(1 / 1.2, r.left + r.width / 2, r.top + r.height / 2); }
     if (k === 'fit') fit();
-    if (k === 'del' && confirm(`キャンバス「${cv().title}」を消しますか？（ファイルは .trash に移ります）`)) { ctx.api.deleteDoc(cur); delete docs[cur]; ctx.closeKind('canvas', cur); }
     return;
   }
   const o = e.target.closest('[data-open]'); if (o) { const [s, ...id] = o.dataset.open.split(':'); if (ctx.get(s, id.join(':'))) ctx.openNote(s, id.join(':')); return; }

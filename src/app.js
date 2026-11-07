@@ -7,6 +7,7 @@ import { ctx } from './shared.js';
 import * as Chat from './chat.js';
 import * as RP from './roleplay.js';
 import * as CV from './canvas.js';
+import { dialog, popMenu } from './shared.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -40,7 +41,7 @@ async function ensureKeyword(sp, id, kw) {
 // ===== 保存（少し待ってまとめて）=====
 const timers = {};
 const later = (k, f) => { if (timers[k]) clearTimeout(timers[k].t); timers[k] = { f, t: setTimeout(() => { delete timers[k]; f(); }, 400) }; };
-const pubNote = n => ({ s: n.s, id: n.id, created: n.created, keywords: n.keywords, body: n.body });
+const pubNote = n => ({ s: n.s, id: n.id, created: n.created, keywords: n.keywords, body: n.body, kind: n.kind, data: n.data });
 const saveNote = n => later('n' + n.s + n.id, () => api.saveNote(pubNote(n)));
 const saveTopic = t => later('t' + t.name, () => api.saveTopic(t));
 async function flush() { // 待っている保存を今すぐ
@@ -151,8 +152,7 @@ function openLink(rel) {
   const i = rel.indexOf('#'); if (i >= 0) { path = rel.slice(0, i); hash = rel.slice(i + 1); }
   try { path = decodeURIComponent(path); } catch { }
   let m;
-  if ((m = path.match(/^(R_.+)\.json$/)) && RP.has(m[1])) return RP.open(m[1], false, hash);
-  if ((m = path.match(/^(V_.+)\.json$/)) && CV.has(m[1])) return CV.open(m[1]);
+  if ((m = path.match(/^D_(.+)\.md$/)) && get('d', m[1])) return openNote('d', m[1], null, false, hash); // ノート（IDなし・なりきり・キャンバスも）
   if ((m = path.match(/^D_(\d{4}-\d{2}-\d{2})(?:-.*)?\.md$/))) return openDiary(m[1]);
   return api.openPath(rel);
 }
@@ -178,12 +178,14 @@ const chip = (s, id, topic) => `<span class="chip ${s}${get(s, id) ? '' : ' miss
 // t があれば、その入口のIDだけ点を付ける
 const chips = (v, t) => [['d', v.d], ['p', v.p]].map(([s, l]) => l.map(x => chip(s, x, t && t.entry && t.entry.s === s && t.entry.id === x ? t : null)).join('')).join('');
 const tchip = name => `<span class="chip t" data-topic="${esc(name)}">${esc(name)}</span>`;
-const firstLine = n => (n.body.split('\n').find(x => x.trim()) || '').trim().slice(0, 40);
+const firstLine = n => (n.body.split('\n').find(x => x.trim()) || '').replace(/^#+\s*/, '').trim().slice(0, 40);
+const icon = n => L.KINDS[n.kind || 'text'] || '';
+const shortTime = c => (c || '').slice(5, 16).replace('-', '/');
 const kwTags = n => n.keywords.length ? `<span class="tag">${n.keywords.map(esc).join('・')}</span>` : '';
 const firstLineOf = b => (b.split('\n').find(x => x.trim() && !/^##\s/.test(x)) || '').trim().slice(0, 40);
 const noteRow = (n, label = false) =>
   `<div class="item${cur && cur.k === 'note' && cur.s === n.s && cur.id === n.id ? ' on' : ''}" draggable="true" data-s="${n.s}" data-id="${esc(n.id)}">` +
-  `${selMode ? `<input type="checkbox" class="ck" ${picked.has(n.s + ':' + n.id) ? 'checked' : ''}>` : ''}${label ? `<span class="sp ${n.s}">${SP[n.s]}</span>` : ''}<b>${esc(n.id)}</b>${n.image ? '📷 ' : ''}<small>${esc(firstLine(n))}</small> ${kwTags(n)}</div>`;
+  `${selMode ? `<input type="checkbox" class="ck" ${picked.has(n.s + ':' + n.id) ? 'checked' : ''}>` : ''}${label ? `<span class="sp ${n.s}">${SP[n.s]}</span>` : ''}${n.noid ? `<b class="noid">${shortTime(n.created)}</b>` : `<b>${esc(n.id)}</b>`}${icon(n) ? icon(n) + ' ' : ''}${n.image ? '📷 ' : ''}<small>${esc(firstLine(n))}</small> ${kwTags(n)}</div>`;
 
 function renderList() {
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
@@ -192,8 +194,6 @@ function renderList() {
   $('#tabs').style.display = mode === 'notes' || q ? '' : 'none';
   if (!q && mode === 'diary') { $('#list').innerHTML = diaryList(); renderSelbar(); return; }
   if (!q && mode === 'chat') { $('#list').innerHTML = Chat.listHtml(); renderSelbar(); return; }
-  if (!q && mode === 'rp') { $('#list').innerHTML = RP.listHtml(); renderSelbar(); return; }
-  if (!q && mode === 'canvas') { $('#list').innerHTML = CV.listHtml(); renderSelbar(); return; }
   if (q) {
     // 1. Index  2. トピックIndex  3. ノート
     const rank = k => (k.toLowerCase() === q ? 0 : k.toLowerCase().startsWith(q) ? 1 : 2);
@@ -222,9 +222,10 @@ function renderList() {
     }
     if (out.length === 1) out.push('<div class="none">ノートにキーワードを書くと、ここに並びます</div>');
   } else {
-    const list = notes.filter(n => n.s === tab).sort((a, b) => L.cmpId(a.id, b.id));
+    const list = tab === 'u' ? notes.filter(n => n.noid).sort((a, b) => (b.created || '').localeCompare(a.created || ''))
+      : notes.filter(n => n.s === tab && !n.noid).sort((a, b) => L.cmpId(a.id, b.id));
     for (const n of list) out.push(noteRow(n));
-    if (!list.length) out.push(`<div class="none">${tab === 'p' ? '「📷 スキャン取り込み」で紙を入れます' : '「＋ 新規」で書き始めます'}</div>`);
+    if (!list.length) out.push(`<div class="none">${tab === 'p' ? '「📷 スキャン取り込み」で紙を入れます' : tab === 'u' ? 'IDなしで書いたノートが、ここに並びます。あとでIDを付けて整理します' : '「＋ 新規」で書き始めます'}</div>`);
   }
   $('#list').innerHTML = out.join('');
   renderSelbar();
@@ -236,11 +237,6 @@ function onOpenClick(e) {
   const dd = e.target.closest('[data-diary]'); if (dd && !e.target.closest('.cm-editor')) return openDiary(dd.dataset.diary);
   const cc = e.target.closest('[data-chat]'); if (cc) return Chat.open(cc.dataset.chat);
   if (e.target.id === 'c-new') return Chat.newTopicDialog();
-  const rr = e.target.closest('[data-rp]'); if (rr) return RP.open(rr.dataset.rp);
-  if (e.target.id === 'rp-new') return RP.newDialog();
-  const vv = e.target.closest('[data-cv]'); if (vv) return CV.open(vv.dataset.cv);
-  if (e.target.id === 'cv-new') return CV.newCanvas();
-  if (e.target.id === 'rp-roles') return RP.rolesDialog();
   const row = e.target.closest('#list .item');
   if (selMode && row) return togglePick(row, e.shiftKey);
   const t = e.target.closest('[data-topic]'); if (t) return openTopic(t.dataset.topic);
@@ -285,7 +281,7 @@ function show(i) {
   active = Math.max(-1, Math.min(i, tabs.length - 1));
   const t = tabs[active];
   if (!t || t.k === 'empty') { cur = t || null; $('#pane').innerHTML = '<div class="none">左から選ぶか、「＋ 新規」で書き始めます。<br>Ctrl+クリックで新しいタブに開きます。</div>'; renderTabs(); return renderList(); }
-  if (t.k === 'note') openNote(t.s, t.id, null, true); else if (t.k === 'diary') openDiary(t.date, true); else if (t.k === 'chat') Chat.open(t.topic, true); else if (t.k === 'rp') RP.open(t.key, true); else if (t.k === 'canvas') CV.open(t.key, true); else openTopic(t.name, t.mode, true);
+  if (t.k === 'note') openNote(t.s, t.id, null, true); else if (t.k === 'diary') openDiary(t.date, true); else if (t.k === 'chat') Chat.open(t.topic, true); else openTopic(t.name, t.mode, true);
 }
 function closeTab(i) {
   if (i < 0 || i >= tabs.length) return;
@@ -294,8 +290,8 @@ function closeTab(i) {
   if (active > i || active >= tabs.length) active--;
   show(active < 0 && tabs.length ? 0 : active);
 }
-const tabLabel = t => t.k === 'note' ? `${t.s === 'p' ? '紙 ' : ''}${esc(t.id)}<small>${esc((firstLine(get(t.s, t.id) || { body: '' })).slice(0, 12))}</small>`
-  : t.k === 'topic' ? `📑 ${esc(t.name)}` : t.k === 'diary' ? `📔 ${esc(t.date.slice(5))}` : t.k === 'chat' ? `💬 ${esc(Chat.label(t.topic))}` : t.k === 'rp' ? `🎭 ${esc(RP.titleOf(t.key))}` : t.k === 'canvas' ? `🗺 ${esc(CV.titleOf(t.key))}` : '新しいタブ';
+const tabLabel = t => t.k === 'note' ? (n => `${n && icon(n) ? icon(n) + ' ' : ''}${t.s === 'p' ? '紙 ' : ''}${n && n.noid ? 'IDなし' : esc(t.id)}<small>${esc((firstLine(n || { body: '' })).slice(0, 12))}</small>`)(get(t.s, t.id))
+  : t.k === 'topic' ? `📑 ${esc(t.name)}` : t.k === 'diary' ? `📔 ${esc(t.date.slice(5))}` : t.k === 'chat' ? `💬 ${esc(Chat.label(t.topic))}` : '新しいタブ';
 function renderTabs() {
   $('#tabbar').innerHTML = tabs.map((t, i) => `<div class="tab${i === active ? ' on' : ''}" data-ti="${i}"><span>${tabLabel(t)}</span><b class="x" data-close="${i}" title="閉じる (Ctrl+W)">×</b></div>`).join('')
     + '<button class="tab-new" title="新しいタブ (Ctrl+T)">＋</button>';
@@ -309,42 +305,79 @@ $('#tabbar').addEventListener('click', e => {
 $('#tabbar').addEventListener('auxclick', e => { const t = e.target.closest('[data-ti]'); if (t && e.button === 1) closeTab(+t.dataset.ti); });
 
 // ===== ノート =====
-function openNote(s, id, n, keep) {
+function openNote(s, id, n, keep, mid) {
   const note = get(s, id); if (!note) return;
   cur = place({ k: 'note', s, id }, keep); mode = 'notes'; lastNote = { s, id };
-  if (!$('#q').value) tab = s;
+  if (!$('#q').value) tab = note.noid ? 'u' : s;
+  const kind = note.kind || 'text', noid = !!note.noid, text = kind === 'text';
   $('#pane').innerHTML = `
     <div class="row">
-      <span class="sp ${s}">${SP[s]}</span>
-      <input class="id" id="f-id" value="${esc(id)}" title="ID（変えると名前も変わります）">
+      <span class="sp ${s}">${SP[s]}</span>${L.KINDS[kind] ? `<span class="kind" title="${kind === 'rp' ? 'なりきりチャット' : 'キャンバス'}">${L.KINDS[kind]}</span>` : ''}
+      <input class="id" id="f-id" value="${noid ? '' : esc(id)}" placeholder="IDなし" title="${noid ? 'IDを入れると、整理されます' : 'ID（変えると名前も変わります）'}">
       ${s === 'd' ? `<span class="date">${esc(note.created)}</span>` : ''}
       <span class="grow"></span>
+      ${noid ? '<button data-act="giveid" class="p" title="IDを付けて整理する">IDを付ける</button>' : `
       <button data-act="sib" title="同じ段の次（Ctrl+クリックで新しいタブ）">並列 ${free(s, L.sibling(id))}</button>
-      <button data-act="chi" title="一段下（Ctrl+クリックで新しいタブ）">分岐 ${free(s, L.child(id))}</button>
-      <button data-act="table" title="表を入れる">▦ 表</button>
-      <button data-act="attach" title="ファイルを添付（ドラッグや貼り付けでも）">📎 添付</button>
+      <button data-act="chi" title="一段下（Ctrl+クリックで新しいタブ）">分岐 ${free(s, L.child(id))}</button>`}
+      ${text ? `<button data-act="table" title="表を入れる">▦ 表</button>
+      <button data-act="attach" title="ファイルを添付（ドラッグや貼り付けでも）">📎 添付</button>` : ''}
       <button data-act="ndel" class="danger" title="このノートを削除">削除</button>
     </div>
-    <div class="meta" id="meta"></div>
-    ${s === 'p' ? `<div class="paper"><div class="pic">${note.image ? `<img src="${note.image}">` : '<button data-act="img">画像を入れる</button>'}</div><div class="ed" id="ed"></div></div>` : '<div class="ed" id="ed"></div>'}`;
-  renderMeta(note);
-  const view = editor($('#ed'), note.body, 'note', s, v => { note.body = v; saveNote(note); renderList(); },
-    s === 'p' ? '紙の内容を文字で（テキスト化）' : '本文。続き :1a1　引用 (1) と (1):　別ノート 1a(1)　全体 1a:');
+    ${noid ? '<div class="noid-hint">IDなしのノートです。とりあえず書いて、あとで「IDを付ける」で整理できます（IDを付けると、キーワードやトピックIndexも付けられます）。</div>' : '<div class="meta" id="meta"></div>'}
+    ${!text ? '<div id="nbody"></div>' : s === 'p' ? `<div class="paper"><div class="pic">${note.image ? `<img src="${note.image}">` : '<button data-act="img">画像を入れる</button>'}</div><div class="ed" id="ed"></div></div>` : '<div class="ed" id="ed"></div>'}`;
+  if (!noid) renderMeta(note);
   $('#f-id').onchange = async e => {
     const v = e.target.value.trim().toLowerCase();
-    if (v === id) return;
-    await flush(); await api.saveNote(pubNote(note));
-    const r = L.isId(v) && !get(s, v) && await api.rename(s, id, v);
-    if (!r) { alert('そのIDは使えません（形が違うか、既にあります）'); e.target.value = id; return; }
-    Object.assign(note, r);
-    for (const t of topics) if (t.entry && t.entry.s === s && t.entry.id === id) t.entry.id = v;
-    for (const t of tabs) if (t.k === 'note' && t.s === s && t.id === id) t.id = v;
-    openNote(s, v, null, true);
+    if (v === (noid ? '' : id)) return;
+    if (!v) { e.target.value = noid ? '' : id; return; }
+    const ok = await changeId(note, v);
+    if (!ok) { alert('そのIDは使えません（形が違うか、既にあります）'); e.target.value = noid ? '' : id; }
   };
   renderTabs(); renderList();
+  if (!text) { // なりきりチャット・キャンバス: ノートの中に、それぞれの画面
+    if (kind === 'rp') RP.render($('#nbody'), note, mid); else CV.render($('#nbody'), note);
+    return;
+  }
+  const view = editor($('#ed'), note.body, 'note', s, v => { note.body = v; saveNote(note); renderList(); },
+    s === 'p' ? '紙の内容を文字で（テキスト化）' : '本文。続き :1a1　引用 (1) と (1):　別ノート 1a(1)　全体 1a:');
   if (n) { const p = L.anchorPos(note.body, n); if (p >= 0) jump(view, p); }
   else if (keep && cur.pos != null) jump(view, Math.min(cur.pos, view.state.doc.length));
   else if (s === 'd' && !note.body) view.focus();
+}
+// ノートにIDを付ける・変える（ファイル名が変わり、日記のリンクなども直る）
+async function changeId(note, v) {
+  if (!L.isId(v) || get(note.s, v)) return false;
+  await flush(); await api.saveNote(pubNote(note));
+  const old = note.id, r = await api.rename(note.s, old, v);
+  if (!r) return false;
+  Object.assign(note, r, { body: r.body });
+  for (const t of topics) if (t.entry && t.entry.s === note.s && t.entry.id === old) t.entry.id = v;
+  for (const t of tabs) if (t.k === 'note' && t.s === note.s && t.id === old) t.id = v;
+  for (const m of notes) if (m.kind === 'text' && m !== note) { const b = m.body.split('](D_' + old + '.md').join('](D_' + v + '.md'); if (b !== m.body) m.body = b; }
+  await refreshDiaries(); openNote(note.s, v, null, true); return true;
+}
+// IDを付けるダイアログ: IDを直接 / 親のノートにぶら下げる（分岐として）
+function giveIdDialog(note) {
+  const roots = notes.filter(x => x.s === 'd' && /^\d+$/.test(x.id)).map(x => +x.id);
+  dialog(`<h3>IDを付ける</h3><div class="sub">IDを付けると、キーワードやトピックIndexが付けられ、Index や 日記に ID で載ります。</div>
+    <label class="rad"><input type="radio" name="gi" value="id" checked> ID <input id="gi-id" style="width:100px" value="${esc(free('d', String((roots.length ? Math.max(...roots) : 0) + 1)))}"></label>
+    <label class="rad"><input type="radio" name="gi" value="parent"> 親のノートのID（分岐として付ける） <input id="gi-parent" style="width:100px" placeholder="例: 1a"></label>
+    <label class="rad"><input type="radio" name="gi" value="sib"> となりのノートのID（並列として付ける） <input id="gi-sib" style="width:100px" placeholder="例: 1a"></label>
+    <div class="row"><button class="p" id="gi-ok">付ける</button><button id="gi-no">やめる</button></div>`, close => {
+    for (const k of ['id', 'parent', 'sib']) $('#gi-' + k).onfocus = () => { document.querySelector(`input[value=${k}]`).checked = true; };
+    $('#gi-no').onclick = close; $('#gi-id').select();
+    $('#gi-ok').onclick = async () => {
+      const mode2 = document.querySelector('input[name=gi]:checked').value; let v;
+      if (mode2 === 'id') v = $('#gi-id').value.trim().toLowerCase();
+      else {
+        const base = $('#gi-' + mode2).value.trim().toLowerCase();
+        if (!get('d', base)) return alert(`デジタルのノート ${base || '（空）'} がありません`);
+        v = free('d', mode2 === 'parent' ? L.child(base) : L.sibling(base));
+      }
+      if (!L.isId(v) || get('d', v)) return alert('そのIDは使えません（形が違うか、既にあります）');
+      close(); await changeId(note, v);
+    };
+  });
 }
 // キーワードとトピックIndex（ボタンで足す）
 function renderMeta(note) {
@@ -409,6 +442,7 @@ $('#pane').addEventListener('click', async e => {
   const { s, id } = cur, note = get(s, id);
   if (act === 'sib') create(s, free(s, L.sibling(id)));
   if (act === 'chi') create(s, free(s, L.child(id)));
+  if (act === 'giveid') return giveIdDialog(note);
   if (act === 'kwadd') addKeywordInput(note);
   if (act === 'ndel') deleteNotes([{ s, id }]);
   if (act === 'attach') pick(true, f => attach(note, f), '*');
@@ -420,11 +454,23 @@ $('#pane').addEventListener('click', async e => {
   if (act === 'tadd') topicAddDialog(note);
   if (act === 'img') pick(false, async f => { const r = await api.saveImage(s, id, await shrink(f[0])); Object.assign(get(s, id), r); openNote(s, id); });
 });
-$('#new').onclick = () => {
+// IDなしのノートを作る（kind: text / rp / canvas）。あとでIDを付けて整理する
+async function createNoid(kind) {
+  const data = kind === 'rp' ? RP.emptyData() : kind === 'canvas' ? CV.emptyData() : null;
+  const n = await api.createNote({ kind, data, created: L.now() });
+  notes.push(n); await refreshDiaries(); openNote('d', n.id);
+  if (kind === 'text') setTimeout(() => lastView && lastView.focus(), 30);
+}
+$('#new').onclick = e => {
   if (mode === 'diary') return openDiary(L.todayStr());
-  const s = tab === 'p' ? 'p' : 'd';
-  const roots = notes.filter(n => n.s === s && /^\d+$/.test(n.id)).map(n => +n.id);
-  create(s, free(s, String((roots.length ? Math.max(...roots) : 0) + 1)));
+  if (mode === 'chat') return Chat.newTopicDialog();
+  const r = $('#new').getBoundingClientRect();
+  popMenu({ clientX: r.left, clientY: r.bottom + 4 }, [
+    ['ノート（IDなし）', () => createNoid('text')],
+    ['ノート（IDを付けて作る）', () => { const s = tab === 'p' ? 'p' : 'd'; const roots = notes.filter(n => n.s === s && /^\d+$/.test(n.id)).map(n => +n.id); create(s, free(s, String((roots.length ? Math.max(...roots) : 0) + 1))); }],
+    ['🎭 なりきりチャット', () => createNoid('rp')],
+    ['🗺 キャンバス', () => createNoid('canvas')]
+  ]);
 };
 
 // ===== トピックIndex =====
@@ -740,12 +786,12 @@ $('#scan').onkeydown = e => {
 
 // ===== 保存フォルダ =====
 function loaded(st) {
-  ({ notes, topics, vault } = st); readings = st.readings || {}; diaries = st.diaries || []; Chat.init(st.docs || {}); RP.init(st.docs || {}); CV.init(st.docs || {}); cur = null; tabs = []; active = -1;
+  ({ notes, topics, vault } = st); readings = st.readings || {}; diaries = st.diaries || []; Chat.init(st.docs || {}); RP.init(st.docs || {}); cur = null; tabs = []; active = -1;
   $('#vault').textContent = '📁 ' + vault.split('/').pop(); $('#vault').title = vault + '\n（Brave では Index.md を開くと全部たどれます）';
   try {
     const saved = JSON.parse(localStorage.getItem('pkm-tabs:' + vault) || 'null');
     if (saved) {
-      tabs = saved.tabs.filter(t => t.k === 'empty' || (t.k === 'note' && get(t.s, t.id)) || (t.k === 'topic' && topics.find(x => x.name === t.name)) || (t.k === 'diary' && getDiary(t.date)) || t.k === 'chat' || (t.k === 'rp' && (st.docs || {})[t.key]) || (t.k === 'canvas' && (st.docs || {})[t.key]));
+      tabs = saved.tabs.filter(t => t.k === 'empty' || (t.k === 'note' && get(t.s, t.id)) || (t.k === 'topic' && topics.find(x => x.name === t.name)) || (t.k === 'diary' && getDiary(t.date)) || t.k === 'chat');
       tabs.forEach(t => { if (t.k === 'topic') t.mode = 'view'; });
       active = Math.min(saved.active, tabs.length - 1);
     }
@@ -816,30 +862,29 @@ async function attach(note, files) {
   view.dispatch({ changes: { from: head, insert: md }, selection: { anchor: head + md.length } }); view.focus();
 }
 const curNote = () => cur && cur.k === 'note' ? get(cur.s, cur.id) : cur && cur.k === 'diary' ? getDiary(cur.date) : null;
-$('#pane').addEventListener('dragover', e => { if ((curNote() || (cur && (cur.k === 'chat' || cur.k === 'rp' || cur.k === 'canvas'))) && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); $('#pane').classList.add('drop'); } });
+$('#pane').addEventListener('dragover', e => { if ((curNote() || (cur && cur.k === 'chat')) && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); $('#pane').classList.add('drop'); } });
 $('#pane').addEventListener('dragleave', e => { if (!e.relatedTarget || !$('#pane').contains(e.relatedTarget)) $('#pane').classList.remove('drop'); });
 $('#pane').addEventListener('drop', e => {
   $('#pane').classList.remove('drop');
   if (e.target.closest('#cv-wrap') && e.dataTransfer.files.length) { e.preventDefault(); return CV.dropImages(e); }
-  if (e.target.closest('.chat') && e.dataTransfer.files.length) { e.preventDefault(); return (cur && cur.k === 'rp' ? RP : Chat).attach([...e.dataTransfer.files]); }
+  if (e.target.closest('.chat') && e.dataTransfer.files.length) { e.preventDefault(); return (e.target.closest('.rp') ? RP : Chat).attach([...e.dataTransfer.files]); }
   const n = curNote(); if (!n || !e.dataTransfer.files.length) return;
   e.preventDefault(); attach(n, [...e.dataTransfer.files]);
 });
 // 貼り付け（スクリーンショットなど）
 document.addEventListener('paste', e => {
   const n = curNote(), fs = [...(e.clipboardData ? e.clipboardData.files : [])];
-  if (cur && cur.k === 'canvas' && fs.length) { e.preventDefault(); return CV.attach(fs); }
-  if (cur && (cur.k === 'chat' || cur.k === 'rp') && fs.length) { e.preventDefault(); return (cur.k === 'rp' ? RP : Chat).attach(fs); }
+  const kind = cur && cur.k === 'note' && n ? n.kind : null;
+  if (kind === 'canvas' && fs.length) { e.preventDefault(); return CV.attach(fs); }
+  if (kind === 'rp' && fs.length) { e.preventDefault(); return RP.attach(fs); }
+  if (cur && cur.k === 'chat' && fs.length) { e.preventDefault(); return Chat.attach(fs); }
   if (n && fs.length) { e.preventDefault(); attach(n, fs); }
 });
 
 // チャット・なりきり・キャンバスの部品に、アプリの機能を渡す
 Object.assign(ctx, {
   api, later, flush, place, renderTabs, openLink, lastNote: () => lastNote,
-  renameTab: (a, b) => { for (const t of tabs) if (t.k === 'rp' && t.key === a) t.key = b; },
-  renameCanvasTab: (a, b) => { for (const t of tabs) if (t.k === 'canvas' && t.key === a) t.key = b; },
-  closeKind: (k, key) => { for (let i = tabs.length - 1; i >= 0; i--) if (tabs[i].k === k && (tabs[i].key === key || tabs[i].topic === key)) { tabs.splice(i, 1); if (active >= i) active--; } show(Math.max(0, active)); },
-  renderList, pick, get, free, refreshDiaries, openNote, openDiary, getDiary,
+ renderList, pick, get, free, refreshDiaries, openNote, openDiary, getDiary,
   setCur: c => { cur = c; }, setMode: m => { mode = m; }, cur: () => cur, notes: () => notes, vault: () => vault,
   touchNote: n => saveNote(n),
   touchDiary: d => later('dy' + d.date, () => api.saveDiary({ date: d.date, body: d.body })),
