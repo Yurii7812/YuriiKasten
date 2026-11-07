@@ -257,3 +257,25 @@ test('紙のIndex: 取り込み前のIDも書ける。紙のノートができ�
   assert.ok(!openVault(dir).state().docs.K_paperindex || openVault(dir).state().docs.K_paperindex.entries.length === 0);
   fs.rmSync(dir, { recursive: true });
 });
+
+test('日記の「今日のノート」から、消したノート・空のノートのリンクが外れる', () => {
+  const dir = tmp(), v = openVault(dir);
+  v.saveNote({ s: 'd', id: '1', created: '2026-10-10 11:12', keywords: [], body: 'あ' });
+  v.saveNote({ s: 'd', id: '2', created: '2026-10-10 11:13', keywords: [], body: '' });   // 空: 載せない
+  let d = v.diaryState().find(x => x.date === '2026-10-10');
+  assert.match(d.body, /:1/); assert.doesNotMatch(d.body, /:2/);
+  v.saveNote({ s: 'd', id: '2', created: '2026-10-10 11:13', keywords: [], body: 'い' }); // 書いたら載る
+  assert.match(v.diaryState().find(x => x.date === '2026-10-10').body, /:2/);
+  v.deleteNotes([{ s: 'd', id: '1' }]);                                                    // 消したら外れる
+  d = v.diaryState().find(x => x.date === '2026-10-10');
+  assert.doesNotMatch(d.body, /:1\b/); assert.match(d.body, /:2/);
+});
+
+test('トピックIndexの + は案内、ID の前の * は赤い点の印', () => {
+  const L = require('../lib');
+  assert.strictEqual(L.topicLine('+GUI').star, 'GUI');
+  assert.strictEqual(L.topicLine('★ GUI').star, 'GUI');
+  const r = L.topicLine('PKM *1 1a');
+  assert.strictEqual(r.kw, 'PKM'); assert.deepStrictEqual(r.ids.map(x => [x.id, !!x.dot]), [['1', true], ['1a', false]]);
+  assert.deepStrictEqual(L.mergeTopic({ d: 'PKM *1 1a', p: '' }).rows[0].dot, { s: 'd', id: '1' });
+});

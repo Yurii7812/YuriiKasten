@@ -100,13 +100,18 @@ function mdToBody(md) {
 }
 
 // ===== トピックIndex =====
-// 1行 = 「キーワード ID ID …」。★ で始まる行は別のトピックIndexへの案内
+// 1行 = 「キーワード ID ID …」。
+//   + で始まる行（★ も同じ）は、別のトピックIndexへの案内（星マーク）
+//   ID の前の * は、そのIDの上に赤い点を付ける印（例: PKM *1 1a）。グローバルな Index でも同じ印
 function topicLine(line) {
-  const s = line.match(/^(\s*[★☆]\s*)(.*?)\s*$/);
+  const s = line.match(/^(\s*[★☆+＋]\s*)(.*?)\s*$/);
   if (s) return { star: s[2], from: s[1].length, to: s[1].length + s[2].length, ids: [] };
-  const parts = [...line.matchAll(/[^\s,、，]+/g)], ids = [];
+  const parts = [...line.matchAll(/[^\s,、，]+/g)], ids = [], bare = x => x.replace(/^[*＊]/, '');
   let i = parts.length - 1;
-  while (i >= 0 && isId(parts[i][0])) { ids.unshift({ id: parts[i][0], from: parts[i].index, to: parts[i].index + parts[i][0].length }); i--; }
+  while (i >= 0 && isId(bare(parts[i][0]))) {
+    const t = parts[i][0], dot = bare(t) !== t;
+    ids.unshift({ id: bare(t), dot, from: parts[i].index + (dot ? 1 : 0), to: parts[i].index + t.length }); i--;
+  }
   const kw = i >= 0 ? line.slice(0, parts[i].index + parts[i][0].length).trim() : '';
   return { kw, ids };
 }
@@ -119,7 +124,7 @@ function mergeTopic(t) {
     if (!r.kw && !r.ids.length) continue;
     const k = r.kw || '';
     if (!m.has(k)) m.set(k, { kw: k, d: [], p: [] });
-    for (const x of r.ids) if (!m.get(k)[s].includes(x.id)) m.get(k)[s].push(x.id);
+    for (const x of r.ids) { if (!m.get(k)[s].includes(x.id)) m.get(k)[s].push(x.id); if (x.dot && !m.get(k).dot) m.get(k).dot = { s, id: x.id }; }
   }
   return { rows: [...m.values()], stars };
 }

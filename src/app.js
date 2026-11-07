@@ -31,7 +31,7 @@ const kwTopic = k => topics.find(t => t.keyword === k);
 // そのキーワードのトピックIndex があれば赤い点（押すと開く）。IDが2つ以上でまだ無ければ「作る」
 const ixRow = ([k, v]) => {
   const t = kwTopic(k), n = v.d.length + v.p.length;
-  const mark = !t && n >= 2 ? `<button class="mini mk-topic" data-kw="${esc(k)}" title="このキーワードのトピックIndexを作る">📑 作る</button>` : '';
+  const mark = '';
   return `<div class="ix">${mark}<b>${esc(k)}</b>${yomi(k)} ${chips(v, t)}</div>`;
 };
 // 入口のノートに、そのキーワードを付ける（Index の ID の並びに入り、そこに赤い点が付く）
@@ -188,7 +188,8 @@ function globalIndex() {
 }
 const chip = (s, id, topic) => `<span class="chip ${s}${get(s, id) ? '' : ' miss'}${topic ? ' dotted' : ''}" data-s="${s}" data-id="${esc(id)}">${topic ? `<i class="dotabove" data-topic="${esc(topic.name)}" title="トピックIndex ${esc(topic.name)}">●</i>` : ''}${s === 'p' ? '紙' : ''}${esc(id)}</span>`;
 // t があれば、その入口のIDだけ点を付ける
-const chips = (v, t) => [['d', v.d], ['p', v.p]].map(([s, l]) => l.map(x => chip(s, x, t && t.entry && t.entry.s === s && t.entry.id === x ? t : null)).join('')).join('');
+const dotOf = (t, kw) => { const r = t && L.mergeTopic(t).rows.find(x => x.kw === (kw !== undefined ? kw : t.keyword) && x.dot); return r ? r.dot : t && t.entry; }; // * の印があればそのID、なければ入口
+const chips = (v, t, kw) => { const dd = t && dotOf(t, kw); return [['d', v.d], ['p', v.p]].map(([s, l]) => l.map(x => chip(s, x, dd && dd.s === s && dd.id === x ? t : null)).join('')).join(''); };
 const stripId = name => name.replace(/^[0-9][0-9a-z]*-/, '') || name;
 const topicLabel = t => stripId(t.name);
 const tchip = name => `<span class="chip t" data-topic="${esc(name)}">${esc(stripId(name))}</span>`;
@@ -243,7 +244,6 @@ function renderList() {
     if (dh.length) out.push('<h4>日記</h4>', ...dh.map(d => `<div class="item note" data-diary="${d.date}"><div class="nrow"><div class="nt">${mk(d.title || d.date, q)}</div><div class="ns">日記 · ${d.date}</div>${snippet(d.body, q) ? `<div class="sn">${snippet(d.body, q)}</div>` : ''}</div></div>`));
     if (!out.length) out.push('<div class="none">見つかりません</div>');
   } else if (tab === 'i') {
-    out.push('<div class="ix"><button class="mini mk-topic" data-kw="">＋ トピックIndexを新しく作る</button></div>');
     let row = null;
     for (const e of globalIndex()) {
       const r = L.kanaRow(readings[e[0]] || e[0]);
@@ -282,6 +282,9 @@ function onOpenClick(e) {
   const t = e.target.closest('[data-topic]'); if (t) return openTopic(t.dataset.topic);
   const n = e.target.closest('[data-id][data-s]');
   if (n && !e.target.closest('.cm-editor')) {
+    // Index（左の一覧）と、トピックIndexの中の ID チップは、トピックIndexがあればそちらへ（ノート本体は、トピックの上の入口から）
+    const tp = n.classList.contains('chip') && (e.target.closest('#list') || (cur && cur.k === 'topic')) && topicOf(n.dataset.s, n.dataset.id);
+    if (tp && !(cur && cur.k === 'topic' && cur.name === tp.name)) return openTopic(tp.name);
     if (get(n.dataset.s, n.dataset.id)) openNote(n.dataset.s, n.dataset.id);
     else if (confirm(`${SP[n.dataset.s]} ${n.dataset.id} はまだありません。作りますか？`)) create(n.dataset.s, n.dataset.id);
   }
@@ -386,7 +389,7 @@ function openNote(s, id, n, keep, mid) {
         ${noid ? '<button class="gid" data-act="giveid">IDを付ける</button>' : ''}
         ${s === 'p' ? '<span class="dt">紙</span>' : ''}${L.KINDS[kind] ? `<span class="dt">${L.KINDS[kind]}</span>` : ''}
         ${s === 'd' ? `<span class="dt">${esc(note.created)}</span>` : ''}
-        <span class="grow"></span><button class="ic nm" data-act="nmenu" title="このノートのメニュー">${'<svg class="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>'}</button>
+        <span class="grow"></span>${noid ? '' : `<button class="nb" data-act="sib" title="並列のノートを作る（同じ階層の次: ${esc(free(s, L.sibling(id)))}）">＋ 並列 <small>${esc(free(s, L.sibling(id)))}</small></button><button class="nb" data-act="chi" title="分岐のノートを作る（一つ下: ${esc(free(s, L.child(id)))}）">＋ 分岐 <small>${esc(free(s, L.child(id)))}</small></button>`}<button class="ic nm" data-act="nmenu" title="このノートのメニュー">${'<svg class="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>'}</button>
       </div>
       <input class="ntitle" id="f-title" value="${esc(note.title || '')}" placeholder="タイトル">
       ${!text ? '<div id="nbody"></div>' : s === 'p' ? `<div class="paper"><div class="pic">${note.image ? `<img src="${note.image}">` : '<button data-act="img">画像を入れる</button>'}</div><div class="ed" id="ed"></div></div>` : '<div class="ed" id="ed"></div>'}
@@ -529,6 +532,7 @@ async function refreshDiaries() {
 $('#pane').addEventListener('click', async e => {
   const del = e.target.closest('[data-kwdel]');
   if (del && cur && cur.k === 'note') {
+    if (!confirm(`キーワード「${del.dataset.kwdel}」をこのノートから外しますか？`)) return;
     const note = get(cur.s, cur.id); note.keywords = note.keywords.filter(k => k !== del.dataset.kwdel);
     saveNote(note); renderMeta(note); return renderList();
   }
@@ -713,7 +717,7 @@ function openTopic(name, tmode = 'view', keep) {
   cur = place({ k: 'topic', name, mode: tmode }, keep); cur.mode = tmode; mode = 'notes';
   const { rows, stars } = L.mergeTopic(t), e = t.entry;
   let body;
-  if (tmode === 'edit') body = `<div class="sub">1行に「キーワード ID ID …」。★ で始めると別のトピックIndexへの案内。デジタルと紙は別々に書き、表示はまとめます。</div>
+  if (tmode === 'edit') body = `<div class="sub">1行に「キーワード ID ID …」。ID の前に * を付けるとそのIDの上に赤い点（例: PKM *1 1a）。+ で始めると別のトピックIndexへの案内（例: +GUI）。デジタルと紙は別々に書き、表示はまとめます。</div>
       <div class="two"><div><h4>デジタル</h4><div class="ed" id="ed-d"></div></div><div><h4>紙</h4><div class="ed" id="ed-p"></div></div></div>`;
   else if (tmode === 'conf') body = `<div class="conf">
       <label>名前 <input id="t-name" value="${esc(t.name)}"></label>

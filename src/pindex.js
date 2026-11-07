@@ -96,6 +96,7 @@ document.addEventListener('click', async e => {
   if (e.target.id === 'pi-add') return add();
   const del = e.target.closest('[data-pdel]');
   if (del) { // IDを外す
+    if (!confirm(`紙のIndexから「${del.dataset.pdel}」の ${del.dataset.pid} を外しますか？`)) return;
     const st = await ctx.api.removePaperIndex({ kw: del.dataset.pdel, id: del.dataset.pid }); if (st) { ctx.applyState(st); draw(); } return;
   }
   const row = e.target.closest('#pi-rows .pr[data-kw]');
