@@ -174,7 +174,12 @@ function shift(view, dir) {
 }
 const listKeys = Prec.high(keymap.of([
   { key: 'Enter', run: continueList },
-  { key: 'Tab', run: v => { const l = v.state.doc.lineAt(v.state.selection.main.head); return (BULLET.test(l.text) || !v.state.selection.main.empty) ? shift(v, 1) : false; } },
+  { key: 'Tab', run: v => { // 箇条書きの行と複数行の選択は字下げ。ふつうの行は Tab 文字そのものを入れる
+    const sel = v.state.selection.main, l = v.state.doc.lineAt(sel.head);
+    const multi = v.state.doc.lineAt(sel.from).number !== v.state.doc.lineAt(sel.to).number;
+    if (BULLET.test(l.text) || multi) return shift(v, 1);
+    v.dispatch(v.state.replaceSelection('\t'), { scrollIntoView: true, userEvent: 'input' }); return true;
+  } },
   { key: 'Shift-Tab', run: v => shift(v, -1) },
   { key: 'Mod-Enter', run: v => { // チェックボックスの切り替え
     const l = v.state.doc.lineAt(v.state.selection.main.head), m = l.text.match(BULLET);
