@@ -40,7 +40,6 @@ function drawRoot() {
   const c = conv();
   $('#rp-root').innerHTML = `
       <div class="row chat-head">
-        <input id="rp-title" class="kw" style="font-size:18px;font-weight:700;width:min(380px,50%);margin:0" value="${esc(c.title)}" title="会話の題">
         <span class="cast">${c.cast.map(r => `<span class="castchip" data-role="${r.id}" title="${esc(r.name)}">${avatar(r, 26)}<small>${esc(r.name)}</small></span>`).join('')}</span>
         <button data-r="addrole">＋ 役</button><button data-r="roles">役の一覧</button>
       </div>
@@ -235,11 +234,6 @@ export async function attach(files) {
   inp.value += (inp.value && !inp.value.endsWith('\n') ? '\n' : '') + names.map(n => PIC.test(n) ? `![](${enc(n)})` : `[${n.replace(/[\[\]]/g, '')}](${enc(n)})`).join('\n') + '\n';
   draft = inp.value; fit(inp); inp.focus();
 }
-function rename(title) { // 題は、ノートの中の名前（ファイル名は変わらない）
-  title = title.trim(); const c = conv(); if (!title || title === c.title) return;
-  c.title = title; save(); ctx.renderTabs(); ctx.renderList();
-}
-
 document.addEventListener('click', e => {
   const pane = e.target.closest('.chat.rp'); if (!pane) return;
   const a = e.target.closest('[data-r]');
@@ -264,7 +258,6 @@ document.addEventListener('contextmenu', e => {
 document.addEventListener('input', e => {
   if (e.target.id === 'c-in' && e.target.closest('.chat.rp')) { draft = e.target.value; fit(e.target); }
 });
-document.addEventListener('change', e => { if (e.target.id === 'rp-title') rename(e.target.value); });
 document.addEventListener('keydown', e => {
   if (!e.target.closest || !e.target.closest('.chat.rp')) return;
   if (e.target.id === 'c-in') {

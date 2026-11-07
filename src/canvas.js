@@ -24,7 +24,6 @@ export function render(container, n) {
   container.innerHTML = `
     <div class="cvbox">
       <div class="row cv-bar">
-        <input id="cv-title" class="kw" style="font-size:16px;font-weight:700;width:240px;margin:0" value="${esc(cv().title)}">
         <button data-v="text">＋ テキスト</button><button data-v="note">＋ ノート</button><button data-v="image">＋ 画像</button>
         <span class="grow"></span><button data-v="zout" title="縮小">−</button><span id="cv-zoom" class="sub"></span><button data-v="zin" title="拡大">＋</button><button data-v="fit">全体</button>
       </div>
@@ -144,11 +143,6 @@ function zoomAt(f, cx, cy) {
   const v = cv().view, r = $('#cv-wrap').getBoundingClientRect(), z = Math.min(3, Math.max(.15, v.z * f)), px = cx - r.left, py = cy - r.top;
   v.x = px - (px - v.x) * z / v.z; v.y = py - (py - v.y) * z / v.z; v.z = z; applyView(); save();
 }
-function rename(t) { // 題は、ノートの中の名前（ファイル名は変わらない）
-  t = t.trim(); if (!t || t === cv().title) return;
-  cv().title = t; save(); ctx.renderTabs(); ctx.renderList();
-}
-
 document.addEventListener('mousedown', e => {
   const wrap = e.target.closest('#cv-wrap'); if (!wrap || e.button !== 0 || e.target.closest('textarea')) return;
   const h = e.target.closest('.cv-h'), rs = e.target.closest('.cv-rs'), card = e.target.closest('.cv-card'), ed = e.target.closest('[data-e]');
@@ -235,6 +229,5 @@ document.addEventListener('click', e => {
   const o = e.target.closest('[data-open]'); if (o) { const [s, ...id] = o.dataset.open.split(':'); if (ctx.get(s, id.join(':'))) ctx.openNote(s, id.join(':')); return; }
   if (e.target.closest('.cv-body')) mdClick(e);
 });
-document.addEventListener('change', e => { if (e.target.id === 'cv-title') rename(e.target.value); });
 // ドロップ・貼り付けで画像カード
 export function dropImages(e) { const [x, y] = toWorld(e.clientX, e.clientY); addImages([...e.dataTransfer.files], [x, y]); }

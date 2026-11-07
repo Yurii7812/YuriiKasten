@@ -1,7 +1,7 @@
 {
-  "name": "paper-pkm",
+  "name": "yuriikasten",
   "version": "0.3.0",
-  "description": "紙のPKM（ツェッテルカステン）をデジタルで",
+  "description": "YuriiKasten — 紙のPKM（ツェッテルカステン）をデジタルで",
   "main": "main.js",
   "scripts": {
     "build": "esbuild src/app.js --bundle --outfile=dist/app.js --format=iife",
@@ -20,5 +20,6 @@
     "@codemirror/language": "^6.13.1",
     "kuromoji": "^0.1.2",
     "markdown-it": "^15.0.3"
-  }
+  },
+  "productName": "YuriiKasten"
 }

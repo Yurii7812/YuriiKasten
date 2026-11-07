@@ -5,10 +5,15 @@ const os = require('os');
 const store = require('./store');
 
 const cfgFile = () => path.join(app.getPath('userData'), 'config.json');
-const readCfg = () => { try { return JSON.parse(fs.readFileSync(cfgFile(), 'utf8')); } catch { return {}; } };
+const readCfg = () => {
+  for (const f of [cfgFile(), path.join(app.getPath('appData'), 'paper-pkm', 'config.json')]) { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { } }
+  return {};
+};
 const writeCfg = c => { fs.mkdirSync(path.dirname(cfgFile()), { recursive: true }); fs.writeFileSync(cfgFile(), JSON.stringify(c)); };
 
-let vault = process.env.PAPER_PKM_VAULT || readCfg().vault || path.join(os.homedir(), 'PaperPKM');
+// 保存先: 環境変数 → 設定 → 昔の「PaperPKM」フォルダが残っていればそれ → 新しい ~/YuriiKasten
+const defaultVault = () => { const old = path.join(os.homedir(), 'PaperPKM'), now = path.join(os.homedir(), 'YuriiKasten'); return fs.existsSync(old) && !fs.existsSync(now) ? old : now; };
+let vault = process.env.YURIIKASTEN_VAULT || process.env.PAPER_PKM_VAULT || readCfg().vault || defaultVault();
 let v = null;
 const open = () => { v = store.openVault(vault); return v.state(); };
 
@@ -23,7 +28,7 @@ ipcMain.handle('deleteNotes', (_e, items) => v.deleteNotes(items));
 ipcMain.handle('addFiles', (_e, list) => v.addFiles(list));
 // 本文のリンクを開く。ファイルは OS の既定のビューアーで、http(s) は既定のブラウザで
 ipcMain.handle('openPath', (_e, rel) => {
-  if (process.env.PAPER_PKM_OPENLOG) { fs.appendFileSync(process.env.PAPER_PKM_OPENLOG, decodeURIComponent(rel) + '\n'); return ''; } // 試験用: 開かず記録だけ
+  if (process.env.YURIIKASTEN_OPENLOG) { fs.appendFileSync(process.env.YURIIKASTEN_OPENLOG, decodeURIComponent(rel) + '\n'); return ''; } // 試験用: 開かず記録だけ
   if (/^https?:\/\//.test(rel)) return shell.openExternal(rel);
   const root = path.resolve(vault), full = path.resolve(root, decodeURIComponent(rel));
   if (!full.startsWith(root + path.sep)) return 'blocked';
@@ -55,7 +60,7 @@ ipcMain.handle('chooseVault', async () => {
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   const w = new BrowserWindow({
-    width: 1200, height: 800, title: '紙PKM', backgroundColor: '#ffffff',
+    width: 1200, height: 800, title: 'YuriiKasten', backgroundColor: '#ffffff',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
   });
   w.loadFile('index.html');

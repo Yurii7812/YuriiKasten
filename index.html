@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>紙PKM</title>
+<title>YuriiKasten</title>
 <style>
 :root{--bg:#fff;--fg:#222;--sub:#888;--line:#e4e4e4;--acc:#2456c8;--red:#c0392b;--paper:#8a5a20;--hl:#f3f6fb}
 *{box-sizing:border-box}
@@ -56,6 +56,14 @@ button:disabled{opacity:.4;cursor:default}
 .item{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .item:hover,.item.on,.ix.on{background:var(--hl)}
 .item b{color:var(--acc);margin-right:7px}.item small{color:var(--sub)}
+.item.note,.item.topicrow{white-space:normal;display:flex;align-items:center;gap:6px;padding:6px 12px}
+.nrow{min-width:0;flex:1}.nt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14.5px;line-height:1.35}
+.ns{font-size:11.5px;color:var(--sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item.note.on .nt{color:var(--acc)}
+.item.topicrow{background:#f4f7ff;border-left:3px solid #9fb3e6;padding-left:9px}.item.topicrow:hover{background:#e9effd}
+.tbadge{font-size:10px;color:#fff;background:#6b86d6;border-radius:4px;padding:0 5px;margin-right:6px;vertical-align:1px}
+.ntitle{flex:1;min-width:120px;font:inherit;font-size:18px;font-weight:600;border:1px solid transparent;border-radius:6px;padding:2px 8px}
+.ntitle:hover,.ntitle:focus{border-color:var(--line)}
 .ix{cursor:default}.ix b{margin-right:6px}
 .tag{font-size:12px;color:var(--sub);margin-left:8px}
 .sp{font-size:11px;border-radius:4px;padding:0 5px;margin-right:6px;color:#fff;background:var(--acc)}

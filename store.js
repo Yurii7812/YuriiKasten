@@ -140,7 +140,7 @@ function openVault(vault) {
     if ((dm = f.match(/^([RV])_.+\.json$/))) { // 昔の なりきり・キャンバス（ファイル）→ IDなしのノート
       try {
         const d = JSON.parse(fs.readFileSync(abs(f), 'utf8')), kind = dm[1] === 'R' ? 'rp' : 'canvas', stem = freeStem(new Date(d.created || Date.now()));
-        notes.set(key('d', stem), { s: 'd', id: stem, created: L.now(new Date(d.created || Date.now())), keywords: [], kind, data: d, body: L.deriveBody(kind, d), img: null });
+        notes.set(key('d', stem), { s: 'd', id: stem, created: L.now(new Date(d.created || Date.now())), keywords: [], kind, title: d.title || '', data: d, body: L.deriveBody(kind, d), img: null });
         removeFile(f);
       } catch { }
       continue;
@@ -155,9 +155,9 @@ function openVault(vault) {
       if (e === '.md') {
         const text = fs.readFileSync(abs(f), 'utf8'); cache.set(f, text);
         const md = meta(text, 'pkm') || {};
-        n.created = md.created || n.created; n.keywords = md.keywords || []; n.kind = md.kind || 'text';
+        n.created = md.created || n.created; n.keywords = md.keywords || []; n.kind = md.kind || 'text'; n.title = md.title || '';
         const i = text.indexOf(BODY), j = text.indexOf(NAV);
-        if (n.kind && n.kind !== 'text') { n.data = meta(text, 'pkm-data') || {}; n.body = L.deriveBody(n.kind, n.data); }
+        if (n.kind && n.kind !== 'text') { n.data = meta(text, 'pkm-data') || {}; if (!n.title) n.title = n.data.title || ''; n.data.title = n.title; n.body = L.deriveBody(n.kind, n.data); }
         else n.body = L.mdToBody(i >= 0 ? text.slice(i + BODY.length, j > i ? j : undefined) : text);
       } else if (IMG.includes(e)) n.img = f;
     } else if (/^T_.+\.md$/.test(f)) {
@@ -182,11 +182,11 @@ function openVault(vault) {
   const topicOf = (s, id) => [...topics.values()].find(t => t.entry && t.entry.s === s && t.entry.id === id);
   const label = (s, id) => (s === 'p' ? '紙' : '') + id;
 
-  const titleOfNote = n => n.kind && n.kind !== 'text' ? ((n.data && n.data.title) || (n.kind === 'rp' ? '会話' : 'キャンバス')) : (n.body.split('\n').find(x => x.trim()) || '').replace(/^#+\s*/, '').slice(0, 30);
+  const titleOfNote = n => n.title ? n.title : n.kind && n.kind !== 'text' ? ((n.data && n.data.title) || (n.kind === 'rp' ? '会話' : 'キャンバス')) : (n.body.split('\n').find(x => x.trim()) || '').replace(/^#+\s*/, '').slice(0, 30);
   function noteMd(n) {
     if (L.isNoid(n.id)) { // IDなし: 前後・上下は無い
-      return [`<!-- pkm ${J({ created: n.created, keywords: [], kind: n.kind })} -->`, n.data ? `<!-- pkm-data ${J(n.data)} -->` : null,
-        `# 未整理 ${n.created}`, '', BODY + L.bodyToMd(n.body, x => noteHref(n.s, x)) + '\n' + NAV, '<hr>', '',
+      return [`<!-- pkm ${J({ created: n.created, keywords: [], kind: n.kind, title: n.title || '' })} -->`, n.data ? `<!-- pkm-data ${J(n.data)} -->` : null,
+        `# ${n.title ? esc(n.title) : '未整理 ' + n.created}`, n.title ? `\n<p ${SUB}>未整理 ${n.created}</p>` : '', '', BODY + L.bodyToMd(n.body, x => noteHref(n.s, x)) + '\n' + NAV, '<hr>', '',
         `<p ${SUB}>${[a('Index.md', 'Index'), a(enc(LIST.d), 'デジタル一覧'), a(enc(DIARY_LIST), '日記一覧')].join(sep)}</p>`, ''].filter(x => x !== null).join('\n');
     }
     const list = ids(n.s), has = x => !!get(n.s, x), i = list.indexOf(n.id);
@@ -201,9 +201,9 @@ function openVault(vault) {
     ].filter(Boolean).join(sep);
     const nav2 = [t && a(topicHref(t.name), 'トピックIndex ' + h(t.name)), a('Index.md', 'Index'), a(enc(LIST[n.s]), SP[n.s] + '一覧')].filter(Boolean).join(sep);
     return [
-      `<!-- pkm ${J(n.s === 'd' ? { created: n.created, keywords: n.keywords, kind: n.kind } : { keywords: n.keywords })} -->`,
+      `<!-- pkm ${J(n.s === 'd' ? { created: n.created, keywords: n.keywords, kind: n.kind, title: n.title || '' } : { keywords: n.keywords, title: n.title || '' })} -->`,
       n.data ? `<!-- pkm-data ${J(n.data)} -->` : null,
-      `# ${n.s === 'p' ? '紙 ' : ''}${n.id}`, '',
+      `# ${n.title ? esc(n.title) : (n.s === 'p' ? '紙 ' : '') + n.id}`, n.title ? `\n<p ${SUB}>${n.s === 'p' ? '紙 ' : ''}${n.id}</p>` : '', '',
       sub ? `<p ${SUB}>${sub}</p>\n` : null,
       n.img ? `![${n.id}](${enc(n.img)})\n` : null,
       BODY + L.bodyToMd(n.body, x => noteHref(n.s, x)) + '\n' + NAV,
@@ -217,7 +217,7 @@ function openVault(vault) {
     const roots = ids(s).filter(id => !L.parentIn(id, has));
     const un = s === 'd' ? noidNotes() : [];
     return [`# ${SP[s]}`, '', `<p ${SUB}>${a('Index.md', 'Index')}${sep}${a(enc(LIST[o]), SP[o] + '一覧')}</p>`, '',
-      roots.map(id => `[${id}](${noteHref(s, id)})`).join('　') || '（まだありません）', '',
+      roots.map(id => `[${id}${get(s, id).title ? ' ' + esc(get(s, id).title) : ''}](${noteHref(s, id)})`).join('　') || '（まだありません）', '',
       ...(un.length ? ['## 未整理（IDなし）', '', ...un.map(n => `- [${esc(titleOfNote(n) || n.created)}](${noteHref('d', n.id)}) <small>${n.created}</small>`), ''] : [])].join('\n');
   }
 
@@ -316,7 +316,7 @@ function openVault(vault) {
 
   // ===== 画面とのやりとり =====
   const url = n => n.img ? 'file://' + abs(n.img).split('/').map(enc).join('/') + '?' + fs.statSync(abs(n.img)).mtimeMs : null;
-  const pub = n => ({ s: n.s, id: n.id, created: n.created, keywords: n.keywords, body: n.body, image: url(n), kind: n.kind || 'text', data: n.data || null, noid: L.isNoid(n.id) });
+  const pub = n => ({ s: n.s, id: n.id, created: n.created, keywords: n.keywords, body: n.body, image: url(n), kind: n.kind || 'text', data: n.data || null, noid: L.isNoid(n.id), title: n.title || '' });
 
   const pubDiary = d => ({ date: d.date, title: d.title, body: d.body, pages: pages.get(d.date) || [] });
   const ensureDiary = date => { if (!diaries.has(date)) diaries.set(date, { date, title: '', body: '' }); return diaries.get(date); };
@@ -375,14 +375,15 @@ function openVault(vault) {
       n.keywords = x.keywords || []; n.body = x.body || '';
       if (x.kind) n.kind = x.kind;
       if (x.data !== undefined) n.data = x.data;
-      if (n.kind && n.kind !== 'text') n.body = L.deriveBody(n.kind, n.data);
+      if (x.title !== undefined) n.title = (x.title || '').trim();
+      if (n.kind && n.kind !== 'text') { if (n.data) n.data.title = n.title || n.data.title; n.body = L.deriveBody(n.kind, n.data); }
       notes.set(key(x.s, x.id), n);
       if (fresh && n.s === 'd') linkNote(n); // 作った日の日記に載る
       rebuild(); return pub(n);
     },
     // IDなしのノートを作る（kind: text / rp / canvas）。ID を渡せば、その ID で作る
-    createNote({ kind = 'text', id, data = null, body = '', created } = {}) {
-      const stem = id || freeStem(), n = { s: 'd', id: stem, created: created || L.now(), keywords: [], kind, data, img: null, body: kind === 'text' ? body : L.deriveBody(kind, data) };
+    createNote({ kind = 'text', id, data = null, body = '', created, title = '' } = {}) {
+      const stem = id || freeStem(), n = { s: 'd', id: stem, created: created || L.now(), keywords: [], kind, title, data, img: null, body: kind === 'text' ? body : L.deriveBody(kind, data) };
       notes.set(key('d', stem), n); linkNote(n); rebuild(); return pub(n);
     },
     rename(s, from, to) {

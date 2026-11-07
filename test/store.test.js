@@ -192,3 +192,22 @@ test('昔の R_ / V_ のファイルは、IDなしのノートに移る', () => 
   assert.strictEqual(openVault(dir).state().notes.length, 2); // 二度目は増えない
   fs.rmSync(dir, { recursive: true });
 });
+
+test('タイトル: 保存・読み直し・見出し。なりきり・キャンバスの題も同じ', () => {
+  const dir = tmp(), r = f => fs.readFileSync(path.join(dir, f), 'utf8');
+  let v = openVault(dir);
+  v.saveNote({ s: 'd', id: '1', created: '2026-11-07 10:00', keywords: [], body: '本文', title: 'PKMとは何か' });
+  assert.match(r('D_1.md'), /<!-- pkm \{[^}]*"title":"PKMとは何か"/);
+  assert.match(r('D_1.md'), /# PKMとは何か\n\n<p[^>]*>1<\/p>/); // 見出しはタイトル、IDは小さく
+  assert.match(r('デジタル.md'), /\[1 PKMとは何か\]\(D_1\.md\)/);
+  const rp = v.createNote({ kind: 'rp', title: '論語を読む', data: { title: '', cast: [], messages: [] } });
+  assert.strictEqual(rp.title, '論語を読む');
+  const cv = v.createNote({ kind: 'canvas', data: { title: '昔の題', nodes: [], edges: [] } });
+  v = openVault(dir); const ns = v.state().notes;
+  assert.strictEqual(ns.find(n => n.id === '1').title, 'PKMとは何か');
+  assert.strictEqual(ns.find(n => n.id === rp.id).title, '論語を読む');
+  assert.strictEqual(ns.find(n => n.id === cv.id).title, '昔の題');             // 昔のデータの題を引き継ぐ
+  v.saveNote({ s: 'd', id: cv.id, kind: 'canvas', data: ns.find(n => n.id === cv.id).data, title: '新しい題' });
+  assert.match(openVault(dir).state().notes.find(n => n.id === cv.id).body, /^# 新しい題/); // 本文（検索用）も題に合わせる
+  fs.rmSync(dir, { recursive: true });
+});

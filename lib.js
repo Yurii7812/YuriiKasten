@@ -1,4 +1,4 @@
-// 紙PKM の共通処理（main と画面の両方で使う）
+// YuriiKasten の共通処理（main と画面の両方で使う）
 // ID: 1 → 並列 1a,1b … → 分岐 1a1 …
 const ID = '[0-9]+[a-z0-9]*';
 const isId = s => new RegExp('^' + ID + '$').test(s);

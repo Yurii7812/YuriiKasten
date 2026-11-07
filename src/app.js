@@ -41,7 +41,7 @@ async function ensureKeyword(sp, id, kw) {
 // ===== 保存（少し待ってまとめて）=====
 const timers = {};
 const later = (k, f) => { if (timers[k]) clearTimeout(timers[k].t); timers[k] = { f, t: setTimeout(() => { delete timers[k]; f(); }, 400) }; };
-const pubNote = n => ({ s: n.s, id: n.id, created: n.created, keywords: n.keywords, body: n.body, kind: n.kind, data: n.data });
+const pubNote = n => ({ s: n.s, id: n.id, created: n.created, keywords: n.keywords, body: n.body, kind: n.kind, data: n.data, title: n.title });
 const saveNote = n => later('n' + n.s + n.id, () => api.saveNote(pubNote(n)));
 const saveTopic = t => later('t' + t.name, () => api.saveTopic(t));
 async function flush() { // 待っている保存を今すぐ
@@ -179,13 +179,19 @@ const chip = (s, id, topic) => `<span class="chip ${s}${get(s, id) ? '' : ' miss
 const chips = (v, t) => [['d', v.d], ['p', v.p]].map(([s, l]) => l.map(x => chip(s, x, t && t.entry && t.entry.s === s && t.entry.id === x ? t : null)).join('')).join('');
 const tchip = name => `<span class="chip t" data-topic="${esc(name)}">${esc(name)}</span>`;
 const firstLine = n => (n.body.split('\n').find(x => x.trim()) || '').replace(/^#+\s*/, '').trim().slice(0, 40);
+const titleOf = n => (n.title || '').trim() || firstLine(n) || (n.kind === 'rp' ? '会話' : n.kind === 'canvas' ? 'キャンバス' : '（無題）');
 const icon = n => L.KINDS[n.kind || 'text'] || '';
 const shortTime = c => (c || '').slice(5, 16).replace('-', '/');
 const kwTags = n => n.keywords.length ? `<span class="tag">${n.keywords.map(esc).join('・')}</span>` : '';
 const firstLineOf = b => (b.split('\n').find(x => x.trim() && !/^##\s/.test(x)) || '').trim().slice(0, 40);
+// 左の一覧の行: タイトル（無ければ本文の最初の行）と、その下に小さく ID（IDなしは日時）とキーワード
 const noteRow = (n, label = false) =>
-  `<div class="item${cur && cur.k === 'note' && cur.s === n.s && cur.id === n.id ? ' on' : ''}" draggable="true" data-s="${n.s}" data-id="${esc(n.id)}">` +
-  `${selMode ? `<input type="checkbox" class="ck" ${picked.has(n.s + ':' + n.id) ? 'checked' : ''}>` : ''}${label ? `<span class="sp ${n.s}">${SP[n.s]}</span>` : ''}${n.noid ? `<b class="noid">${shortTime(n.created)}</b>` : `<b>${esc(n.id)}</b>`}${icon(n) ? icon(n) + ' ' : ''}${n.image ? '📷 ' : ''}<small>${esc(firstLine(n))}</small> ${kwTags(n)}</div>`;
+  `<div class="item note${cur && cur.k === 'note' && cur.s === n.s && cur.id === n.id ? ' on' : ''}" draggable="true" data-s="${n.s}" data-id="${esc(n.id)}">` +
+  `${selMode ? `<input type="checkbox" class="ck" ${picked.has(n.s + ':' + n.id) ? 'checked' : ''}>` : ''}<div class="nrow">` +
+  `<div class="nt">${label ? `<span class="sp ${n.s}">${SP[n.s]}</span>` : ''}${icon(n) ? icon(n) + ' ' : ''}${n.image ? '📷 ' : ''}${esc(titleOf(n))}</div>` +
+  `<div class="ns">${n.noid ? `IDなし · ${shortTime(n.created)}` : `${n.s === 'p' ? '紙 ' : ''}${esc(n.id)}`}${n.keywords.length ? ` · ${n.keywords.map(esc).join('・')}` : ''}</div></div></div>`;
+// トピックIndex の行（その入口のノートの手前に出す）
+const topicRow = t => `<div class="item topicrow" data-topic="${esc(t.name)}"><div class="nrow"><div class="nt"><span class="tbadge">トピックIndex</span>📑 ${esc(t.name)}</div><div class="ns">${t.entry ? `入口 ${t.entry.s === 'p' ? '紙 ' : ''}${esc(t.entry.id)}` : '入口なし'}</div></div></div>`;
 
 function renderList() {
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
@@ -206,7 +212,7 @@ function renderList() {
       for (const r of L.mergeTopic(t).rows) if (r.kw.toLowerCase().includes(q)) ti.push([rank(r.kw), `<div class="ix"><b>${esc(r.kw)}</b> ${chips(r)} <small>← ${tchip(t.name)}</small></div>`]);
     }
     if (ti.length) out.push('<h4>トピックIndex</h4>', ...ti.sort((a, b) => a[0] - b[0]).map(x => x[1]));
-    const hit = notes.filter(n => [n.id, n.body, n.keywords.join(' '), n.keywords.map(k => readings[k] || '').join(' ')].join('\n').toLowerCase().includes(q))
+    const hit = notes.filter(n => [n.id, n.title || '', n.body, n.keywords.join(' '), n.keywords.map(k => readings[k] || '').join(' ')].join('\n').toLowerCase().includes(q))
       .sort((a, b) => a.s.localeCompare(b.s) || L.cmpId(a.id, b.id));
     if (hit.length) out.push('<h4>ノート</h4>', ...hit.map(n => noteRow(n, true)));
     const dh = diaries.filter(d => [d.date, d.title, d.body].join('\n').toLowerCase().includes(q)).sort((a, b) => b.date.localeCompare(a.date));
@@ -224,7 +230,11 @@ function renderList() {
   } else {
     const list = tab === 'u' ? notes.filter(n => n.noid).sort((a, b) => (b.created || '').localeCompare(a.created || ''))
       : notes.filter(n => n.s === tab && !n.noid).sort((a, b) => L.cmpId(a.id, b.id));
-    for (const n of list) out.push(noteRow(n));
+    if (tab === 'd' || tab === 'p') for (const t of topics.filter(x => !x.entry || !get(x.entry.s, x.entry.id)).sort((a, b) => a.name.localeCompare(b.name, 'ja'))) if (tab === 'd') out.push(topicRow(t)); // 入口がないものは、デジタルの先頭
+    for (const n of list) {
+      const t = tab !== 'u' && topicOf(n.s, n.id); if (t) out.push(topicRow(t)); // 「1-PKM」は、ノート 1 の手前
+      out.push(noteRow(n));
+    }
     if (!list.length) out.push(`<div class="none">${tab === 'p' ? '「📷 スキャン取り込み」で紙を入れます' : tab === 'u' ? 'IDなしで書いたノートが、ここに並びます。あとでIDを付けて整理します' : '「＋ 新規」で書き始めます'}</div>`);
   }
   $('#list').innerHTML = out.join('');
@@ -290,7 +300,7 @@ function closeTab(i) {
   if (active > i || active >= tabs.length) active--;
   show(active < 0 && tabs.length ? 0 : active);
 }
-const tabLabel = t => t.k === 'note' ? (n => `${n && icon(n) ? icon(n) + ' ' : ''}${t.s === 'p' ? '紙 ' : ''}${n && n.noid ? 'IDなし' : esc(t.id)}<small>${esc((firstLine(n || { body: '' })).slice(0, 12))}</small>`)(get(t.s, t.id))
+const tabLabel = t => t.k === 'note' ? (n => `${n && icon(n) ? icon(n) + ' ' : ''}${n ? esc(titleOf(n).slice(0, 16)) : esc(t.id)}<small>${n && n.noid ? 'IDなし' : (t.s === 'p' ? '紙 ' : '') + esc(t.id)}</small>`)(get(t.s, t.id))
   : t.k === 'topic' ? `📑 ${esc(t.name)}` : t.k === 'diary' ? `📔 ${esc(t.date.slice(5))}` : t.k === 'chat' ? `💬 ${esc(Chat.label(t.topic))}` : '新しいタブ';
 function renderTabs() {
   $('#tabbar').innerHTML = tabs.map((t, i) => `<div class="tab${i === active ? ' on' : ''}" data-ti="${i}"><span>${tabLabel(t)}</span><b class="x" data-close="${i}" title="閉じる (Ctrl+W)">×</b></div>`).join('')
@@ -314,8 +324,8 @@ function openNote(s, id, n, keep, mid) {
     <div class="row">
       <span class="sp ${s}">${SP[s]}</span>${L.KINDS[kind] ? `<span class="kind" title="${kind === 'rp' ? 'なりきりチャット' : 'キャンバス'}">${L.KINDS[kind]}</span>` : ''}
       <input class="id" id="f-id" value="${noid ? '' : esc(id)}" placeholder="IDなし" title="${noid ? 'IDを入れると、整理されます' : 'ID（変えると名前も変わります）'}">
+      <input class="ntitle" id="f-title" value="${esc(note.title || '')}" placeholder="タイトル（任意）">
       ${s === 'd' ? `<span class="date">${esc(note.created)}</span>` : ''}
-      <span class="grow"></span>
       ${noid ? '<button data-act="giveid" class="p" title="IDを付けて整理する">IDを付ける</button>' : `
       <button data-act="sib" title="同じ段の次（Ctrl+クリックで新しいタブ）">並列 ${free(s, L.sibling(id))}</button>
       <button data-act="chi" title="一段下（Ctrl+クリックで新しいタブ）">分岐 ${free(s, L.child(id))}</button>`}
@@ -326,6 +336,11 @@ function openNote(s, id, n, keep, mid) {
     ${noid ? '<div class="noid-hint">IDなしのノートです。とりあえず書いて、あとで「IDを付ける」で整理できます（IDを付けると、キーワードやトピックIndexも付けられます）。</div>' : '<div class="meta" id="meta"></div>'}
     ${!text ? '<div id="nbody"></div>' : s === 'p' ? `<div class="paper"><div class="pic">${note.image ? `<img src="${note.image}">` : '<button data-act="img">画像を入れる</button>'}</div><div class="ed" id="ed"></div></div>` : '<div class="ed" id="ed"></div>'}`;
   if (!noid) renderMeta(note);
+  $('#f-title').oninput = e => { // タイトル: 打ったらすぐ一覧とタブに反映し、少し待って保存
+    note.title = e.target.value; if (note.data) note.data.title = note.title || note.data.title;
+    if (!text) note.body = L.deriveBody(kind, note.data);
+    saveNote(note); renderList(); renderTabs();
+  };
   $('#f-id').onchange = async e => {
     const v = e.target.value.trim().toLowerCase();
     if (v === (noid ? '' : id)) return;
