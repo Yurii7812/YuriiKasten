@@ -53,3 +53,21 @@ test('生成したノートを保存・再読込しても返信番号と外部�
   assert.match(md, /\]\(#c2\)/);
   assert.match(md, /C_2026-11-08\.md#m-c/);
 });
+
+test('専用グラフのノードはトピックだけ。本文・ノート化先・添付を含めない', () => {
+  const data = R.topicGraphData([{ name: '哲学' }, { name: '空のトピック' }], ms.map(m => ({ ...m, noted: ['note1'], attachment: 'secret.jpg' })));
+  assert.deepEqual(data.nodes.map(n => n.name).sort(), ['哲学', '空のトピック', '認識論', '倫理学', '研究'].sort());
+  assert.ok(data.nodes.every(n => Object.keys(n).sort().join(',') === 'count,id,name'));
+  assert.ok(data.nodes.every(n => n.id.startsWith('C:')));
+  assert.equal(data.nodes.find(n => n.name === '哲学').count, 5);
+  assert.equal(data.nodes.find(n => n.name === '空のトピック').count, 0);
+  assert.equal(data.links.find(l => l.source === 'C:哲学' && l.target === 'C:認識論').count, 2);
+  assert.ok(data.links.every(l => data.nodes.some(n => n.id === l.source) && data.nodes.some(n => n.id === l.target)));
+  assert.ok(!JSON.stringify(data).includes('secret.jpg'));
+});
+test('専用グラフは記録トピック・複数の上位・孤立トピックも扱う', () => {
+  const data = R.topicGraphData(['日記', '夢', '単独'], [{ topic: '夢', ups: ['日記', '研究', '日記'], text: '夢の本文' }]);
+  assert.equal(data.nodes.length, 4);
+  assert.deepEqual(data.links, [{ source: 'C:日記', target: 'C:夢', count: 1 }, { source: 'C:研究', target: 'C:夢', count: 1 }]);
+  assert.deepEqual(R.topicGraphData([], []), { nodes: [], links: [] });
+});

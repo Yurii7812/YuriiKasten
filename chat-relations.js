@@ -18,6 +18,18 @@ function topicRelations(messages) {
   }
   return [...rows.values()];
 }
+// 固定のトピック一覧に加え、メモで使われる記録・上位トピックも含める。
+function topicGraphData(topics, messages) {
+  const names = new Set(topics.map(t => typeof t === 'string' ? t : t.name).filter(Boolean));
+  const counts = new Map();
+  for (const m of messages) for (const name of new Set([m.topic, ...(m.ups || [])])) if (name) {
+    names.add(name); counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  return {
+    nodes: [...names].map(name => ({ id: 'C:' + name, name, count: counts.get(name) || 0 })),
+    links: topicRelations(messages).map(r => ({ source: 'C:' + r.parent, target: 'C:' + r.child, count: r.count })),
+  };
+}
 // 選んだメモだけを同じノートとみなし、外の参照は元のチャットメモへ。
 function noteText(messages, { lookup, source, stamp = () => '' }) {
   const selected = new Map(messages.map(m => [m.id, m])), used = new Set();
@@ -40,4 +52,4 @@ function noteText(messages, { lookup, source, stamp = () => '' }) {
   });
   return texts.map((text, i) => text + (numbers.has(messages[i].id) ? ` (${numbers.get(messages[i].id)})` : '')).join('\n');
 }
-module.exports = { repliesOf, inTopic, childOf, childCounts, topicRelations, noteText };
+module.exports = { repliesOf, inTopic, childOf, childCounts, topicRelations, topicGraphData, noteText };

@@ -4,8 +4,10 @@
 import { ctx, $, esc, pad, hm, uid, renderMd, mdClick, popMenu, toast, dialog } from './shared.js';
 import L from '../lib.js';
 import Relations from '../chat-relations.js';
+import * as TopicGraph from './chat-topic-graph.js';
 
 let doc = { topics: [], messages: [], converted: {}, trash: [], noted: {} };
+let graphOpen = false;
 let view = '*';        // '*' 全部表示 / '' 未選択 / 日記 / トピック名
 let viewMode = 'all';  // all（日付の見出しで区切って、続けて）| day（1日ずつ）
 let day = '';          // day のときの日付
@@ -138,7 +140,7 @@ export function listHtml() {
   const q = tq.trim().toLowerCase(), lu = lastUseMap();
   const fixed = [row('*', '全部表示', countOf('*'), '💬'), row('', 'トピック未選択', doc.messages.filter(m => !m.topic).length, '📥'), row(DIARY, '日記', countOf(DIARY), '📔'), ...recKinds().map(k => row(k, k, countOf(k), '📔'))];
   const rest = doc.topics.filter(t => !isRec(t.name) && (!q || t.name.toLowerCase().includes(q))).sort((x, y) => (lu.get(y.name) || 0) - (lu.get(x.name) || 0));   // 最近使った順
-  return `<div id="clist"><div class="dtop"><button class="p" id="c-new">＋ トピック</button><input id="c-tq" class="ctq" placeholder="トピックを探す" value="${esc(tq)}"></div>`
+  return `<div id="clist"><div class="dtop"><button class="p" id="c-new">＋ トピック</button><button id="c-topic-graph">🕸 トピックグラフ</button><input id="c-tq" class="ctq" placeholder="トピックを探す" value="${esc(tq)}"></div>`
     + (q ? '' : fixed.join('')) + rest.map(t => row(t.name, t.name, t.type === 'bubble' ? countOf(t.name) : null, t.type === 'bubble' ? '💬' : '📄')).join('') + '</div>';
 }
 
@@ -172,11 +174,12 @@ function entries() {
 }
 
 // ===== 画面 =====
-export function open(name, keep, savedSourceIds) {
+export function open(name, keep, savedSourceIds, savedGraph) {
+  graphOpen = !!savedGraph;
   childFilter = new Set();
   view = name; sourceIds = keep && Array.isArray(savedSourceIds) ? new Set(savedSourceIds) : null; sel = null; draft = '';
   if (name !== '*') { doc.target.topic = name; doc.target.ups = doc.target.ups.filter(u => u !== name); save(); }   // 書き込み先は、見ているトピックに。設定（トピック・上）は、変えない限り引き継ぐ
-  ctx.setCur(ctx.place({ k: 'chat', topic: name }, keep)); ctx.setMode('chat');
+  ctx.setCur(ctx.place({ k: 'chat', topic: name, topicGraph: graphOpen }, keep)); ctx.setMode('chat');
   render(); ctx.renderTabs(); ctx.renderList();
 }
 // ノート化した元メモのIDを、日時順で返す（旧リンクの救済用）
@@ -186,6 +189,7 @@ export const memosForNote = stem => {
 };
 // 出典として選ばれたメモだけを表示する。間にあった未選択のメモは表示しない。
 export function gotoSource(ids) {
+  graphOpen = false;
   childFilter = new Set();
   sourceIds = new Set(ids.filter(Boolean));
   if (!sourceIds.size) return toast('元のチャットメモが指定されていません');
@@ -199,6 +203,7 @@ export function gotoSource(ids) {
 export const graphData = () => ({ topics: doc.topics, messages: doc.messages, noted: doc.noted });   // グラフビューに渡す
 export const searchMemos = q => doc.messages.filter(m => (m.text || '').toLowerCase().includes(q)).sort((a, b) => b.t - a.t);   // 検索結果に出す
 export function gotoMemo(id) {
+  graphOpen = false;
   const m = msg(id); if (!m) return toast('そのチャットメモは、もうありません');
   childFilter = new Set(); cq = '';
   sourceIds = null; view = '*'; viewMode = 'all'; day = '';
@@ -207,7 +212,22 @@ export function gotoMemo(id) {
 }
 export const label = name => name === '*' ? '全部' : name === '' ? '未選択' : name;
 
+export function openTopicGraph() {
+  if (!ctx.cur() || ctx.cur().k !== 'chat') open('*');
+  graphOpen = true;
+  ctx.cur().topicGraph = true;
+  render(); ctx.renderTabs();
+}
 function render() {
+  TopicGraph.unmount($('#c-topic-graph-view'));
+  if (graphOpen) {
+    $('#pane').innerHTML = `<div class="chat memo c-topic-graph"><div class="row chat-head"><h2>チャットメモのトピック</h2><span class="grow"></span><button data-c="topic-graph-close">← メモに戻る</button></div><div id="c-topic-graph-view"></div></div>`;
+    TopicGraph.mount($('#c-topic-graph-view'), {
+      topics: [...doc.topics, DIARY, ...recKinds()], messages: doc.messages,
+      onOpen: name => open(name),
+    });
+    return;
+  }
   const t = topic(view), be = backend();
   const title = sourceIds ? '元のチャットメモ' : view === '*' ? '全部表示' : view === '' ? 'トピック未選択' : view;
   $('#pane').innerHTML = `
@@ -220,6 +240,7 @@ function render() {
         ${sourceIds ? '<button data-c="source-clear">フィルター解除・全部表示</button>' : be ? '' : `<span class="vseg"><button data-c="vall" class="${viewMode === 'all' ? 'on' : ''}">全部</button><button data-c="vday" class="${viewMode === 'day' ? 'on' : ''}">日ごと</button></span>
           ${viewMode === 'day' ? `<button data-c="dprev" title="前の日">←</button><input type="date" id="c-day" value="${esc(day || L.todayStr())}"><button data-c="dnext" title="次の日">→</button>` : '<input type="date" id="c-jump" title="日付を入れると、その日へ">'}
 `}
+        <button data-c="topic-graph">🕸 トピックグラフ</button>
         ${be ? '<button data-c="openbe">ノートを開く</button>' : ''}
         ${t || (isRec(view) && view !== DIARY) ? '<button data-c="conf">⚙ 設定</button>' : ''}
       </div>
@@ -570,6 +591,8 @@ document.addEventListener('click', e => {
   const c = e.target.closest('[data-c]');
   if (c) {
     const a = c.dataset.c;
+    if (a === 'topic-graph') { openTopicGraph(); return; }
+    if (a === 'topic-graph-close') { graphOpen = false; ctx.cur().topicGraph = false; render(); ctx.renderTabs(); return; }
     if (a === 'send') send();
     if (a === 'vall' || a === 'vday') { viewMode = a === 'vday' ? 'day' : 'all'; doc.viewMode = viewMode; if (viewMode === 'day') day = ''; save(); render(); }
     if (a === 'dprev' || a === 'dnext') { const ds = [...new Set(filteredMessages().map(dayOfMsg_))].sort(), i = ds.indexOf(day || L.todayStr()); const n = ds[a === 'dprev' ? (i < 0 ? ds.length - 1 : i - 1) : i + 1]; if (n) { day = n; render(); } }
