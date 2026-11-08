@@ -759,9 +759,8 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
                 add(SheetAct(Icons.Filled.ContentCopy, "コピー", "文章をクリップボードへ") {
                     ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("memo", target.text))
                 })
-                // 消せるのは、PC に取り込み済みのメモだけ（まだ取り込んでいないものは、うっかり消えないように）
-                if (target.id in imported) add(SheetAct(Icons.Filled.Delete, "消す", "取り込み済み。スマホの中からだけ消す", danger = true) { deleteFor = target.id })
-                else add(SheetAct(Icons.Filled.Delete, "消す（取り込み後に）", "まだ PC に取り込んでいないので、消せません") { android.widget.Toast.makeText(ctx, "PC に取り込んだあとで消せます", android.widget.Toast.LENGTH_SHORT).show() })
+                // 取り込んでいなくても、間違えて書いたものは消せる（確認のダイアログが出る）
+                add(SheetAct(Icons.Filled.Delete, "消す", if (target.id in imported) "スマホの中からだけ消す" else "まだ PC に取り込んでいないメモも、消せます", danger = true) { deleteFor = target.id })
             }
         },
         // 書く操作のあとだけ入力欄を選ぶ（コピー・トピックを変えるなどでは選ばない）
@@ -995,9 +994,9 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
         val gone = entries.filter { it.id in imported }.map { it.id }.toSet()
         AlertDialog(onDismissRequest = { cleanImportedOpen = false }, title = { Text("取り込み済みのメモを消す") },
             text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (gone.isEmpty()) "✓ の付いた（PC に取り込み済みと確認できる）メモはありません。取り込んだはずなのに ✓ が付かないときは、下の「このトピックのメモを全部消す」で消せます。"
-                else "PC に取り込み済み（✓）の ${gone.size} 件をスマホから消します。取り込んだ vault にメモが残っていることを確認してください。テスト用 vault に取り込んだだけなら消さないでください。空になったトピックも消します（日記・時系列記録は残します）。画像も消え、元に戻せません。")
-                OutlinedButton(onClick = { cleanImportedOpen = false; cleanShownOpen = true }) { Text("このトピックのメモを全部消す（✓ に関係なく）") }
+                Text(if (gone.isEmpty()) "PC に取り込み済みと確認できるメモはありません。まとめて消したいときは、下の「このトピックのメモを全部消す」で消せます。"
+                else "PC に取り込み済みの ${gone.size} 件をスマホから消します。取り込んだ vault にメモが残っていることを確認してください。テスト用 vault に取り込んだだけなら消さないでください。空になったトピックも消します（日記・時系列記録は残します）。画像も消え、元に戻せません。")
+                OutlinedButton(onClick = { cleanImportedOpen = false; cleanShownOpen = true }) { Text("このトピックのメモを全部消す（取り込み済みかどうかに関係なく）") }
             } },
             confirmButton = { TextButton(enabled = gone.isNotEmpty(), onClick = {
                 deleteEntries(gone)
@@ -1010,7 +1009,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
         val all = visibleEntries(entries.toList(), topic).map { it.id }.toSet()
         val notYet = all.count { it !in imported }
         AlertDialog(onDismissRequest = { cleanShownOpen = false }, title = { Text("「${topicLabel(topic)}」のメモを全部消す") },
-            text = { Text("${all.size} 件を消します（うち ✓ の付いていない ${notYet} 件は、PC に取り込んだか確かめられません）。PC に取り込んだ記録（二重に取り込まない印）は PC 側に残るので、取り込み済みのものがまた取り込まれることはありません。画像も消え、元に戻せません。") },
+            text = { Text("${all.size} 件を消します（うち取り込んでいない ${notYet} 件は、PC に取り込んだか確かめられません）。PC に取り込んだ記録（二重に取り込まない印）は PC 側に残るので、取り込み済みのものがまた取り込まれることはありません。画像も消え、元に戻せません。") },
             confirmButton = { TextButton(enabled = all.isNotEmpty(), onClick = {
                 deleteEntries(all)
                 cleanShownOpen = false
@@ -1020,9 +1019,9 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
 
     if (deleteSelectedOpen) {
         AlertDialog(onDismissRequest = { deleteSelectedOpen = false }, title = { Text("${selected.size} 件を消しますか？") },
-            text = { Text(run { val n = selected.count { it !in imported }; "画像も消えます。元に戻せません。スマホの中からだけ消えます。" + if (n > 0) "\nまだ PC に取り込んでいない $n 件は、消しません。" else "" }) },
+            text = { Text(run { val n = selected.count { it !in imported }; "画像も消えます。元に戻せません。" + if (n > 0) "\nまだ PC に取り込んでいない $n 件も、消えます。" else "スマホの中からだけ消えます。" }) },
             confirmButton = { TextButton(onClick = {
-                deleteEntries(selected.filter { it in imported }.toSet()); selected.clear(); selecting = false; deleteSelectedOpen = false
+                deleteEntries(selected.toSet()); selected.clear(); selecting = false; deleteSelectedOpen = false
             }) { Text("消す") } },
             dismissButton = { TextButton(onClick = { deleteSelectedOpen = false }) { Text("やめる") } })
     }
@@ -1222,7 +1221,7 @@ private fun Bubble(e: Entry, done: Boolean, byId: Map<String, Entry>, store: Sto
     Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), horizontalArrangement = if (alignStart) Arrangement.Start else Arrangement.End) {
         Card(colors = colors, shape = shape, elevation = CardDefaults.cardElevation(0.dp),
             border = if (selected) androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else if (selecting) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
-            modifier = Modifier.widthIn(max = 340.dp).alpha(if (done && !selected) 0.58f else 1f).combinedClickable(onClick = onTap, onLongClick = onLong)) {   // 長押しの時間は MainActivity で短くしてある
+            modifier = Modifier.widthIn(max = 340.dp).combinedClickable(onClick = onTap, onLongClick = onLong)) {   // 長押しの時間は MainActivity で短くしてある
             Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 7.dp)) {
                 if (selectionMode) Checkbox(checked = selected, onCheckedChange = { onTap() })
                 // 押すとそのメモへ飛ぶ
@@ -1283,7 +1282,6 @@ private fun Bubble(e: Entry, done: Boolean, byId: Map<String, Entry>, store: Sto
                         Spacer(Modifier.width(6.dp))
                     }
                     Text(timeFmt.format(Date(e.created)) + if (e.edited > 0) "（編集）" else "", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
-                    if (done) { Spacer(Modifier.width(6.dp)); Text("✓ PCへ", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Medium) }
                 }
             }
         }
