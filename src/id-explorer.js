@@ -35,7 +35,12 @@ export function open({ notes, topics, readings = {}, paperEntries = [], subject 
   const byNote = new Map(notes.map(n => [nkey(n), n]));
   const byTopic = new Map(topics.map(t => [t.name, t]));
   const byKeyword = new Map(X.keywords(notes, readings, paperEntries).map(x => [x.name, x]));
-  const st = { view: null, history: [], query: '', scope: 'all', mode: 'direct', typed: X.nextRoot(notes), busy: false };
+  const stored = (() => { try { return JSON.parse(localStorage.getItem('pkm-id-explorer-prefs') || '{}'); } catch { return {}; } })();
+  const order = X.normalizeOrder(stored.order);
+  const initialSort = { keywords: 'reading', topics: 'name', notes: 'updated' };
+  const sort = Object.fromEntries(X.SECTIONS.map(k => [k, (X.SORT_MODES[k] || []).includes(stored.sort?.[k]) ? stored.sort[k] : initialSort[k]]));
+  const st = { view: null, history: [], query: '', scope: 'all', order, sort, mode: 'direct', typed: X.nextRoot(notes), busy: false };
+  const saveOrder = () => { try { localStorage.setItem('pkm-id-explorer-prefs', JSON.stringify({ order: st.order, sort: st.sort })); } catch { } };
   const close = () => { root.remove(); window.removeEventListener('keydown', guardKeys, true); };
   // windowのキャプチャ段階で、探索中のCtrl+Nなどが背後のエディタに届くことを防ぐ。
   const guardKeys = e => {
@@ -77,16 +82,30 @@ export function open({ notes, topics, readings = {}, paperEntries = [], subject 
     '</div></div>';
   function drawResults() {
     const hits = X.search(notes, topics, readings, st.query, paperEntries), scope = st.scope;
-    const section = (kind, heading, list, draw) => {
+    const labels = {
+      keywords: { reading: 'よみ順', name: 'キーワード順', count: '登録数順' },
+      topics: { name: '名前順', entry: '入口ID順', count: '行数順' },
+      notes: { updated: '更新順', title: 'タイトル順', id: 'ID順' }
+    };
+    const configs = {
+      keywords: ['Index', hits.keywords, indexRow],
+      topics: ['トピックIndex', hits.topics, topicRow],
+      notes: ['ノート', hits.notes, noteRow]
+    };
+    const section = (kind, position) => {
       if (scope !== 'all' && scope !== kind) return '';
+      const [heading, values, draw] = configs[kind];
+      const list = X.sortResults(values, kind, st.sort[kind], readings);
       const count = list.length > 100 ? '（先頭100件／全' + list.length + '件）' : '（' + list.length + '）';
-      return '<section class="idex-result-section"><h3>' + heading + count + '</h3>' +
+      const options = X.SORT_MODES[kind].map(v => '<option value="' + v + '"' + (v === st.sort[kind] ? ' selected' : '') + '>' + labels[kind][v] + '</option>').join('');
+      return '<section class="idex-result-section"><h3>' + heading + count +
+        '<span class="idex-section-actions"><select data-ix-sort="' + kind + '" aria-label="' + heading + 'の並べ替え">' + options + '</select>' +
+        (scope === 'all' ? '<button type="button" data-ix-move="' + kind + '" data-ix-delta="-1" ' + (position === 0 ? 'disabled' : '') + ' title="表示順を上へ">↑</button>' +
+          '<button type="button" data-ix-move="' + kind + '" data-ix-delta="1" ' + (position === st.order.length - 1 ? 'disabled' : '') + ' title="表示順を下へ">↓</button>' : '') +
+        '</span></h3>' +
         (list.length ? list.slice(0, 100).map(draw).join('') : '<p class="idex-empty">該当なし</p>') + '</section>';
     };
-    $('.idex-results').innerHTML =
-      section('keywords', 'Index', hits.keywords, indexRow) +
-      section('topics', 'トピックIndex', hits.topics, topicRow) +
-      section('notes', 'ノート', hits.notes, noteRow);
+    $('.idex-results').innerHTML = st.order.map(section).join('');
     root.querySelectorAll('[data-ix-scope]').forEach(b => b.classList.toggle('on', b.dataset.ixScope === scope));
   }
   function Labeled(t) {
@@ -198,6 +217,11 @@ export function open({ notes, topics, readings = {}, paperEntries = [], subject 
     if (closeButton) { close(); return; }
     const scope = e.target.closest('[data-ix-scope]');
     if (scope) { st.scope = scope.dataset.ixScope; drawResults(); return; }
+    const move = e.target.closest('[data-ix-move]');
+    if (move && !move.disabled) {
+      st.order = X.moveSection(st.order, move.dataset.ixMove, Number(move.dataset.ixDelta));
+      saveOrder(); drawResults(); return;
+    }
     const ref = e.target.closest('[data-ix-ref-s][data-ix-ref-id]');
     if (ref) {
       const currentTopic = st.view && st.view.kind === 'topic' ? st.view.key : '';
@@ -229,6 +253,12 @@ export function open({ notes, topics, readings = {}, paperEntries = [], subject 
         $('#idex-status').textContent = err && err.message ? err.message : 'IDを決定できませんでした';
       }
     }
+  });
+  $('.idex-results').addEventListener('change', e => {
+    const select = e.target.closest('[data-ix-sort]'); if (!select) return;
+    const kind = select.dataset.ixSort;
+    if (!X.SORT_MODES[kind]?.includes(select.value)) return;
+    st.sort[kind] = select.value; saveOrder(); drawResults();
   });
   $('#idex-query').addEventListener('input', e => { st.query = e.target.value; drawResults(); });
   $('#idex-query').addEventListener('keydown', e => { if (e.key === 'Enter') { const first = $('.idex-results [data-ix-ref-s], .idex-results [data-ix-kind]'); if (first) { e.preventDefault(); first.click(); } } });
