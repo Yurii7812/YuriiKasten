@@ -13,7 +13,7 @@ const noteLink = (n, label) => route('note', nkey(n), label || (idLabel(n) + ' �
 const kwLink = name => route('keyword', name, name, 'グローバルインデックス');
 const topicLink = t => route('topic', t.name, t.name, 'トピックインデックス');
 
-export function open({ notes, topics, readings = {}, subject = null, onChoose }) {
+export function open({ notes, topics, readings = {}, paperEntries = [], subject = null, onChoose }) {
   document.querySelector('.idex-cover')?.remove();
   const root = document.createElement('div');
   root.className = 'idex-cover';
@@ -33,14 +33,14 @@ export function open({ notes, topics, readings = {}, subject = null, onChoose })
   const $ = sel => root.querySelector(sel);
   const byNote = new Map(notes.map(n => [nkey(n), n]));
   const byTopic = new Map(topics.map(t => [t.name, t]));
-  const byKeyword = new Map(X.keywords(notes, readings).map(x => [x.name, x]));
+  const byKeyword = new Map(X.keywords(notes, readings, paperEntries).map(x => [x.name, x]));
   const st = { view: null, history: [], query: '', scope: 'all', mode: 'direct', typed: X.nextRoot(notes), busy: false };
   const close = () => { root.remove(); document.removeEventListener('keydown', escapeKey, true); };
   const escapeKey = e => { if (e.key === 'Escape' && root.isConnected) { e.preventDefault(); e.stopImmediatePropagation(); close(); } };
   document.addEventListener('keydown', escapeKey, true);
 
   function drawResults() {
-    const hits = X.search(notes, topics, readings, st.query), scope = st.scope;
+    const hits = X.search(notes, topics, readings, st.query, paperEntries), scope = st.scope;
     const section = (kind, heading, list, draw) => {
       if (scope !== 'all' && scope !== kind) return '';
       const cap = list.length > 100 ? '（先頭100件／全' + list.length + '件。検索で絞り込めます）' : '（' + list.length + '）';
@@ -48,7 +48,7 @@ export function open({ notes, topics, readings = {}, subject = null, onChoose })
         (list.length ? list.slice(0, 100).map(draw).join('') : '<p class="idex-empty">該当なし</p>') + '</section>';
     };
     $('.idex-results').innerHTML =
-      section('keywords', 'グローバルIndex', hits.keywords, k => route('keyword', k.name, k.name, (k.reading ? k.reading + ' · ' : '') + k.notes.length + '件')) +
+      section('keywords', 'グローバルIndex', hits.keywords, k => route('keyword', k.name, k.name, (k.reading ? k.reading + ' · ' : '') + (k.notes.length + k.pending.length) + '件')) +
       section('topics', 'トピックIndex', hits.topics, t => route('topic', t.name, t.name, t.keyword ? '● ' + t.keyword : Labeled(t))) +
       section('notes', 'ノート本文・タイトル', hits.notes, n => noteLink(n));
     root.querySelectorAll('[data-ix-scope]').forEach(b => b.classList.toggle('on', b.dataset.ixScope === scope));
@@ -67,7 +67,8 @@ export function open({ notes, topics, readings = {}, subject = null, onChoose })
       const related = topics.filter(t => t.keyword === k.name || LTopicRows(t).includes(k.name));
       return '<h2>Index：' + esc(k.name) + '</h2>' + (k.reading ? '<p>よみ：' + esc(k.reading) + '</p>' : '') +
         caption('対応するトピックIndex（さらに開く）', related.map(topicLink).join('')) +
-        caption('このキーワードに登録されたノート', k.notes.map(noteLink).join(''));
+        caption('このキーワードに登録されたノート', k.notes.map(noteLink).join('')) +
+        caption('紙のIndex（未取り込み）', k.pending.map(id => '<span class="idex-missing">紙 ' + esc(id) + ' — まだノートがありません</span>').join(''));
     }
     if (view.kind === 'topic') {
       const t = byTopic.get(view.key);
