@@ -11,7 +11,8 @@ let day = '';          // day のときの日付
 let sel = null;        // 選んでいるメモの id（ノートにする・引用する）。null = 選択中ではない
 let lastSel = null;
 let cq = '', tq = '';
-let replyTo = null;          // 返信しているメモの id（WhatsApp のように、入力欄の上に引用を出す）         // チャットメモの中の検索・トピックの検索
+let replyTo = null;
+let pickReply = null;        // 編集中に「返信先を選ぶ」ときの、選んだ id を受け取る関数          // 返信しているメモの id（WhatsApp のように、入力欄の上に引用を出す）         // チャットメモの中の検索・トピックの検索
 const collapsed = new Set();
 let draft = '';
 const DIARY = '日記';
@@ -258,18 +259,19 @@ function editBox(bub, text, onSave, m) {
   const MEN = /\[@([^\]]*)\]\(memo:([^)\s]+)\)/g;
   const drawChips = () => {   // 返信先・メンションを、×で外せる印にする（@ を打つと、候補が出て足せる）
     const ms = [...ta.value.matchAll(MEN)], o = rep && msg(rep);
-    chips.innerHTML = (o ? `<span class="b-chip" data-crep title="返信先を外す">↩ ${esc(firstLine(o.text).slice(0, 18))} ×</span>` : '') + ms.map((x, i) => `<span class="b-chip" data-cm="${i}" title="このメンションを外す">@${esc(x[1])} ×</span>`).join('');
+    chips.innerHTML = (o ? `<span class="b-chip b-rep2" data-crep title="返信先を外す">↩ ${esc(firstLine(o.text).slice(0, 18))} ×</span><span class="b-chip" data-cpick>返信先を変える</span>` : '<span class="b-chip" data-cpick>↩ ＋ 返信先を選ぶ</span>') + (pickReply ? '<span class="b-chip on">返信先にするメモを押してください（Esc でやめる）</span>' : '') + ms.map((x, i) => `<span class="b-chip" data-cm="${i}" title="このメンションを外す">@${esc(x[1])} ×</span>`).join('');
   };
   b.addEventListener('click', e => {
     if (e.target.closest('[data-crep]')) { rep = null; drawChips(); return; }
+    if (e.target.closest('[data-cpick]')) { pickReply = id => { if (id !== (m && m.id)) { rep = id; } pickReply = null; drawChips(); }; drawChips(); return; }
     const c = e.target.closest('[data-cm]'); if (c) { let k = 0; ta.value = ta.value.replace(MEN, t => (k++ === +c.dataset.cm ? '' : t)).replace(/ {2,}/g, ' '); drawChips(); ta.focus(); }
   });
   ta.addEventListener('input', () => { drawChips(); mentionList(ta, mbox); });
   ta.addEventListener('keydown', e => { if (e.key === 'Escape' && mn.length) { e.stopPropagation(); mentionOff(); } if (e.key === 'Enter' && mn.length && !e.isComposing) { e.preventDefault(); pickMention(0); } });
   mbox.addEventListener('mousedown', e => { const it = e.target.closest('[data-mn]'); if (it) { e.preventDefault(); pickMention(+it.dataset.mn); } });
   drawChips();
-  b.querySelector('[data-ok]').onclick = () => { mentionOff(); onSave(ta.value.trim(), rep); };
-  b.querySelector('[data-no]').onclick = () => { mentionOff(); paint(); };
+  b.querySelector('[data-ok]').onclick = () => { mentionOff(); pickReply = null; onSave(ta.value.trim(), rep); };
+  b.querySelector('[data-no]').onclick = () => { mentionOff(); pickReply = null; paint(); };
 }
 function editMsg(bub, m) { editBox(bub, m.text, (v, rep) => { if (v) { const old = m.text; m.text = v; if (rep) m.reply = rep; else delete m.reply; m.edited = Date.now(); save(); memoToDay(m, old, false); } paint(); }, m); }   // edited: スマホと共有するとき、新しい方が勝つ
 function editLine(bub, i) {
@@ -438,6 +440,7 @@ document.addEventListener('click', e => {
     if (a === 'toquote') quoteDialog(chosen());
     return;
   }
+  if (pickReply) { const bb = e.target.closest('.bub[data-m]'); if (bb && !bb.querySelector('.b-edit')) { e.preventDefault(); e.stopPropagation(); pickReply(bb.dataset.m); return; } }
   const rp = e.target.closest('[data-rep]'); if (rp) { startReply(rp.dataset.rep); return; }
   const qm = e.target.closest('[data-qm]'); if (qm) { const id = qm.dataset.qm, el = document.querySelector(`#c-msgs [data-m="${id}"]`); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1800); } else gotoMemo(id); return; }
   const gd = e.target.closest('[data-gday]'); if (gd) { const [kind, date] = gd.dataset.gday.split('|'); ctx.setMode('diary'); ctx.openDiary(date, false, kind); return; }
@@ -478,3 +481,4 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
   }
 });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && pickReply) { pickReply = null; const eb = document.querySelector('.b-edit'); if (eb) eb.dispatchEvent(new Event('input')); } }, true);   // 返信先を選ぶのをやめる
