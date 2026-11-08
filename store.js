@@ -516,16 +516,16 @@ function openVault(vault) {
       d.updated = L.now(); rebuild(); return pubDiary(d);
     },
     deleteDiary(date, kind = DIARY) { const d = diaries.get(dk(kind, date)); if (!d) return false; removeFile(diaryFile(d)); diaries.delete(dk(kind, date)); rebuild(); return true; },
-    // その日のノートに 1 段落を足す（USB で取り込んだスマホのメモなど）。無ければ作る
+    // 日記・時系列記録のメモは、時刻が同じでも各1件1行。メモ間に空行を入れない
     appendToDay(kind, date, text) {
-      const d = ensureDiary(date, kind || DIARY), tm = text.match(/^(\d{2}:\d{2})\s+([\s\S]*)$/);
-      // 直前のメモと同じ時刻なら、空行を入れずに、行だけ足して 1 つの塊にする（時刻が違うときだけ、空行＋時刻）
-      if (tm && d.body.trim()) {
-        const lines = d.body.split('\n'), si = lines.findIndex(l => l.trim() === '## 今日のノート'), memo = (si < 0 ? lines : lines.slice(0, si)).join('\n').replace(/\s+$/, ''), rest = si < 0 ? '' : lines.slice(si).join('\n');
-        const paras = memo ? memo.split(/\n{2,}/) : [], last = paras[paras.length - 1];
-        if (last && last.startsWith(tm[1] + ' ') && !/^#/.test(last)) { paras[paras.length - 1] = last + '\n' + tm[2]; d.body = L.normDay([paras.join('\n\n'), rest].filter(Boolean).join('\n\n')); d.updated = L.now(); rebuild(); return pubDiary(d); }
-      }
-      d.body = L.normDay(d.body.trim() ? d.body.replace(/\s+$/, '') + '\n\n' + text : text); d.updated = L.now();   // メモは「今日のノート」の上へ
+      const d = ensureDiary(date, kind || DIARY);
+      // 日記の手書き部分の末尾（「今日のノート」「紙の日記」等の節の前）へ追記
+      const lines = (d.body || '').split('\n');
+      const section = lines.findIndex(l => /^##\s/.test(l.trim()));
+      const before = (section < 0 ? d.body || '' : lines.slice(0, section).join('\n')).trimEnd();
+      const after = section < 0 ? '' : lines.slice(section).join('\n').trimStart();
+      d.body = L.normDay((before ? before + '\n' : '') + text + (after ? '\n\n' + after : ''));
+      d.updated = L.now();
       rebuild(); return pubDiary(d);
     },
     // 紙の日記（「日記」だけ）: スキャン画像を P_<日付>.jpg（2枚目以降 _2 _3 …）に保存し、日記の最後の「紙の日記」に挿入する
