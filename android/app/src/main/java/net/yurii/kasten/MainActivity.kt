@@ -798,7 +798,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
             upsDialogIds = null
         }, onCreate = { proposed ->
             val name = normalizedTopic(proposed.trim())
-            if (name.isBlank() || name == target || name in settings.topics || name in pcRecords || name in pcTopics ||
+            if (name.isBlank() || name == target || name in topics || name in pcRecords || name in pcTopics ||
                 name in setOf(ALL, DIARY, "全部", "全部表示", "未所属", "トピック未選択", "その他")) false
             else {
                 settings = settings.copy(topics = settings.topics + name)
