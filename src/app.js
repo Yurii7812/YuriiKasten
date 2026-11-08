@@ -9,6 +9,7 @@ import * as RP from './roleplay.js';
 import * as PI from './pindex.js';
 import * as GR from './graph.js';
 import * as MD from './mandala.js';
+import * as SM from './similar.js';
 import * as CV from './canvas.js';
 import { dialog, popMenu, toast } from './shared.js';
 
@@ -271,7 +272,7 @@ function fileDialog(name) {
     close(); view.dispatch({ changes: { from: h, insert: md }, selection: { anchor: h + md.length } }); view.focus();
   };
 }
-const sortBar = (diary) => `<div class="sortbar">${diary ? '<span class="sub">日付順</span>' : `<select id="sb-by" title="並べ替え"><option value="fz"${sortBy === 'fz' ? ' selected' : ''}>番号順</option><option value="created"${sortBy === 'created' ? ' selected' : ''}>作成順</option><option value="updated"${sortBy === 'updated' ? ' selected' : ''}>更新順</option></select>`}<button id="sb-dir" class="mini" title="${sortDir === 'asc' ? '昇順（押すと降順）' : '降順（押すと昇順）'}">${sortDir === 'asc' ? '↑' : '↓'}</button>${diary ? '' : '<button id="sb-loc" class="mini" title="いま開いているノートへ飛ぶ (c)">◎</button>'}</div>`;
+const sortBar = (diary) => `<div class="sortbar">${diary ? '<span class="sub">日付順</span>' : `<select id="sb-by" title="並べ替え"><option value="fz"${sortBy === 'fz' ? ' selected' : ''}>番号順</option><option value="created"${sortBy === 'created' ? ' selected' : ''}>作成順</option><option value="updated"${sortBy === 'updated' ? ' selected' : ''}>更新順</option></select>`}<button id="sb-dir" class="mini" title="${sortDir === 'asc' ? '昇順（押すと降順）' : '降順（押すと昇順）'}">${sortDir === 'asc' ? '↑' : '↓'}</button>${diary ? '' : '<button id="sb-loc" class="mini" title="いま開いているノートへ飛ぶ (c)">◎</button><button id="sb-sim" class="mini" title="似たノートを探す (s)">≈</button>'}</div>`;
 // 並べ替え。IDなし（未整理）は folgezettel が無いので、作成日順
 function sortNotes(list, tab) {
   const by = tab === 'u' && sortBy === 'fz' ? 'created' : sortBy, sg = sortDir === 'asc' ? 1 : -1;
@@ -309,9 +310,8 @@ function renderList() {
       for (const r of L.mergeTopic(t).rows) if (r.kw.toLowerCase().includes(q)) ti.push([rank(r.kw), `<div class="ix"><b>${esc(r.kw)}</b> ${chips(r)} <small>← ${tchip(t.name)}</small></div>`]);
     }
     if (ti.length) out.push('<h4>トピックIndex</h4>', ...ti.sort((a, b) => a[0] - b[0]).map(x => x[1]));
-    const hit = notes.filter(n => [n.id, n.title || '', n.body, n.keywords.join(' '), n.keywords.map(k => readings[k] || '').join(' ')].join('\n').toLowerCase().includes(q))
-      .sort((a, b) => a.s.localeCompare(b.s) || L.cmpId(a.id, b.id));
-    if (hit.length) out.push('<h4>ノート</h4>', ...hit.map(n => noteRow(n, true, q)));
+    const hit = sortNotes(notes.filter(n => [n.id, n.title || '', n.body, n.keywords.join(' '), n.keywords.map(k => readings[k] || '').join(' ')].join('\n').toLowerCase().includes(q)), 'd');   // 並べ替え（番号・作成・更新 × 昇降）は、ノートの部分だけ
+    if (hit.length) out.push('<h4>ノート</h4>', sortBar(false), ...hit.map(n => noteRow(n, true, q)));
     const fh = filesCache.filter(f => [f.title, f.desc, f.orig, f.name].join('\n').toLowerCase().includes(q));
     if (fh.length) out.push('<h4>ファイル</h4>', ...fh.map(f => fileRow(f, q)));
     const dh = diaries.filter(d => [d.date, d.title, d.body].join('\n').toLowerCase().includes(q)).sort((a, b) => b.date.localeCompare(a.date));
@@ -380,6 +380,7 @@ $('#list').addEventListener('click', e => {
   const fr = e.target.closest('[data-file]'); if (fr) return fileDialog(fr.dataset.file);
   if (e.target.closest('#ff-add')) return pick(true, f => attach(null, f), '*');
   if (e.target.closest('#sb-loc')) return locateCur();
+  if (e.target.closest('#sb-sim') || e.target.closest('#sel-sim')) return startSimilar();
   if (e.target.closest('#sb-dir')) { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; savePrefs(); return renderList(); }
   if (e.target.closest('#ix-edit')) { ixEdit = !ixEdit; return renderList(); }
   const c = e.target.closest('.chip.pick'); if (c) pickDot(c.dataset.pk, c.dataset.ps, c.dataset.pid);
@@ -462,6 +463,7 @@ document.addEventListener('keydown', e => {
   if (editing) { if (e.key === 'Escape' && ae.closest && ae.closest('.cm-editor')) { ae.blur(); e.preventDefault(); } return; }   // Esc で書く状態から抜けると、キー操作が使える
   const k = e.key;
   if (k === 'c' && cur && ['note', 'topic'].includes(cur.k)) { e.preventDefault(); return locateCur(); }
+  if (k === 's' && cur && cur.k === 'note') { e.preventDefault(); return startSimilar(); }
   if (k === 'i' && cur && cur.k === 'note') { e.preventDefault(); const t = $('#c-in'); return t ? t.focus() : lastView && lastView.dom.isConnected && lastView.focus(); }   // なりきり・チャットの入力欄、ふつうのノートの本文に入る
   if (mode !== 'notes') return;
   if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'j', 'k', 'h', 'l', '[', ']', 'Enter', 'o', 'u', 'Escape'].includes(k)) return;
@@ -565,7 +567,7 @@ function show(i) {
   active = Math.max(-1, Math.min(i, tabs.length - 1));
   const t = tabs[active];
   if (!t || t.k === 'empty') { cur = t || null; $('#pane').innerHTML = '<div class="none">左から選ぶか、「＋ 新規」で書き始めます。<br>Ctrl+クリックで新しいタブに開きます。</div>'; renderTabs(); return renderList(); }
-  if (t.k === 'note') openNote(t.s, t.id, null, true); else if (t.k === 'diary') openDiary(t.date, true, t.kind); else if (t.k === 'chat') Chat.open(t.topic, true); else if (t.k === 'graph') openGraph(true); else if (t.k === 'mandala') openMandala(true); else if (t.k === 'cards') openCards(true); else if (t.k === 'export') openExport(t, true); else openTopic(t.name, t.mode, true);
+  if (t.k === 'note') openNote(t.s, t.id, null, true); else if (t.k === 'diary') openDiary(t.date, true, t.kind); else if (t.k === 'chat') Chat.open(t.topic, true); else if (t.k === 'graph') openGraph(true); else if (t.k === 'mandala') openMandala(true); else if (t.k === 'cards') openCards(true); else if (t.k === 'similar') openSimilar(t.base, true); else if (t.k === 'export') openExport(t, true); else openTopic(t.name, t.mode, true);
 }
 function closeTab(i) {
   if (i < 0 || i >= tabs.length) return;
@@ -575,7 +577,7 @@ function closeTab(i) {
   show(active < 0 && tabs.length ? 0 : active);
 }
 const tabLabel = t => t.k === 'note' ? (n => `${n && icon(n) ? icon(n) + ' ' : ''}${n ? esc(titleOf(n).slice(0, 16)) : esc(t.id)}<small>${n && n.noid ? 'IDなし' : (t.s === 'p' ? '紙 ' : '') + esc(t.id)}</small>`)(get(t.s, t.id))
-  : t.k === 'topic' ? `📑 ${esc(t.name)}` : t.k === 'diary' ? `📔 ${esc(t.date.slice(5))}${t.kind && t.kind !== '日記' ? ' <small>' + esc(t.kind) + '</small>' : ''}` : t.k === 'chat' ? `💬 ${esc(Chat.label(t.topic))}` : t.k === 'graph' ? '🕸 グラフ' : t.k === 'mandala' ? '❖ 曼荼羅' : t.k === 'cards' ? '🗒 カード' : t.k === 'export' ? '📤 エクスポート' : '新しいタブ';
+  : t.k === 'topic' ? `📑 ${esc(t.name)}` : t.k === 'diary' ? `📔 ${esc(t.date.slice(5))}${t.kind && t.kind !== '日記' ? ' <small>' + esc(t.kind) + '</small>' : ''}` : t.k === 'chat' ? `💬 ${esc(Chat.label(t.topic))}` : t.k === 'graph' ? '🕸 グラフ' : t.k === 'mandala' ? '❖ 曼荼羅' : t.k === 'cards' ? '🗒 カード' : t.k === 'similar' ? '≈ 似たノート' : t.k === 'export' ? '📤 エクスポート' : '新しいタブ';
 function renderTabs() {
   $('#tabbar').innerHTML = tabs.map((t, i) => `<div class="tab${i === active ? ' on' : ''}" data-ti="${i}"><span>${tabLabel(t)}</span><b class="x" data-close="${i}" title="閉じる (Ctrl+W)">×</b></div>`).join('')
     + '<button class="tab-new" title="新しいタブ (Ctrl+T)">＋</button>';
@@ -1163,6 +1165,64 @@ document.addEventListener('input', e => { if (e.target.id === 'k-q') { keepPrefs
 document.addEventListener('change', e => { if (e.target.id === 'k-sort') { sortBy = e.target.value; savePrefs(); drawBoard(); } });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && cur && cur.k === 'cards' && $('#k-add') && $('#k-add').classList.contains('open') && $('#kover').hidden) { e.preventDefault(); commitAdd(); } });
 
+// ===== 似たノート（新しいタブ）。本文の言葉・キーワード・リンク・同じトピックIndex。度数で上から。並べ替え・絞り込み =====
+let simP = null, simSig = '';
+function startSimilar() {
+  const base = selMode && picked.size ? [...picked].map(k => get(k[0], k.slice(2))).filter(Boolean) : cur && cur.k === 'note' ? [get(cur.s, cur.id)].filter(Boolean) : [];
+  if (!base.length) return toast('似たノートを探すノートを、開くか選んでください');
+  if (selMode) { selMode = false; picked.clear(); renderList(); }
+  newTab = true; openSimilar(base.map(n => ({ s: n.s, id: n.id })));
+}
+function simRows(st, base) {
+  const sig = notes.length + ':' + notes.reduce((m, n) => n.updated > m ? n.updated : m, '') + ':' + topics.length;
+  if (!simP || simSig !== sig) { simP = SM.prepare(notes, topics, L.mergeTopic); simSig = sig; }
+  let rows = SM.rank(simP, notes, base, { bases: st.bases, multi: st.multi });
+  const f = st.f, baseSet = new Set(base.map(n => n.s + ':' + n.id));
+  rows = rows.filter(r => { const n = r.note, kind = n.noid ? 'u' : n.s;
+    if (!f.kinds[kind]) return false;
+    if (f.kw && !n.keywords.includes(f.kw)) return false;
+    const day = (n.created || '').slice(0, 10); if (f.from && day < f.from) return false; if (f.to && day > f.to) return false;
+    if (f.noDesc && base.some(b => !b.noid && !n.noid && n.s === b.s && L.fzSubtree([n.id], b.id).length)) return false;
+    if (f.noLinked && base.some(b => { const l = simP.links.get(b.s + ':' + b.id) || new Set(); return l.has(n.s + ':' + n.id) || (simP.links.get(n.s + ':' + n.id) || new Set()).has(b.s + ':' + b.id); })) return false;
+    return true; });
+  const sg = st.dir === 'asc' ? 1 : -1, by = st.sort;
+  rows.sort((a, b) => sg * (by === 'total' ? a.total - b.total : SM.BASES[by] ? a.score[by] - b.score[by] : by === 'fz' ? L.cmpId(a.note.id, b.note.id) : by === 'updated' ? (a.note.updated || '').localeCompare(b.note.updated || '') : (a.note.created || '').localeCompare(b.note.created || '')) || b.total - a.total);
+  return rows;
+}
+function openSimilar(baseKeys, keep) {
+  cur = place({ k: 'similar', base: baseKeys }, keep); mode = 'notes';
+  cur.st = cur.st || { bases: { text: true, kw: true, link: true, topic: true }, multi: 'avg', sort: 'total', dir: 'desc', f: { kinds: { d: true, p: true, u: true }, kw: '', from: '', to: '', noDesc: false, noLinked: false } };
+  drawSimilar(true);
+}
+function drawSimilar(full) {
+  const st = cur.st, base = cur.base.map(b => get(b.s, b.id)).filter(Boolean); if (!base.length) return;
+  const rows = simRows(st, base), allKw = [...new Set(notes.flatMap(n => n.keywords))].sort((a, b) => a.localeCompare(b, 'ja'));
+  const ck = (k, on, l, attr) => `<label class="smck"><input type="checkbox" ${attr}="${k}"${on ? ' checked' : ''}> ${l}</label>`;
+  const bar = `<div class="smbar"><div class="smrow"><b>基準</b> ${base.map(n => `<span class="chip ${n.s}" data-s="${n.s}" data-id="${esc(n.id)}">${esc(n.noid ? 'IDなし' : n.label || (n.s === 'p' ? '紙' : '') + n.id)} ${esc(titleOf(n).slice(0, 14))}</span>`).join('')}
+      ${base.length > 1 ? `<span class="sub">複数: </span><select data-sm="multi"><option value="avg"${st.multi === 'avg' ? ' selected' : ''}>全体の平均</option><option value="any"${st.multi === 'any' ? ' selected' : ''}>どれかに似ている</option><option value="all"${st.multi === 'all' ? ' selected' : ''}>全部に似ている</option></select>` : ''}</div>
+    <div class="smrow"><b>基準にする</b> ${Object.entries(SM.BASES).map(([k, l]) => ck(k, st.bases[k], l, 'data-smb')).join('')}</div>
+    <div class="smrow"><b>並べ替え</b> <select data-sm="sort">${[['total', '総合の度数'], ['text', '本文の言葉'], ['kw', 'キーワード'], ['link', 'リンク'], ['topic', 'トピックIndex'], ['fz', '番号'], ['created', '作成日'], ['updated', '更新日']].map(([k, l]) => `<option value="${k}"${st.sort === k ? ' selected' : ''}>${l}</option>`).join('')}</select><button class="mini" data-sm="dir">${st.dir === 'asc' ? '↑ 昇順' : '↓ 降順'}</button></div>
+    <div class="smrow"><b>絞り込み</b> ${ck('d', st.f.kinds.d, '💻', 'data-smk')}${ck('p', st.f.kinds.p, '📜', 'data-smk')}${ck('u', st.f.kinds.u, '📥', 'data-smk')}
+      <select data-sm="kw"><option value="">キーワード: すべて</option>${allKw.map(k => `<option${st.f.kw === k ? ' selected' : ''}>${esc(k)}</option>`).join('')}</select>
+      <span class="sub">作成日</span><input type="date" data-sm="from" value="${st.f.from}"><span class="sub">〜</span><input type="date" data-sm="to" value="${st.f.to}">
+      ${ck('noDesc', st.f.noDesc, '基準の子孫は除く', 'data-smf')}${ck('noLinked', st.f.noLinked, 'リンク済みは除く', 'data-smf')}</div></div>`;
+  const list = rows.slice(0, 300).map(r => { const n = r.note; return `<div class="smrow2 item note" data-s="${n.s}" data-id="${esc(n.id)}"><div class="smtop"><b>${n.noid ? '📥' : (n.s === 'p' ? '📜 ' : '💻 ') + esc(n.id)}</b> <span class="smt">${esc(titleOf(n))}</span><span class="smp" title="総合の度数">${Math.round(r.total * 100)}%</span></div>
+    <div class="smmeter"><i style="width:${Math.round(r.total * 100)}%"></i></div><div class="smre">${Object.entries(SM.BASES).filter(([k]) => st.bases[k] && r.score[k] > 0.005).map(([k, l]) => `<span class="smb smb-${k}">${l} ${Math.round(r.score[k] * 100)}%</span>`).join('')} ${r.reasons.slice(0, 3).map(x => `<span class="sub">${esc(x.t)}</span>`).join('　')}</div></div>`; }).join('');
+  $('#pane').innerHTML = `<div class="similar"><h2>≈ 似たノート <small class="sub">${rows.length} 件</small></h2>${bar}<div class="smlist">${list || '<div class="none">似たノートは見つかりません。基準や絞り込みを変えてください</div>'}</div></div>`;
+  renderTabs(); renderList();
+}
+$('#pane').addEventListener('change', e => {
+  if (!cur || cur.k !== 'similar') return; const st = cur.st, t = e.target;
+  if (t.dataset.smb) st.bases[t.dataset.smb] = t.checked; else if (t.dataset.smk) st.f.kinds[t.dataset.smk] = t.checked; else if (t.dataset.smf) st.f[t.dataset.smf] = t.checked;
+  else if (t.dataset.sm === 'multi') st.multi = t.value; else if (t.dataset.sm === 'sort') { st.sort = t.value; st.dir = ['fz'].includes(t.value) ? 'asc' : 'desc'; } else if (t.dataset.sm === 'kw') st.f.kw = t.value;
+  else if (t.dataset.sm === 'from') st.f.from = t.value; else if (t.dataset.sm === 'to') st.f.to = t.value; else return;
+  drawSimilar();
+});
+$('#pane').addEventListener('click', e => {
+  if (!cur || cur.k !== 'similar') return;
+  if (e.target.dataset.sm === 'dir') { cur.st.dir = cur.st.dir === 'asc' ? 'desc' : 'asc'; return drawSimilar(); }
+}, true);
+
 // ===== 曼荼羅ビュー =====
 function openMandala(keep, center) {
   cur = place({ k: 'mandala' }, keep); mode = 'notes';
@@ -1501,7 +1561,7 @@ function loaded(st) {
   try {
     const saved = JSON.parse(localStorage.getItem('pkm-tabs:' + vault) || 'null');
     if (saved) {
-      tabs = saved.tabs.filter(t => t.k === 'empty' || (t.k === 'note' && get(t.s, t.id)) || (t.k === 'topic' && topics.find(x => x.name === t.name)) || (t.k === 'diary' && getDiary(t.date, t.kind)) || t.k === 'chat' || t.k === 'graph' || t.k === 'mandala' || t.k === 'cards');
+      tabs = saved.tabs.filter(t => t.k === 'empty' || (t.k === 'note' && get(t.s, t.id)) || (t.k === 'topic' && topics.find(x => x.name === t.name)) || (t.k === 'diary' && getDiary(t.date, t.kind)) || t.k === 'chat' || t.k === 'graph' || t.k === 'mandala' || t.k === 'cards' || (t.k === 'similar' && (t.base || []).every(b => get(b.s, b.id))));
       tabs.forEach(t => { if (t.k === 'topic') t.mode = 'view'; });
       active = Math.min(saved.active, tabs.length - 1);
     }
@@ -1567,7 +1627,7 @@ function togglePick(row, range) {
 function renderSelbar() {
   const bar = $('#selbar');
   bar.innerHTML = selMode
-    ? `<span>${picked.size}件を選択</span><span class="grow"></span><button id="sel-all">全部</button><button id="sel-exp" ${picked.size ? '' : 'disabled'} title="選んだノートを、1つの Markdown にまとめる（保存はしない。確認してコピー）">📤 エクスポート</button><button id="sel-del" class="danger" ${picked.size ? '' : 'disabled'}>削除</button><button id="sel-end">やめる</button>`
+    ? `<span>${picked.size}件を選択</span><span class="grow"></span><button id="sel-all">全部</button><button id="sel-sim" ${picked.size ? '' : 'disabled'} title="選んだノートに似たノートを探す">≈ 似たノート</button><button id="sel-exp" ${picked.size ? '' : 'disabled'} title="選んだノートを、1つの Markdown にまとめる（保存はしない。確認してコピー）">📤 エクスポート</button><button id="sel-del" class="danger" ${picked.size ? '' : 'disabled'}>削除</button><button id="sel-end">やめる</button>`
     : '<button id="sel-start" title="複数のノートを選んで、まとめて削除します">☑ 選択</button>';
   bar.style.display = (tab === 'i' || mode !== 'notes') && !$('#q').value ? 'none' : 'flex';
 }
