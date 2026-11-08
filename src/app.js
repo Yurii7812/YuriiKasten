@@ -241,7 +241,7 @@ const stripId = name => name.replace(/^[0-9][0-9a-z]*-/, '') || name;
 const topicLabel = t => stripId(t.name);
 const tchip = name => `<span class="chip t" data-topic="${esc(name)}">${esc(stripId(name))}</span>`;
 const firstLine = n => (n.body.split('\n').find(x => x.trim()) || '').replace(/^#+\s*/, '').trim().slice(0, 40);
-const titleOf = n => (n.title || '').trim() || firstLine(n) || (n.kind === 'rp' ? '会話' : n.kind === 'canvas' ? 'キャンバス' : '（無題）');
+const titleOf = n => (n.title || '').trim() || (n.kind === 'memo-group' ? 'ノート化したメモ' : firstLine(n) || (n.kind === 'rp' ? '会話' : n.kind === 'canvas' ? 'キャンバス' : '（無題）'));
 // 検索: 一致した所を mark で囲む（大文字小文字は区別しない）
 const escRe = q => q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const mk = (text, q) => !q ? esc(text) : String(text).split(new RegExp('(' + escRe(q) + ')', 'ig')).map((p, i) => i % 2 ? `<mark>${esc(p)}</mark>` : esc(p)).join('');
@@ -661,7 +661,7 @@ function openNote(s, id, n, keep, mid) {
   applyMgn();
   renderMeta(note);
   $('#f-title').oninput = e => { // タイトル: 打ったらすぐ一覧とタブに反映し、少し待って保存
-    note.title = e.target.value; if (note.data) note.data.title = note.title || note.data.title;
+    note.title = e.target.value; if (note.data) note.data.title = memoGroup ? note.title : (note.title || note.data.title);
     if (!text && !memoGroup) note.body = L.deriveBody(kind, note.data);
     saveNote(note); renderList(); renderTabs();
   };
