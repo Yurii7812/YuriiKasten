@@ -255,7 +255,7 @@ const noteRow = (n, label = false, q = '') =>
   `<div class="nt">${label && n.s === 'p' ? `<span class="sp ${n.s}">${SP[n.s]}</span>` : ''}${icon(n) ? icon(n) + ' ' : ''}${n.image ? '📷 ' : ''}${mk(titleOf(n), q)}</div>` +
   `<div class="ns">${n.noid ? `IDなし · ${shortTime(n.created)}` : `${n.s === 'p' ? '紙 ' : ''}${mk(n.id, q)}`}${n.keywords.length ? ` · ${n.keywords.map(k => mk(k, q)).join('・')}` : ''}</div>${q && snippet(n.body, q) ? `<div class="sn">${snippet(n.body, q)}</div>` : ''}</div></div>`;
 // トピックIndex の行（その入口のノートの手前に出す）
-const topicRow = t => `<div class="item topicrow${listView === 'card' ? ' tc' : ''}${cur && cur.k === 'topic' && cur.name === t.name ? ' on' : ''}${decided && decided.k === 'topic' && decided.name === t.name ? ' decided' : ''}" data-topic="${esc(t.name)}"><div class="nrow"><div class="nt">${esc(topicLabel(t))}</div></div></div>`;
+const topicRow = t => `<div class="item topicrow${listView === 'card' ? ' tc' : ''}${cur && cur.k === 'topic' && cur.name === t.name ? ' on' : ''}${decided && decided.k === 'topic' && decided.name === t.name ? ' decided' : ''}" data-topic="${esc(t.name)}"><div class="nrow"><div class="nt">${esc(topicLabel(t))}</div><div class="ns">トピックIndex</div></div></div>`;
 
 // ===== 取り込んだファイル（画像・html・csv など）。タイトルと説明を付けて、探せるようにする =====
 let filesCache = [], fileFilter = 'all', filesBusy = false;
