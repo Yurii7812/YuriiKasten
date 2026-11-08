@@ -87,7 +87,7 @@ function render() {
           ${viewMode === 'day' ? `<button data-c="dprev" title="前の日">←</button><input type="date" id="c-day" value="${esc(day || L.todayStr())}"><button data-c="dnext" title="次の日">→</button>` : '<input type="date" id="c-jump" title="日付を入れると、その日へ">'}
           <button data-c="select" title="メモを選んで、ノートにする・引用する">☑ 選ぶ</button>`}
         ${be ? '<button data-c="openbe">ノートを開く</button>' : ''}
-        ${t ? '<button data-c="conf">⚙ 設定</button>' : ''}
+        ${t || (isRec(view) && view !== DIARY) ? '<button data-c="conf">⚙ 設定</button>' : ''}
       </div>
       <div id="c-msgs"></div>
       <div id="c-selbar"></div>
@@ -257,17 +257,40 @@ export function newTopicDialog() {
   const rootFree = () => { const r = ctx.notes().filter(n => n.s === 'd' && /^\d+$/.test(n.id)).map(n => +n.id); return ctx.free('d', String((r.length ? Math.max(...r) : 0) + 1)); };
   dialog(`<h3>トピックを作る</h3>
     <div class="sub">名前</div><input id="tp-name" placeholder="例: アイデア">
+    <label class="rad"><input type="checkbox" id="tp-rec"> 時系列記録にする（日記のように、日ごとのノートに時刻つきで入る。例: 夢）</label>
+    <div id="tp-recopt" style="display:none"><div class="sub">上位（この日のノートが、上位の日のノートの下に並びます）</div>${parentSelect('tp-par', '', '')}</div>
     <div class="row"><button class="p" id="tp-ok">作る</button><button id="tp-no">やめる</button></div>`, close => {
     $('#tp-name').focus(); $('#tp-no').onclick = close;
+    $('#tp-rec').onchange = e => { $('#tp-recopt').style.display = e.target.checked ? '' : 'none'; };
     $('#tp-ok').onclick = async () => {
       const name = $('#tp-name').value.trim();
       if (!name) return; if (topic(name) || ['全部表示', DIARY].includes(name) || isRec(name)) return alert('その名前は使えません');
+      if ($('#tp-rec').checked) {   // 時系列記録（日記の仲間）として作る
+        const r = await ctx.api.recordOp('addRecord', name, $('#tp-par').value);
+        if (r === false) return alert('その名前は使えません');
+        ctx.applyState(await ctx.api.state()); close(); ctx.renderList(); return open(name);
+      }
       const t = { name, type: 'bubble', stamp: true, entry: null };   // 新しいトピックは、1 件ずつのメモ（旧い「全体型」は、あるものだけ残す）
       doc.topics.push(t); save(); close(); open(name);
     };
   });
 }
+const parentSelect = (id, cur, self) => `<select id="${id}"><option value="">なし（日記の下）</option>${recKinds().filter(k => k !== self).map(k => `<option value="${esc(k)}"${k === cur ? ' selected' : ''}>${esc(k)}</option>`).join('')}</select>`;
+function recConfDialog() {
+  const kind = view, cur = ((ctx.records ? ctx.records() : []).find(r => r.name === kind) || {}).parent || '';
+  dialog(`<h3>時系列記録「${esc(kind)}」の設定</h3>
+    <div class="sub">上位（これから作る日の初期値。もう作った日は変わりません）</div>${parentSelect('rc-par', cur, kind)}
+    <div class="row"><button class="p" id="rc-ok">決定</button><button id="rc-no">やめる</button></div>`, close => {
+    $('#rc-no').onclick = close;
+    $('#rc-ok').onclick = async () => {
+      const r = await ctx.api.recordOp('setRecordParent', kind, $('#rc-par').value);
+      if (r === false) return alert('その上位にはできません（輪になります）');
+      ctx.applyState(await ctx.api.state()); close(); paint();
+    };
+  });
+}
 function confDialog() {
+  if (!topic(view) && isRec(view)) return recConfDialog();
   const t = topic(view), n = countOf(view);
   dialog(`<h3>トピックの設定</h3>
     <div class="sub">名前</div><input id="cf-name" value="${esc(t.name)}">

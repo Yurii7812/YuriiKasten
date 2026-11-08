@@ -198,6 +198,7 @@ const EN = {
 '点': 'dot', '件': ' items', '日': ' day', '空なら': 'if empty',
 };
 EN['Ctrl+クリックで新しいタブに開きます。'] = 'Ctrl+click opens in a new tab.';
+EN['全部'] = 'All';
 const TABLES = { en: EN };
 const SKIP = '.cm-editor,.nt,.mt,.mhead b,textarea,input,[data-user],.msg-text,.mc,.snip,.kc-body,.kc-title,.title,.bubble .tx';
 let lang = 'ja', obs = null, keys = [];
