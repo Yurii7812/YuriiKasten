@@ -148,7 +148,7 @@ fun ScanScreen(onClose: () -> Unit) {
     var history by remember { mutableStateOf(listOf<String>()) } // 番号を付けた順の 1 枚ずつの名前（← の取り消し用）
     var error by remember { mutableStateOf<String?>(null) }
     var tab by remember { mutableStateOf(0) }                    // 0 全部 / 1 未取り込み / 2 取り込み済み
-    var confirmAll by remember { mutableStateOf(false) }
+    
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
         if (res.resultCode == Activity.RESULT_OK) {
@@ -236,10 +236,6 @@ fun ScanScreen(onClose: () -> Unit) {
                     FilterChip(tab == i, { tab = i }, { Text(n, fontSize = 15.sp, maxLines = 1) }, shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f).heightIn(min = 44.dp))
                 }
             }
-            if (sorted.isNotEmpty()) TextButton(onClick = { confirmAll = true }, modifier = Modifier.padding(horizontal = 8.dp)) {
-                Icon(Icons.Filled.Delete, null); Spacer(Modifier.width(8.dp))
-                Text("この一覧を全部消す（${sorted.size} 枚）", fontSize = 14.sp)
-            }
             LazyVerticalGrid(GridCells.Adaptive(150.dp), contentPadding = PaddingValues(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(sorted, key = { it.name }) { s ->
@@ -255,18 +251,6 @@ fun ScanScreen(onClose: () -> Unit) {
                 }
             }
         }
-    }
-    if (confirmAll) {
-        val what = listOf("すべての", "未取り込みの", "取り込み済みの")[tab]
-        AlertDialog(onDismissRequest = { confirmAll = false },
-            title = { Text("$what スキャン ${sorted.size} 枚を消しますか？") },
-            text = { Text("写真ごと消えます。もとには戻せません。" + if (tab != 2) "未取り込みのものは、PC にもまだ入っていません。" else "PC には取り込み済みです。") },
-            confirmButton = { TextButton(onClick = {
-                confirmAll = false
-                val t = tab
-                scans = store.deleteWhere { t == 0 || (t == 1 && !it.imported) || (t == 2 && it.imported) }
-            }) { Text("全部消す", fontSize = 18.sp) } },
-            dismissButton = { TextButton(onClick = { confirmAll = false }) { Text("やめる", fontSize = 18.sp) } })
     }
 }
 

@@ -20,3 +20,11 @@ test('PC のメモをスマホへ・スマホで直した／消したものを P
   const r2 = C.importCapture(v, { ...data, pcDeleted: [] });
   assert.strictEqual(r2.sum.updated, 0); assert.strictEqual(v.state().docs['C_チャット'].messages.find(m => m.id === 'a1').text, 'スマホで直した');
 });
+
+test('PC で消した、スマホ由来のメモは、スマホへ「消して」と伝える', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pkm-rm-')), v = openVault(dir);
+  C.importCapture(v, { entries: [{ id: 'e1', created: 1000, topic: '', text: 'スマホで書いた', images: [], edited: 0 }], images: {}, scans: { index: [], files: {} }, topicModes: {}, pcDeleted: [] });
+  assert.deepStrictEqual(C.pcMemos(v).removed, []);
+  const chat = v.state().docs['C_チャット']; chat.messages = []; v.saveDoc('C_チャット', chat);   // PC で消した
+  assert.deepStrictEqual(C.pcMemos(v).removed, ['e1']);
+});

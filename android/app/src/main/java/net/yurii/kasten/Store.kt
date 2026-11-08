@@ -295,6 +295,11 @@ class Store(private val ctx: Context) {
                 (0 until d.length()).map { val x = d.getJSONObject(it); PcDay(x.optString("kind", DIARY), x.optString("date", ""), x.optString("body", "")) })
         } catch (e: Exception) { Pair(emptyList(), emptyList()) }
     }
+    /** PC で消した、スマホで書いたメモの id（PC が pc_memos.json の removed に書く）。スマホからも消す。 */
+    fun loadPcRemoved(): Set<String> {
+        val f = File(ctx.filesDir, "pc_memos.json"); if (!f.exists()) return emptySet()
+        return try { val a = JSONObject(f.readText()).optJSONArray("removed") ?: return emptySet(); (0 until a.length()).map { a.getString(it) }.toSet() } catch (e: Exception) { emptySet() }
+    }
     private val pcDeletedFile get() = File(ctx.filesDir, "pc_deleted.json")
     fun loadPcDeleted(): Set<String> = try {
         val a = JSONObject(pcDeletedFile.readText()).optJSONArray("ids") ?: JSONArray(); (0 until a.length()).map { a.getString(it) }.toSet()
@@ -303,10 +308,11 @@ class Store(private val ctx: Context) {
     fun savePcDeleted(ids: Set<String>) { pcDeletedFile.writeText(JSONObject().put("ids", JSONArray(ids.toList())).toString()) }
     /** PC のメモに合わせた一覧（変わらなければ同じ）。 */
     fun syncPc(entries: List<Entry>): List<Entry> {
-        val (memos, _) = loadPc(); if (memos.isEmpty() && entries.none { it.pcId != null }) return entries
+        val (memos, _) = loadPc(); val gone = loadPcRemoved()
+        if (memos.isEmpty() && gone.isEmpty() && entries.none { it.pcId != null }) return entries
         val deleted = loadPcDeleted(); val live = memos.map { it.id }.toSet()
         if (deleted.any { it !in live }) savePcDeleted(deleted.filter { it in live }.toSet())
-        return mergePcMemos(entries, memos, deleted)
+        return mergePcMemos(entries, memos, deleted).filter { it.id !in gone }   // PC で消したメモは、スマホからも消える
     }
 
     fun saveSettings(s: Settings) {
@@ -343,13 +349,14 @@ class Store(private val ctx: Context) {
             if (e.pcId != null) put("pcId", e.pcId)
         }
 
+        private fun parentOf(o: JSONObject): String? = if (o.isNull("parent")) null else o.optString("parent").ifEmpty { null }   // 昔の「Branch の親」は、返信先に移す
         fun fromJson(o: JSONObject): Entry {
             fun strs(k: String) = o.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList()
             return Entry(
                 id = o.getString("id"), created = o.getLong("created"), topic = normalizedTopic(o.optString("topic", UNASSIGNED)),
                 text = o.optString("text", ""), images = strs("images"),
-                parent = if (o.isNull("parent")) null else o.optString("parent").ifEmpty { null },
-                contexts = strs("contexts"), exported = o.optBoolean("exported", false), edited = o.optLong("edited", 0),
+                parent = null,
+                contexts = (strs("contexts") + listOfNotNull(parentOf(o))).distinct(), exported = o.optBoolean("exported", false), edited = o.optLong("edited", 0),
                 noTime = o.optBoolean("notime", false), pcId = o.optString("pcId", "").ifEmpty { null },
             )
         }

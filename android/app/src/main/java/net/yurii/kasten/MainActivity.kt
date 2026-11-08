@@ -120,7 +120,7 @@ private val GnosisColors = lightColorScheme(
 
 private val timeFmt = SimpleDateFormat("HH:mm", Locale.JAPAN)
 private val dayFmt = SimpleDateFormat(I18n.dayPat(true), Locale.getDefault())
-private fun dayKey(t: Long) = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date(t))
+private fun dayKey(t: Long) = ((t + java.util.TimeZone.getDefault().getOffset(t)) / 86_400_000L).toString()   // 日付の見出し用。SimpleDateFormat を毎回作らない（重い）
 
 private fun short(s: String, n: Int = 24): String {
     val one = MEMO_LINK.replace(s) { it.groupValues[1] }.replace('\n', ' ').trim()
@@ -145,7 +145,7 @@ private fun PickDialog(entries: List<Entry>, kind: String, exclude: Set<String>,
     val list = entries.filter { it.id !in exclude && matchesQuery(it.text, q) }
         .sortedByDescending { it.created }
     AlertDialog(onDismissRequest = onDismiss,
-        title = { Text(when (kind) { "link" -> "リンクするメモ"; "context" -> "文脈にするメモ"; "outline" -> "引用するメモ（見出しはこのあと選ぶ）"; else -> "親（Branch）にするメモ" }) },
+        title = { Text(when (kind) { "link" -> "リンクするメモ"; "context" -> "返信先にするメモ"; "outline" -> "引用するメモ（見出しはこのあと選ぶ）"; else -> "親（Branch）にするメモ" }) },
         text = {
             Column {
                 OutlinedTextField(q, { q = it }, placeholder = { Text("探す（本文の一部）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -180,7 +180,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
     var topic by remember { mutableStateOf(settings.lastTopic) }
     var pcRecords by remember { mutableStateOf(store.loadRecords()) }   // PC にある時系列記録の名前
     var pcTopics by remember { mutableStateOf(store.loadPcTopics()) }   // PC のチャットメモのトピック名
-    val entrySnapshot = entries.toList()
+    val entrySnapshot by remember { derivedStateOf { entries.toList() } }   // 変わったときだけ作り直す（毎回コピーして比べると、スクロールが重い）
     val topics = remember(settings.topics, entrySnapshot, pcRecords, pcTopics) {
         (settings.topics + entrySnapshot.map { it.topic } + pcRecords + pcTopics).filter { it.isNotEmpty() && it != ALL }.distinct()
     }
@@ -191,8 +191,6 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
     var fromPrompt by remember { mutableStateOf(false) }   // アラームから日記を開いている
     var pickingImage by remember { mutableStateOf(false) }
     var deleteSelectedOpen by remember { mutableStateOf(false) }
-    var cleanImportedOpen by remember { mutableStateOf(false) }
-    var cleanShownOpen by remember { mutableStateOf(false) }
     var notificationsEnabled by remember { mutableStateOf(Alarm.notificationsEnabled(ctx)) }
     var exactEnabled by remember { mutableStateOf(Alarm.canScheduleExact(ctx)) }
     var nextAlarm by remember { mutableStateOf(Alarm.scheduledTime(ctx)) }
@@ -325,8 +323,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
         if (k < 0) return
         val e = entries[k]
         val cs = (e.contexts + ids).filter { it != id }.distinct()
-        val parent = e.parent ?: cs.firstOrNull { !wouldCycle(id, it) }
-        entries[k] = e.copy(contexts = cs, parent = parent, exported = false); persist()
+        entries[k] = e.copy(contexts = cs, parent = null, exported = false); persist()
     }
 
     fun removeContext(id: String, c: String) {
@@ -447,7 +444,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
             val at = if (bd != null) backdatedTime(bd, now) else now
             val body = if (bd != null) backdatedText(text, settings.writtenStamp, now) else text
             entries.add(Entry(id = Store.newId(at, entries), created = at, topic = writingTopic(topic), text = body,
-                images = pendingImages.toList(), parent = replyTo ?: contextsTo.firstOrNull(), contexts = contextsTo.toList(),
+                images = pendingImages.toList(), parent = null, contexts = contextsTo.toList(),
                 noTime = bd != null && !settings.writtenStamp))
             replyTo = null; contextsTo.clear()
         }
@@ -470,28 +467,18 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
                         Text(if (selecting) "${selected.size} 件選択" else topicLabel(topic), fontWeight = FontWeight.Bold,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                         val bdSub = backdate?.let { "　日付: " + SimpleDateFormat(I18n.dayPat(false), Locale.getDefault()).format(Date(it)) } ?: ""
-                        val doneN = entries.count { it.id in imported }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text((if (n == 0) "すべて取り込み済み" else "未取り込み $n 件") + bdSub, fontSize = 12.sp,
+                            if (bdSub.isNotEmpty()) Text(bdSub.trim(), fontSize = 12.sp,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (doneN > 0 && !selecting) Text("　済み $doneN 件を消す", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium,
-                                modifier = Modifier.clickable { cleanImportedOpen = true })   // PC に取り込んだメモを、まとめてスマホから消す（確認つき）
                         }
                     }
                 },
                 actions = {
-                    // 時系列表示と Folgezettel 表示（Branch の親子の木）を切り替える
-                    if (search == null && !selecting) IconButton(onClick = {
-                        settings = settings.copy(folgeView = !settings.folgeView); store.saveSettings(settings)
-                    }) {
-                        Icon(if (settings.folgeView) Icons.Filled.Schedule else Icons.Filled.AccountTree,
-                            if (settings.folgeView) "時系列表示にする" else "Folgezettel 表示にする")
-                    }
                     IconButton(onClick = { search = if (search == null) "" else null }) {
                         Icon(if (search != null) Icons.Filled.Close else Icons.Filled.Search, if (search != null) "検索をやめる" else "全文検索")
                     }
                     if (search == null && !selecting) Box {
-                        IconButton(onClick = { insertMenu = true }) { Icon(Icons.Filled.AddCircleOutline, "挿入（チェックボックス・リンク・文脈・親）") }
+                        IconButton(onClick = { insertMenu = true }) { Icon(Icons.Filled.AddCircleOutline, "挿入（チェックボックス・リンク・返信）") }
                         DropdownMenu(expanded = insertMenu, onDismissRequest = { insertMenu = false }) {
                             DropdownMenuItem(text = { Text("チェックボックス") }, leadingIcon = { Icon(Icons.Filled.CheckBox, null) }, onClick = {
                                 insertMenu = false; appendInput("- [ ] ", true); focusTick++
@@ -502,11 +489,8 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
                             DropdownMenuItem(text = { Text("アウトライン引用（見出しへのリンク）") }, leadingIcon = { Icon(Icons.Filled.FormatQuote, null) }, onClick = {
                                 insertMenu = false; pick = Pick("outline", editing)
                             })
-                            DropdownMenuItem(text = { Text("文脈（メモを探す）") }, leadingIcon = { Icon(Icons.Filled.Link, null) }, onClick = {
+                            DropdownMenuItem(text = { Text("返信（メモを探す）") }, leadingIcon = { Icon(Icons.Filled.Link, null) }, onClick = {
                                 insertMenu = false; pick = Pick("context", editing)
-                            })
-                            DropdownMenuItem(text = { Text("親（Branch）") }, leadingIcon = { Icon(Icons.Filled.SubdirectoryArrowRight, null) }, onClick = {
-                                insertMenu = false; pick = Pick("parent", editing)
                             })
                         }
                     }
@@ -540,9 +524,6 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
                             DropdownMenuItem(text = { Text("紙のスキャン") }, leadingIcon = { Icon(Icons.Filled.CameraAlt, null) }, onClick = {
                                 moreMenu = false; scanOpen = true
                             })
-                            DropdownMenuItem(text = { Text("取り込み済みのメモを消す") }, leadingIcon = { Icon(Icons.Filled.DeleteSweep, null) }, onClick = {
-                                moreMenu = false; cleanImportedOpen = true
-                            })
                             DropdownMenuItem(text = { Text("アラームと設定") }, leadingIcon = { Icon(Icons.Filled.Alarm, null) }, onClick = {
                                 moreMenu = false; settingsOpen = true
                             })
@@ -555,10 +536,9 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
             Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp)) {
                 // つなぎ方の案内（WhatsApp の返信のように、何に続けて書いているかを見せる）
                 val banners = buildList<Pair<String, () -> Unit>> {
-                    if (contextFor != null) add("文脈にするメモを続けてタップ（「${short(byId[contextFor]?.text ?: "")}」の文脈。終わったら ×）" to { contextFor = null })
+                    if (contextFor != null) add("返信先にするメモを続けてタップ（「${short(byId[contextFor]?.text ?: "")}」の返信先。終わったら ×）" to { contextFor = null })
                     if (editing != null) add("編集中: ${short(byId[editing]?.text ?: "")}" to { editing = null; input = "" })
-                    if (replyTo != null) add("↳ 続きとして書く（Branch の子）: ${short(byId[replyTo]?.text ?: "")}" to { replyTo = null })
-                    if (contextsTo.isNotEmpty()) add("⇢ 文脈 ${contextsTo.size} 件: " + contextsTo.joinToString("、") { short(byId[it]?.text ?: "", 10) } to { contextsTo.clear() })
+                    if (contextsTo.isNotEmpty()) add("↩ 返信 ${contextsTo.size} 件: " + contextsTo.joinToString("、") { short(byId[it]?.text ?: "", 10) } to { contextsTo.clear() })
                 }
                 banners.forEach { banner ->
                     Surface(tonalElevation = 3.dp, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
@@ -750,10 +730,9 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
     MemoSheet(sheetForState, byId,
         actions = { target ->
             buildList<SheetAct> {
-                add(SheetAct(Icons.Filled.Edit, "書き直す", "このメモの文章を直す") { editing = target.id; input = target.text })
-                add(SheetAct(Icons.Filled.SubdirectoryArrowRight, "続けて書く", "このメモの子として書く") { replyTo = target.id; contextFor = null })
-                add(SheetAct(Icons.Filled.Link, "文脈につなぐ", "つなぐ相手のメモを続けてタップ") { contextFor = target.id; replyTo = null })
-                add(SheetAct(Icons.Filled.AccountTree, "文脈・親を編集", "つながりを確かめて外す") { relEditFor = target.id })
+                add(SheetAct(Icons.Filled.Edit, "編集", "このメモの文章を直す") { editing = target.id; input = target.text })
+                add(SheetAct(Icons.Filled.Link, "返信先を足す", "返信先にするメモを続けてタップ") { contextFor = target.id })
+                add(SheetAct(Icons.Filled.AccountTree, "返信先を編集", "返信先を確かめて外す") { relEditFor = target.id })
                 add(SheetAct(Icons.Filled.Label, "トピックを変える", "別のトピックへ移す") { topicDialogFor = target.id })
                 add(SheetAct(Icons.Filled.Checklist, "複数選択", "まとめて移す・消す") { selecting = true; selected.clear(); selected.add(target.id); rangeAnchor = target.id; rangeMode = false; contextFor = null; keyboard?.hide() })
                 add(SheetAct(Icons.Filled.ContentCopy, "コピー", "文章をクリップボードへ") {
@@ -915,25 +894,17 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
     relEditFor?.let { id ->
         val e = entries.firstOrNull { it.id == id }
         if (e == null) { relEditFor = null; return@let }
-        AlertDialog(onDismissRequest = { relEditFor = null }, title = { Text("文脈・親を編集") },
+        AlertDialog(onDismissRequest = { relEditFor = null }, title = { Text("返信先を編集") },
             text = { Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(short(e.text, 40), fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
-                Text("親（Branch）", fontWeight = FontWeight.Bold)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(e.parent?.let { short(byId[it]?.text ?: "（書き出し済み）", 24) } ?: "なし", Modifier.weight(1f))
-                    TextButton(onClick = { pick = Pick("parent", id) }) { Text("変える") }
-                    if (e.parent != null) TextButton(onClick = { setParent(id, null) }) { Text("外す") }
-                }
-                HorizontalDivider()
-                Text("文脈（${e.contexts.size}）", fontWeight = FontWeight.Bold)
+                Text("返信先（${e.contexts.size}）", fontWeight = FontWeight.Bold)
                 e.contexts.forEach { c ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(short(byId[c]?.text ?: "（書き出し済み）", 28), Modifier.weight(1f))
                         IconButton(onClick = { removeContext(id, c) }) { Icon(Icons.Filled.Close, "外す") }
                     }
                 }
-                OutlinedButton(onClick = { pick = Pick("context", id) }, modifier = Modifier.fillMaxWidth()) { Text("＋ 文脈を追加（探す）") }
-                Text("親が無いときは、最初の文脈が親（Branch）になります。", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                OutlinedButton(onClick = { pick = Pick("context", id) }, modifier = Modifier.fillMaxWidth()) { Text("＋ 返信先を追加（探す）") }
             } },
             confirmButton = { TextButton(onClick = { relEditFor = null }) { Text("閉じる") } })
     }
@@ -990,33 +961,6 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
             },
             confirmButton = { TextButton(onClick = { if (shown != null) shown = null else pcDaysOpen = false }) { Text(if (shown != null) "一覧へ" else "閉じる") } })
     }
-    if (cleanImportedOpen) {
-        val gone = entries.filter { it.id in imported }.map { it.id }.toSet()
-        AlertDialog(onDismissRequest = { cleanImportedOpen = false }, title = { Text("取り込み済みのメモを消す") },
-            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (gone.isEmpty()) "PC に取り込み済みと確認できるメモはありません。まとめて消したいときは、下の「このトピックのメモを全部消す」で消せます。"
-                else "PC に取り込み済みの ${gone.size} 件をスマホから消します。取り込んだ vault にメモが残っていることを確認してください。テスト用 vault に取り込んだだけなら消さないでください。空になったトピックも消します（日記・時系列記録は残します）。画像も消え、元に戻せません。")
-                OutlinedButton(onClick = { cleanImportedOpen = false; cleanShownOpen = true }) { Text("このトピックのメモを全部消す（取り込み済みかどうかに関係なく）") }
-            } },
-            confirmButton = { TextButton(enabled = gone.isNotEmpty(), onClick = {
-                deleteEntries(gone)
-                cleanImportedOpen = false
-            }) { Text("消す") } },
-            dismissButton = { TextButton(onClick = { cleanImportedOpen = false }) { Text("やめる") } })
-    }
-
-    if (cleanShownOpen) {
-        val all = visibleEntries(entries.toList(), topic).map { it.id }.toSet()
-        val notYet = all.count { it !in imported }
-        AlertDialog(onDismissRequest = { cleanShownOpen = false }, title = { Text("「${topicLabel(topic)}」のメモを全部消す") },
-            text = { Text("${all.size} 件を消します（うち取り込んでいない ${notYet} 件は、PC に取り込んだか確かめられません）。PC に取り込んだ記録（二重に取り込まない印）は PC 側に残るので、取り込み済みのものがまた取り込まれることはありません。画像も消え、元に戻せません。") },
-            confirmButton = { TextButton(enabled = all.isNotEmpty(), onClick = {
-                deleteEntries(all)
-                cleanShownOpen = false
-            }) { Text("全部消す") } },
-            dismissButton = { TextButton(onClick = { cleanShownOpen = false }) { Text("やめる") } })
-    }
-
     if (deleteSelectedOpen) {
         AlertDialog(onDismissRequest = { deleteSelectedOpen = false }, title = { Text("${selected.size} 件を消しますか？") },
             text = { Text(run { val n = selected.count { it !in imported }; "画像も消えます。元に戻せません。" + if (n > 0) "\nまだ PC に取り込んでいない $n 件も、消えます。" else "スマホの中からだけ消えます。" }) },
@@ -1157,14 +1101,13 @@ private fun MemoSwipe(enabled: Boolean, onContext: () -> Unit, onBranch: () -> U
         }
         false
     })
-    SwipeToDismissBox(swipe, enableDismissFromStartToEnd = enabled, enableDismissFromEndToStart = enabled,
+    SwipeToDismissBox(swipe, enableDismissFromStartToEnd = enabled, enableDismissFromEndToStart = false,
         backgroundContent = {
             val toRight = swipe.dismissDirection == SwipeToDismissBoxValue.StartToEnd
             val toLeft = swipe.dismissDirection == SwipeToDismissBoxValue.EndToStart
             Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = if (toLeft) Arrangement.End else Arrangement.Start) {
-                if (toRight) { Icon(Icons.Filled.Link, null, tint = MaterialTheme.colorScheme.tertiary); Spacer(Modifier.width(6.dp)); Text("文脈で続ける", color = MaterialTheme.colorScheme.tertiary) }
-                if (toLeft) { Text("Branch で続ける", color = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(6.dp)); Icon(Icons.Filled.SubdirectoryArrowRight, null, tint = MaterialTheme.colorScheme.primary) }
+                if (toRight) { Icon(Icons.Filled.Link, null, tint = MaterialTheme.colorScheme.tertiary); Spacer(Modifier.width(6.dp)); Text("返信", color = MaterialTheme.colorScheme.tertiary) }
             }
         }) { content() }
 }
@@ -1225,13 +1168,8 @@ private fun Bubble(e: Entry, done: Boolean, byId: Map<String, Entry>, store: Sto
             Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 7.dp)) {
                 if (selectionMode) Checkbox(checked = selected, onCheckedChange = { onTap() })
                 // 押すとそのメモへ飛ぶ
-                e.parent?.let { p ->
-                    Text("↳ ${short(byId[p]?.text ?: "（書き出し済み）")} の続き", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary,
-                        textDecoration = if (p in byId) TextDecoration.Underline else null,
-                        modifier = if (p in byId) Modifier.clickable { onJump(p) }.padding(vertical = 2.dp) else Modifier)
-                }
                 e.contexts.forEach { c ->
-                    Text("文脈: " + short(byId[c]?.text ?: "（書き出し済み）", 20), fontSize = 12.sp, color = MaterialTheme.colorScheme.tertiary,
+                    Text("↩ " + short(byId[c]?.text ?: "（書き出し済み）", 20), fontSize = 12.sp, color = MaterialTheme.colorScheme.tertiary,
                         textDecoration = if (c in byId) TextDecoration.Underline else null,
                         modifier = if (c in byId) Modifier.clickable { onJump(c) }.padding(vertical = 2.dp) else Modifier)
                 }

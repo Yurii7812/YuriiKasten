@@ -48,12 +48,13 @@ function importCapture(v, data) {
     const topic = e.topic === 'メモ' ? '' : (e.topic || ''), at = L.now(new Date(e.created)), date = L.dayOf(at), mode = modes[topic] || {};
     const imgs = saveImages(e.images).map(n => `![](${n})`);
     const mention = id => { const m = memoOf(id); const o = m && chat.messages.find(x => x.id === m); return o ? `[@${(o.text || '').split('\n')[0].replace(/[\[\]()]/g, '').slice(0, 14)}](memo:${o.id})` : ''; };
-    const refs = [e.parent, ...(e.contexts || [])].filter(Boolean).map(mention).filter(Boolean).join(' ');   // 分岐元・文脈 → 返信の @
+    const repl = [...new Set([e.parent, ...(e.contexts || [])].filter(Boolean).map(memoOf).filter(Boolean))];   // 昔の分岐元・文脈・今の返信先 → 返信（リプライ）
     const text = (e.text || '').replace(MEMO_LINK, (_a, label, id) => mention(id) || label).trim();
-    const memoText = [refs ? refs + ' ' + text : text, ...imgs].filter(x => x.trim()).join('\n').trim();
+    const memoText = [text, ...imgs].filter(x => x.trim()).join('\n').trim();
     // 1. チャットメモに
     if (topic && topic !== '日記' && !chat.topics.some(t => t.name === topic)) chat.topics.push({ name: topic, type: 'bubble', stamp: true, entry: null });
     const memo = { id: uid(), topic, t: e.created, text: memoText, src: 'phone:' + e.id };
+    if (repl.length) memo.replies = repl;
     chat.messages.push(memo); chatTouched = true; sum.chats++;
     st.ids[e.id] = { dest: `chat:${memo.id}`, memo: memo.id, snap: e };
     // 2. 日記・記録・まとめのノートにも
@@ -103,8 +104,10 @@ function summaryText(sum) {
 // スマホへ渡す、PC のメモ全部と日のノート（スマホで見られる・直せる。スマホからこの PC のメモに戻った分は、取り込むときに反映）
 function pcMemos(v) {
   const s = v.state(), chat = (s.docs || {})['C_チャット'] || {};
+  const alive = new Set((chat.messages || []).map(m => m.id)), st = loadState(v);
+  const removed = Object.entries(st.ids).filter(([, rec]) => rec && rec.memo && !alive.has(rec.memo)).map(([eid]) => eid);   // PC で消したメモ（スマホで書いたもの）。スマホからも消す
   return {
-    version: 1,
+    version: 2, removed,
     memos: (chat.messages || []).filter(m => !String(m.src || '').startsWith('phone:')).map(m => { const os = (m.replies || (m.reply ? [m.reply] : [])).map(id => (chat.messages || []).find(x => x.id === id)).filter(Boolean); return { id: m.id, topic: m.topic || '', t: m.t, text: os.map(o => '↩ ' + String(o.text || '').split('\n')[0].slice(0, 40) + '\n').join('') + (m.text || ''), edited: m.edited || 0 }; }),
     days: (s.diaries || []).map(d => ({ kind: d.kind || '日記', date: d.date, body: d.body || '' })),
   };

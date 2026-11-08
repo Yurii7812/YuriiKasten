@@ -85,7 +85,7 @@ test('スマホのメモを USB で取り込む: 未整理・日記・記録・�
   assert.deepStrictEqual([out.sum.chats, out.sum.days, out.sum.appended, out.sum.scans, out.sum.blankScans], [5, 2, 1, 1, 1]);
   const ma = chat.messages.find(m => m.text.includes('未整理のメモ')), mb = chat.messages.find(m => m.text.includes('続き'));
   assert.ok(/!\[\]\(\d{14}\.jpg\)/.test(ma.text) && ma.topic === '');                               // 写真は日時の名前で取り込まれる
-  assert.ok(mb.text.startsWith(`[@未整理のメモ](memo:${ma.id}) `));                                       // 分岐元・文脈は、返信の @ になる（親・文脈は持たない）
+  assert.deepStrictEqual(mb.replies, [ma.id]);                                       // 分岐元・文脈は、返信の @ になる（親・文脈は持たない）
   assert.ok(!chat.messages.some(m => 'parent' in m || 'ctx' in m));
   assert.strictEqual(st.notes.filter(n => n.noid && n.title !== '読書').length, 0);                       // 普通のメモは、ノートにならない
   assert.match(st.diaries.find(x => x.kind === '日記').body, /09:32 朝の日記/); assert.match(st.diaries.find(x => x.kind === '夢').body, /09:33 空を飛んだ/);   // 日記・記録には、行としても入る
