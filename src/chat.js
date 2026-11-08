@@ -4,6 +4,7 @@
 import { ctx, $, esc, pad, hm, uid, renderMd, mdClick, popMenu, toast, dialog } from './shared.js';
 import L from '../lib.js';
 import Relations from '../chat-relations.js';
+import TopicPrefs from '../chat-topic-preferences.js';
 import * as TopicGraph from './chat-topic-graph.js';
 
 let doc = { topics: [], messages: [], converted: {}, trash: [], noted: {} };
@@ -111,7 +112,8 @@ const isRec = n => n === DIARY || recKinds().includes(n);
 
 export function init(docs) {
   const d = docs['C_チャット'] || {};
-  doc = { topics: d.topics || [], messages: d.messages || [], converted: d.converted || {}, trash: d.trash || [], noted: d.noted || {}, mirror: d.mirror || {}, target: { topic: (d.target && d.target.topic) || '', ups: (d.target && d.target.ups) || [] }, viewMode: d.viewMode === 'day' ? 'day' : 'all' };
+  doc = { topics: d.topics || [], messages: d.messages || [], converted: d.converted || {}, trash: d.trash || [], noted: d.noted || {}, mirror: d.mirror || {}, upperByTopic: d.upperByTopic || {}, target: { topic: (d.target && d.target.topic) || '', ups: (d.target && d.target.ups) || [] }, viewMode: d.viewMode === 'day' ? 'day' : 'all' };
+  TopicPrefs.init(doc);
   viewMode = doc.viewMode;
 }
 const save = () => ctx.later('doc:C', () => ctx.api.saveDoc('C_チャット', doc));
@@ -178,7 +180,7 @@ export function open(name, keep, savedSourceIds, savedGraph) {
   graphOpen = !!savedGraph;
   childFilter = new Set();
   view = name; sourceIds = keep && Array.isArray(savedSourceIds) ? new Set(savedSourceIds) : null; sel = null; draft = '';
-  if (name !== '*') { doc.target.topic = name; doc.target.ups = doc.target.ups.filter(u => u !== name); save(); }   // 書き込み先は、見ているトピックに。設定（トピック・上）は、変えない限り引き継ぐ
+  TopicPrefs.open(doc, name); save();   // 所属トピックごとに最後の上位トピックを復元。「全部」は未選択として扱う
   ctx.setCur(ctx.place({ k: 'chat', topic: name, topicGraph: graphOpen }, keep)); ctx.setMode('chat');
   render(); ctx.renderTabs(); ctx.renderList();
 }
@@ -270,7 +272,7 @@ const quoteHtml = m => repliesOf(m).map(id => { const o = msg(id); return o ? `<
 const topicLabel = n => n === '' ? 'トピック未選択' : n === DIARY ? '日記' : n;
 function showTarget() {
   const el = $('#c-target'); if (!el) return; const t = doc.target;
-  el.innerHTML = `<span class="tg" data-tg="topic" title="所属トピックを選ぶ">所属トピック: ${esc(topicLabel(t.topic))} ▾</span><span class="tg-l">上位トピック</span>${t.ups.map(u => `<span class="tg tg-up" data-tgx="${esc(u)}" title="外す">${esc(u)} ×</span>`).join('')}<span class="tg tg-add" data-tg="up" title="上位トピックを追加">＋ 上位トピック</span>`;
+  el.innerHTML = `<span class="tg-l">所属トピック: ${esc(topicLabel(t.topic))}</span><span class="tg-l">上位トピック</span>${t.ups.map(u => `<span class="tg tg-up" data-tgx="${esc(u)}" title="外す">${esc(u)} ×</span>`).join('')}<span class="tg tg-add" data-tg="up" title="上位トピックを追加">＋ 上位トピック</span>`;
 }
 // 選ぶ窓（探せる。最近使った順。「上」は、そこで過去に使ったものが先）。multi は、押すごとに入れる・外す
 function openPicker(anchor, { multi, selected, near, exclude = [], extra = [], onPick }) {
@@ -278,12 +280,26 @@ function openPicker(anchor, { multi, selected, near, exclude = [], extra = [], o
   const box = document.createElement('div'); box.className = 'tgpick';
   const sel = new Set(selected), names = [...extra, ...recentNames(near, exclude)];
   const draw = q => { box.querySelector('.tgl').innerHTML = names.filter(n => !q || topicLabel(n).toLowerCase().includes(q)).map(n => `<div class="tgi${sel.has(n) ? ' on' : ''}" data-n="${esc(n)}">${multi ? (sel.has(n) ? '☑ ' : '☐ ') : ''}${esc(topicLabel(n))}</div>`).join('') || '<div class="sub" style="padding:6px">なし</div>'; };
-  box.innerHTML = '<input class="tgs" placeholder="探す"><div class="tgl"></div>' + (multi ? '<button class="p tgok">決定</button>' : ''); draw('');
+  box.innerHTML = '<input class="tgs" placeholder="探す"><div class="tgl"></div>' + (multi ? '<button class="tgnew" type="button">＋ 新しいトピック</button><div class="tgcreate" style="display:none;gap:4px;margin-top:6px"><input class="tgname" placeholder="新しいトピック名" style="min-width:0;flex:1"><button class="tgmake">作る</button><button class="tgcancel">×</button></div><button class="p tgok">決定</button>' : ''); draw('');
   const r = anchor.getBoundingClientRect(); box.style.left = Math.max(8, Math.min(r.left, innerWidth - 270)) + 'px'; box.style.bottom = Math.max(8, innerHeight - r.top + 6) + 'px'; document.body.append(box);
   const close = () => { box.remove(); document.removeEventListener('mousedown', away, true); }, away = e => { if (!box.contains(e.target)) close(); };
   setTimeout(() => document.addEventListener('mousedown', away, true), 0);
   box.querySelector('.tgs').addEventListener('input', e => draw(e.target.value.trim().toLowerCase())); box.querySelector('.tgs').focus();
   box.querySelector('.tgl').addEventListener('click', e => { const it = e.target.closest('[data-n]'); if (!it) return; const n = it.dataset.n; if (multi) { if (sel.has(n)) sel.delete(n); else sel.add(n); draw(box.querySelector('.tgs').value.trim().toLowerCase()); } else { close(); onPick(n); } });
+  if (multi) {
+    const form = box.querySelector('.tgcreate'), nameIn = box.querySelector('.tgname');
+    box.querySelector('.tgnew').onclick = () => { form.style.display = form.style.display === 'none' ? 'flex' : 'none'; if (form.style.display !== 'none') nameIn.focus(); };
+    box.querySelector('.tgcancel').onclick = () => { form.style.display = 'none'; };
+    const make = () => {
+      const name = nameIn.value.trim();
+      if (!name || topic(name) || isRec(name) || ['*', '全部', '全部表示', 'トピック未選択'].includes(name)) return alert('その名前は使えません');
+      doc.topics.push({ name, type: 'bubble', stamp: true, entry: null });
+      names.unshift(name); sel.add(name); save(); ctx.renderList();
+      nameIn.value = ''; form.style.display = 'none'; box.querySelector('.tgs').value = ''; draw('');
+    };
+    box.querySelector('.tgmake').onclick = make;
+    nameIn.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); make(); } };
+  }
   const ok = box.querySelector('.tgok'); if (ok) ok.onclick = () => { close(); onPick([...sel]); };
 }
 function showReply() {
@@ -555,14 +571,14 @@ function confDialog() {
       if (!name) return; if (name !== t.name && (topic(name) || ['全部表示', DIARY].includes(name))) return alert('その名前は使えません');
       for (const m of doc.messages) if (m.topic === t.name) m.topic = name;
       for (const m of doc.messages) { if (m.ups && m.ups.includes(t.name)) m.ups = m.ups.map(u => u === t.name ? name : u); }
-      if (doc.target.topic === t.name) doc.target.topic = name; doc.target.ups = doc.target.ups.map(u => u === t.name ? name : u);
+      if (name !== t.name) TopicPrefs.rename(doc, t.name, name);
       t.name = name; if ($('#cf-stamp')) t.stamp = $('#cf-stamp').checked; save(); close(); open(name, true);
     };
     $('#cf-del').onclick = () => {
       if (!confirm(`トピック「${t.name}」を消しますか？${t.type === 'bubble' ? '（中のメモは「トピック未選択」に移ります）' : '（ノートは残ります）'}`)) return;
       for (const m of doc.messages) if (m.topic === t.name) m.topic = '';
       for (const m of doc.messages) if (m.ups) m.ups = m.ups.filter(u => u !== t.name);
-      if (doc.target.topic === t.name) doc.target.topic = ''; doc.target.ups = doc.target.ups.filter(u => u !== t.name);
+      TopicPrefs.remove(doc, t.name);
       doc.topics = doc.topics.filter(x => x !== t); save(); close(); open('*', true);
     };
   });
@@ -617,11 +633,10 @@ document.addEventListener('click', e => {
     return;
   }
   const tg = e.target.closest('[data-tg]'); if (tg) {
-    if (tg.dataset.tg === 'topic') openPicker(tg, { multi: false, selected: [doc.target.topic], extra: [''], onPick: n => { doc.target.topic = n; doc.target.ups = doc.target.ups.filter(u => u !== n); save(); showTarget(); } });
-    else openPicker(tg, { multi: true, selected: doc.target.ups, near: doc.target.topic, exclude: [doc.target.topic], onPick: list => { doc.target.ups = list; save(); showTarget(); } });
+    openPicker(tg, { multi: true, selected: doc.target.ups, near: doc.target.topic, exclude: [doc.target.topic], onPick: list => { TopicPrefs.selectUpper(doc, list); save(); showTarget(); } });
     return;
   }
-  const tgx = e.target.closest('[data-tgx]'); if (tgx) { doc.target.ups = doc.target.ups.filter(u => u !== tgx.dataset.tgx); save(); showTarget(); return; }
+  const tgx = e.target.closest('[data-tgx]'); if (tgx) { TopicPrefs.selectUpper(doc, doc.target.ups.filter(u => u !== tgx.dataset.tgx)); save(); showTarget(); return; }
   const gt = e.target.closest('[data-goto]'); if (gt) { open(gt.dataset.goto); return; }
   const rdel = e.target.closest('[data-rdel]'); if (rdel && redit) { toggleReplyOf(redit, rdel.dataset.rdel); return; }
   if (redit) { const bb = e.target.closest('.bub[data-m]'); if (bb && bb.dataset.m !== redit) { e.preventDefault(); e.stopPropagation(); toggleReplyOf(redit, bb.dataset.m); return; } }
