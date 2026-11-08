@@ -195,6 +195,7 @@ function jump(view, pos) {
 }
 // 本文のリンクの行き先。アプリの中のもの（なりきり会話・日記）は中で開き、それ以外は既定のアプリで開く
 function openLink(rel) {
+  if (rel.startsWith('memo:')) return Chat.gotoMemo(rel.slice(5));
   let path = rel, hash = '';
   const i = rel.indexOf('#'); if (i >= 0) { path = rel.slice(0, i); hash = rel.slice(i + 1); }
   try { path = decodeURIComponent(path); } catch { }

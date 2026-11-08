@@ -3,6 +3,7 @@
 //   Link map = リンク（:ID）の図 ／ Tree map = 番号の親子（1 → 1a → 1a1）の図。
 import ForceGraph from 'force-graph';
 import L from '../lib.js';
+import Relations from '../chat-relations.js';
 
 // ----- Trilium の rendering.ts の定数 -----
 const TICKS_UNTIL_DAMPED = 60, LONE_NOTE_ZOOM = 4, ZOOM_ANIMATION_MS = 250, NODE_RADIUS_RATIO = 0.8, DAMPING_MAX_NOTES = 30, ANCHOR_RING_PX = 2;
@@ -113,11 +114,14 @@ export function loadNotesAndRelations(notes, titleOf, mapType, opt = {}) {
       const quoted = new Set(), quoting = new Set(), noted = new Set(Object.keys(ch.noted || {}).filter(k => (ch.noted[k] || []).length));
       for (const m of ch.messages) { let x; MEN.lastIndex = 0; while ((x = MEN.exec(m.text || ''))) if (memoById.has(x[1])) { quoted.add(x[1]); quoting.add(m.id); } for (const rid of (m.replies || (m.reply ? [m.reply] : []))) if (memoById.has(rid)) { quoted.add(rid); quoting.add(m.id); } }
       const inc = new Set([...quoted, ...quoting, ...noted]), topicId = name => 'C:' + name;
-      for (const t of ch.topics) { add(topicId(t.name), 'chat', t.name); if (t.parent) links.push({ id: topicId(t.parent) + '-' + topicId(t.name), source: topicId(t.parent), target: topicId(t.name), name: '' }); }
+      const names = new Set((ch.topics || []).map(t => t.name));
+      for (const m of ch.messages) for (const n of [m.topic, ...(m.ups || [])]) if (n) names.add(n);
+      for (const name of names) add(topicId(name), 'chat', name);
+      for (const r of Relations.topicRelations(ch.messages)) links.push({ id: JSON.stringify(['topic', r.parent, r.child]), source: topicId(r.parent), target: topicId(r.child), name: `${r.count} 件`, count: r.count, kind: 'topicRelation' });
       for (const m of ch.messages) if (inc.has(m.id)) {
         const id = 'M:' + m.id; add(id, 'memo', (m.text || '').split('\n')[0].replace(/\[@[^\]]*\]\(memo:[^)]*\)\s*/g, '').slice(0, 24) || '（メモ）');
-        const tn = m.topic && ch.topics.find(t => t.name === m.topic); if (tn) links.push({ id: topicId(tn.name) + '-' + id, source: topicId(tn.name), target: id, name: '' });
-        for (const u of m.ups || []) if (ch.topics.some(t => t.name === u)) links.push({ id: topicId(u) + '-' + id + '-u', source: topicId(u), target: id, name: '' });
+        const tn = m.topic && names.has(m.topic); if (tn) links.push({ id: topicId(m.topic) + '-' + id, source: topicId(m.topic), target: id, name: '' });
+        for (const u of m.ups || []) if (names.has(u)) links.push({ id: topicId(u) + '-' + id + '-u', source: topicId(u), target: id, name: '' });
         let x; MEN.lastIndex = 0; while ((x = MEN.exec(m.text || ''))) if (inc.has(x[1])) links.push({ id: id + '-M:' + x[1], source: id, target: 'M:' + x[1], name: '' });
         for (const rid of (m.replies || (m.reply ? [m.reply] : []))) if (inc.has(rid)) links.push({ id: id + '-M:' + rid + '-r', source: id, target: 'M:' + rid, name: '' });
         for (const stem of ch.noted[m.id] || []) { const k = byStem.get(stem); if (k && keep.has(k)) links.push({ id: id + '-' + k, source: id, target: k, name: '' }); }
@@ -209,8 +213,10 @@ export function mount(box, o) {
     .nodeLabel(node => labelOn(node.id, null) && labelsById.get(node.id) === node.name ? '' : escapeHtml(node.name))
     .onZoom(z => { zoomLevel = z.k; zoomState(z.k); });
   graph.linkWidth(l => (LINK_WIDTH + (HIGHLIGHT_LINK_WIDTH - LINK_WIDTH) * Math.max(0, linkFocus.get(l))) * st.d.linkW).linkColor(l => getLinkColor(l)).linkDirectionalArrowLength(0);
-  graph.linkLabel(l => { const { source: s, target: t } = l; return typeof s !== 'object' || typeof t !== 'object' ? '' : `${escapeHtml(s.name)} → ${escapeHtml(t.name)}`; })
-    .linkCanvasObject((l, ctx) => { const { source: s, target: t } = l; if (st.d.arrows && typeof s === 'object' && typeof t === 'object' && s.x !== undefined && t.x !== undefined) paintArrow(l, s, t, ctx); }).linkCanvasObjectMode(() => 'after');
+  graph.linkLabel(l => { const { source: s, target: t } = l; return typeof s !== 'object' || typeof t !== 'object' ? '' : `${escapeHtml(s.name)} → ${escapeHtml(t.name)}${l.count ? `（${l.count} 件）` : ''}`; })
+    .linkCanvasObject((l, ctx) => { const { source: s, target: t } = l; if (typeof s !== 'object' || typeof t !== 'object' || s.x === undefined || t.x === undefined) return;
+      if (st.d.arrows) paintArrow(l, s, t, ctx);
+      if (l.kind === 'topicRelation') { ctx.save(); ctx.font = `${getLabelFontSize(11, zoomLevel)}px sans-serif`; ctx.fillStyle = getLinkColor(l); ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(l.name, (s.x + t.x) / 2, (s.y + t.y) / 2); ctx.restore(); } }).linkCanvasObjectMode(() => 'after');
   // ---- 力（Obsidian の Forces）----
   const ratio = data.nodes.length / Math.max(1, data.links.length), charge0 = Math.min(-3, -20 / Math.pow(ratio, 1.5));
   if (st.force.repel === null) st.force.repel = Math.round(-charge0 * 10) / 10;
