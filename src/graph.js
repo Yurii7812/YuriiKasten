@@ -110,13 +110,13 @@ export function loadNotesAndRelations(notes, titleOf, mapType, opt = {}) {
   return { nodes: nodes.filter(n => n.id in sizes), links: links.filter(l => keep.has(l.source) && keep.has(l.target)), noteIdToSizeMap: sizes };
 }
 
-const DEF = () => ({ mapType: 'link', f: { q: '', kw: false, topics: false, orphans: true, paper: true }, groups: [], d: { arrows: true, fade: .5, nodeSize: 1, linkW: 1 }, force: { center: .2, repel: null, link: null, dist: 40 }, fixNodes: false, panel: false, open: { f: true, g: true, d: true, c: true }, sel: null });
+const DEF = () => ({ mapType: 'link', f: { q: '', kw: false, topics: false, orphans: true, paper: true }, groups: [], d: { arrows: true, fade: .5, nodeSize: 1, linkW: 1 }, force: { center: .2, repel: null, link: null, dist: 40 }, fixNodes: false, dock: false, tab: 'set', open: { f: true, g: true, d: true, c: true }, sel: null });
 const GROUP_COLORS = ['#e03131', '#f08c00', '#2f9e44', '#1c7ed6', '#7048e8', '#d6336c'];
 
 export function mount(box, o) {
   const st = o.state; { const d = DEF(); for (const k in d) if (st[k] === undefined) st[k] = d[k]; for (const k of ['f', 'd', 'force', 'open']) st[k] = { ...d[k], ...st[k] }; }
-  box.innerHTML = '<div class="note-map-widget"><div class="nm-style"><span class="nm-bg"></span><span class="nm-anchor"></span><span class="nm-anchor-icon"></span></div><div class="note-map-container"></div><aside class="nm-note"></aside></div>';
-  const wrap = box.querySelector('.note-map-widget'), container = box.querySelector('.note-map-container'), styleEl = box.querySelector('.nm-style'), noteEl = box.querySelector('.nm-note');
+  box.innerHTML = '<div class="note-map-widget"><div class="nm-style"><span class="nm-bg"></span><span class="nm-anchor"></span><span class="nm-anchor-icon"></span></div><div class="note-map-container"></div><aside class="nm-dock"><div class="nm-tabs"><button data-tab="set">設定</button><button data-tab="note">ノート</button></div><div class="nm-set"></div><div class="nm-note"></div></aside></div>';
+  const wrap = box.querySelector('.note-map-widget'), container = box.querySelector('.note-map-container'), styleEl = box.querySelector('.nm-style'), noteEl = box.querySelector('.nm-note'), setEl = box.querySelector('.nm-set'), dockTabs = box.querySelector('.nm-tabs');
   const data = loadNotesAndRelations(o.notes, o.titleOf, st.mapType, { query: st.f.q, showKw: st.f.kw, showTopics: st.f.topics, orphans: st.f.orphans, paper: st.f.paper, topics: o.topics, mergeTopic: o.mergeTopic });
   const remount = (focusSel) => { teardown(); mount(box, o); if (focusSel) { const e = box.querySelector(focusSel); if (e) { e.focus(); try { e.setSelectionRange(e.value.length, e.value.length); } catch { } } } };
   if (data.nodes.length > MAX_NOTES_THRESHOLD && !st.bypass) { wrap.innerHTML = `<div class="none">ノートが ${data.nodes.length} 件あります。多すぎると重くなります。<br><button class="p" id="nm-any" style="margin-top:10px">それでも表示</button></div>`; wrap.querySelector('#nm-any').onclick = () => { st.bypass = true; mount(box, o); }; return; }
@@ -188,10 +188,15 @@ export function mount(box, o) {
     .onNodeDragEnd(node => { if (st.fixNodes) { node.fx = node.x; node.fy = node.y; } else { node.fx = undefined; node.fy = undefined; } })
     .onBackgroundClick(() => { st.sel = null; showNote(); keepPainting(); });
   graph.graphData(data);
+  // ---- 右の枠（設定・ノート）: 図に重ねず、図を縮めて横に並べる ----
+  function setDock() { wrap.classList.toggle('nm-dock-open', !!st.dock); wrap.classList.toggle('nm-tab-note', st.tab === 'note'); dockTabs.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.tab === st.tab)); const g = box.querySelector('[data-panel]'); if (g) g.classList.toggle('on', !!st.dock); setTimeout(fitSize, 30); }
+  dockTabs.onclick = e => { const b = e.target.closest('[data-tab]'); if (b) { st.tab = b.dataset.tab; setDock(); } };
   // ---- 横のノート ----
   function showNote() {
-    const n = st.sel && data.nodes.find(x => x.id === st.sel); wrap.classList.toggle('nm-has-note', !!n); setTimeout(fitSize, 30);
-    if (!n) { noteEl.innerHTML = ''; return; }
+    const n = st.sel && data.nodes.find(x => x.id === st.sel);
+    if (n) { st.dock = true; st.tab = 'note'; }
+    setDock();
+    if (!n) { noteEl.innerHTML = '<div class="sub" style="padding:6px">ノードを押すと、ここに内容が出ます。2回押すと、ノートを開きます。</div>'; return; }
     const nb = id => data.links.filter(l => idOf(l.source) === id || idOf(l.target) === id).map(l => idOf(l.source) === id ? idOf(l.target) : idOf(l.source)), by = new Map(data.nodes.map(x => [x.id, x]));
     const outs = data.links.filter(l => idOf(l.source) === n.id).map(l => idOf(l.target)), ins = data.links.filter(l => idOf(l.target) === n.id).map(l => idOf(l.source));
     const pill = id => `<span class="nm-pill" data-id="${esc(id)}">${esc((by.get(id) || {}).name || id)}</span>`;
@@ -202,23 +207,23 @@ export function mount(box, o) {
   const esc = x => escapeHtml(x);
   // ---- 画面の部品 ----
   const ctl = (cls, html) => { const d = document.createElement('div'); d.className = 'nm-ctl ' + cls; d.innerHTML = html; wrap.append(d); return d; };
-  const mt = ctl('nm-tl', `<button data-mt="link" title="Link map" class="${st.mapType === 'link' ? 'on' : ''}">🕸</button><button data-mt="tree" title="Tree map" class="${st.mapType === 'tree' ? 'on' : ''}">🌳</button><button data-panel title="設定（フィルター・グループ・表示・力）" class="${st.panel ? 'on' : ''}">⚙</button>`);
+  const mt = ctl('nm-tl', `<button data-mt="link" title="Link map" class="${st.mapType === 'link' ? 'on' : ''}">🕸</button><button data-mt="tree" title="Tree map" class="${st.mapType === 'tree' ? 'on' : ''}">🌳</button><button data-panel title="設定・ノートの枠を出す／しまう">⚙</button>`);
   const bl = ctl('nm-bl', `<button data-fix title="ノードを固定（ドラッグした位置に）" class="${st.fixNodes ? 'on' : ''}">🔒</button><button data-anim title="アニメーション（配置をやり直す）">▶</button>`);
   const br = ctl('nm-br', '<button data-zo title="縮小">－</button><button data-zi title="拡大">＋</button><button data-fit title="全体を表示">⌖</button>');
   const zoomState = k => { br.querySelector('[data-zi]').disabled = !(k < graph.maxZoom()); br.querySelector('[data-zo]').disabled = !(k > graph.minZoom()); };
-  mt.onclick = e => { const b = e.target.closest('[data-mt]'); if (b && b.dataset.mt !== st.mapType) { st.mapType = b.dataset.mt; remount(); } if (e.target.closest('[data-panel]')) { st.panel = !st.panel; panel.style.display = st.panel ? '' : 'none'; e.target.closest('[data-panel]').classList.toggle('on', st.panel); } };
+  mt.onclick = e => { const b = e.target.closest('[data-mt]'); if (b && b.dataset.mt !== st.mapType) { st.mapType = b.dataset.mt; remount(); } if (e.target.closest('[data-panel]')) { st.dock = !st.dock; if (st.dock && !st.sel) st.tab = 'set'; setDock(); } };
   bl.onclick = e => { if (e.target.closest('[data-fix]')) { st.fixNodes = !st.fixNodes; e.target.closest('[data-fix]').classList.toggle('on', st.fixNodes); } if (e.target.closest('[data-anim]')) { framing = true; data.nodes.forEach(n => { n.fx = n.fy = undefined; }); graph.d3ReheatSimulation(); } };
   br.onclick = e => { if (e.target.closest('[data-zi]')) { release(); graph.zoom(graph.zoom() * ZOOM_STEP, ZOOM_ANIMATION_MS); } if (e.target.closest('[data-zo]')) { release(); graph.zoom(graph.zoom() / ZOOM_STEP, ZOOM_ANIMATION_MS); } if (e.target.closest('[data-fit]')) { release(); fit(ZOOM_ANIMATION_MS); } };
   // 設定の枠（Obsidian: Filters / Groups / Display / Forces）
   const slider = (key, label, min, max, step, val) => `<div class="nm-row"><span>${label}</span><input type="range" data-s="${key}" min="${min}" max="${max}" step="${step}" value="${val}"></div>`;
   const tog = (key, label, on) => `<div class="nm-row"><span>${label}</span><label class="nm-sw"><input type="checkbox" data-t="${key}" ${on ? 'checked' : ''}><i></i></label></div>`;
   const sec = (k, title, body) => `<details data-sec="${k}" ${st.open[k] ? 'open' : ''}><summary>${title}</summary>${body}</details>`;
-  const panel = document.createElement('div'); panel.className = 'nm-panel'; panel.style.display = st.panel ? '' : 'none';
+  const panel = document.createElement('div'); panel.className = 'nm-panel';
   panel.innerHTML = sec('f', 'フィルター', `<input class="nm-q" data-q placeholder="ノートを検索（例: id:1a  kw:GUI  -下書き  topic:PKM）" value="${esc(st.f.q)}">${tog('f.kw', 'キーワード', st.f.kw)}${tog('f.topics', 'トピックIndex', st.f.topics)}${tog('f.paper', '紙のノート', st.f.paper)}${tog('f.orphans', 'つながりの無いノート', st.f.orphans)}`)
     + sec('g', 'グループ（検索で色分け）', `<div data-groups>${st.groups.map((g, i) => `<div class="nm-g"><input type="color" data-gc="${i}" value="${g.color}"><input data-gq="${i}" value="${esc(g.query)}" placeholder="検索（例: kw:GUI）"><button data-gx="${i}" title="消す">×</button></div>`).join('')}</div><button class="nm-add" data-gadd>新しいグループ</button>`)
     + sec('d', '表示', `${tog('d.arrows', '矢印', st.d.arrows)}${slider('d.fade', '文字の消える閾値', 0, 1, .05, st.d.fade)}${slider('d.nodeSize', 'ノードの大きさ', .3, 3, .1, st.d.nodeSize)}${slider('d.linkW', '線の太さ', .3, 4, .1, st.d.linkW)}`)
     + sec('c', '力', `${slider('force.center', '中心へ引く力', 0, 1, .01, st.force.center)}${slider('force.repel', '反発する力', 0, 60, .5, st.force.repel)}${slider('force.link', '線で引く力', 0, 1, .01, st.force.link ?? .5)}${slider('force.dist', '線の長さ', 1, 200, 1, st.force.dist)}`);
-  wrap.append(panel);
+  setEl.append(panel);
   const setPath = (path, v) => { const [a, b] = path.split('.'); st[a][b] = v; };
   panel.addEventListener('toggle', e => { const d = e.target.closest('details'); if (d) st.open[d.dataset.sec] = d.open; }, true);
   panel.addEventListener('input', e => {
@@ -234,7 +239,7 @@ export function mount(box, o) {
     const x = e.target.closest('[data-gx]'); if (x) { st.groups.splice(+x.dataset.gx, 1); remount(); }
   });
   const ro = new ResizeObserver(fitSize); ro.observe(wrap);
-  showNote(); applyForces();
+  showNote(); setDock(); applyForces();
   function teardown() { clearTimeout(fadeTimer); clearTimeout(panel._t); ro.disconnect(); container.removeEventListener('wheel', release, lo); container.removeEventListener('pointerdown', release, lo); try { graph._destructor(); } catch { } container.replaceChildren(); }
   box._gtear = teardown;
 }
