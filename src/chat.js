@@ -11,6 +11,7 @@ let day = '';          // day のときの日付
 let sel = null;        // 選んでいるメモの id（ノートにする・引用する）。null = 選択中ではない
 let lastSel = null;
 let cq = '', tq = '';
+let sourceIds = null; // 出典リンクを開いている間だけ、ノートにしたメモIDだけを表示する
 let replyTos = [];            // 返信しているメモの id（いくつでも。WhatsApp のように、入力欄の上に引用を出す）
 let editCtx = null;          // 編集中のメモ { m, reps, redraw }（↩ を押すと、そのメモの返信先に足される）
 let redit = null;            // 「返信先を編集」中のメモの id（押さなくても、返信先を足す・外す）
@@ -115,7 +116,7 @@ const dayOfMsg_ = m => L.dayOf(L.now(new Date(m.t)));
 function entries() {
   const be = backend();
   if (be) return parts(be.get()).map((text, i) => { const m = text.match(stampRe); return { kind: 'line', i, time: m ? m[1] : '', text: m ? m[2] : text }; });
-  let list = doc.messages.filter(m => inView(m, view)).sort((a, b) => a.t - b.t);
+  let list = doc.messages.filter(m => inView(m, view) && (!sourceIds || sourceIds.has(m.id))).sort((a, b) => a.t - b.t);
   if (cq) { const q = cq.toLowerCase(); list = list.filter(m => (m.text || '').toLowerCase().includes(q)); }   // チャットメモの中の検索
   if (viewMode === 'day') { if (!day) day = list.length ? dayOfMsg_(list[list.length - 1]) : L.todayStr(); list = list.filter(m => dayOfMsg_(m) === day); }
   return list.map(m => ({ kind: 'msg', m }));
@@ -123,17 +124,29 @@ function entries() {
 
 // ===== 画面 =====
 export function open(name, keep) {
-  view = name; sel = null; draft = '';
+  view = name; sourceIds = null; sel = null; draft = '';
   if (name !== '*') { doc.target.topic = name; doc.target.ups = doc.target.ups.filter(u => u !== name); save(); }   // 書き込み先は、見ているトピックに。設定（トピック・上）は、変えない限り引き継ぐ
   ctx.setCur(ctx.place({ k: 'chat', topic: name }, keep)); ctx.setMode('chat');
   render(); ctx.renderTabs(); ctx.renderList();
+}
+// ノート化した元メモのIDを、日時順で返す（旧リンクの救済用）
+export const memosForNote = stem => doc.messages.filter(m => (doc.noted[m.id] || []).includes(stem)).sort((a, b) => a.t - b.t).map(m => m.id);
+// 出典として選ばれたメモだけを表示する。間にあった未選択のメモは表示しない。
+export function gotoSource(ids) {
+  sourceIds = new Set(ids.filter(Boolean));
+  if (!sourceIds.size) return toast('元のチャットメモが指定されていません');
+  view = '*'; viewMode = 'all'; day = ''; cq = ''; sel = null;
+  ctx.setCur(ctx.place({ k: 'chat', topic: '*' }, false)); ctx.setMode('chat');
+  render(); ctx.renderTabs(); ctx.renderList();
+  const missing = [...sourceIds].filter(id => !msg(id)).length;
+  if (missing) toast(`${missing} 件の元メモが見つかりません（削除された可能性があります）`);
 }
 // このメモ（ノートの出典リンクから）へ飛ぶ
 export const graphData = () => ({ topics: doc.topics, messages: doc.messages, noted: doc.noted });   // グラフビューに渡す
 export const searchMemos = q => doc.messages.filter(m => (m.text || '').toLowerCase().includes(q)).sort((a, b) => b.t - a.t);   // 検索結果に出す
 export function gotoMemo(id) {
   const m = msg(id); if (!m) return toast('そのチャットメモは、もうありません');
-  view = '*'; viewMode = 'all'; day = '';
+  sourceIds = null; view = '*'; viewMode = 'all'; day = '';
   ctx.setCur(ctx.place({ k: 'chat', topic: '*' }, false)); ctx.setMode('chat'); render(); ctx.renderTabs(); ctx.renderList();
   const el = document.querySelector(`[data-m="${id}"]`); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1800); }
 }
@@ -141,15 +154,15 @@ export const label = name => name === '*' ? '全部' : name === '' ? '未選択'
 
 function render() {
   const t = topic(view), be = backend();
-  const title = view === '*' ? '全部表示' : view === '' ? 'トピック未選択' : view;
+  const title = sourceIds ? '元のチャットメモ' : view === '*' ? '全部表示' : view === '' ? 'トピック未選択' : view;
   $('#pane').innerHTML = `
     <div class="chat memo">
       <div class="row chat-head">
         <h2 style="margin:0">${esc(title)}</h2>
-        <span class="sub">${isRec(view) ? '日記にも、時刻つきの行で入ります' : view === '*' ? '書いたものは「未選択」に入ります' : t && t.type === 'whole' ? '全体で1つのノート' : ''}</span>
+        <span class="sub">${sourceIds ? `ノート化した ${sourceIds.size} 件だけを表示` : isRec(view) ? '日記にも、時刻つきの行で入ります' : view === '*' ? '書いたものは「未選択」に入ります' : t && t.type === 'whole' ? '全体で1つのノート' : ''}</span>
         <span class="grow"></span>
         <input id="c-search" class="csearch" placeholder="このチャットメモの中を検索" value="${esc(cq)}">
-        ${be ? '' : `<span class="vseg"><button data-c="vall" class="${viewMode === 'all' ? 'on' : ''}">全部</button><button data-c="vday" class="${viewMode === 'day' ? 'on' : ''}">日ごと</button></span>
+        ${sourceIds ? '<button data-c="source-clear">フィルター解除・全部表示</button>' : be ? '' : `<span class="vseg"><button data-c="vall" class="${viewMode === 'all' ? 'on' : ''}">全部</button><button data-c="vday" class="${viewMode === 'day' ? 'on' : ''}">日ごと</button></span>
           ${viewMode === 'day' ? `<button data-c="dprev" title="前の日">←</button><input type="date" id="c-day" value="${esc(day || L.todayStr())}"><button data-c="dnext" title="次の日">→</button>` : '<input type="date" id="c-jump" title="日付を入れると、その日へ">'}
 `}
         ${be ? '<button data-c="openbe">ノートを開く</button>' : ''}
@@ -158,13 +171,13 @@ function render() {
       <div id="c-msgs"></div>
       <div id="c-selbar"></div>
       <div id="c-redit" class="c-redit" style="display:none"></div>
-      <div id="c-target" class="c-target"></div>
+      <div id="c-target" class="c-target" ${sourceIds ? 'style="display:none"' : ''}></div>
       <div id="c-reply" class="c-reply" style="display:none"></div>
-      <div class="c-compose"><div id="c-mention" class="rp-mention" style="display:none"></div><button data-c="attach" title="ファイルや画像を付ける">📎</button>
-        <textarea id="c-in" rows="1" placeholder="書く（Enter で送る、Shift+Enter で改行。@ で、別のメモやノートを入れる）"></textarea><button class="p" data-c="send">送る</button></div>
+      ${sourceIds ? '' : `<div class="c-compose"><div id="c-mention" class="rp-mention" style="display:none"></div><button data-c="attach" title="ファイルや画像を付ける">📎</button>
+        <textarea id="c-in" rows="1" placeholder="書く（Enter で送る、Shift+Enter で改行。@ で、別のメモやノートを入れる）"></textarea><button class="p" data-c="send">送る</button></div>`}
     </div>`;
   paint(true); selbar(); showReply(); showTarget();
-  const inp = $('#c-in'); inp.value = draft; fit(inp); inp.focus();
+  const inp = $('#c-in'); if (inp) { inp.value = draft; fit(inp); inp.focus(); }
 }
 function fit(inp) { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 180) + 'px'; inp.style.overflowY = inp.scrollHeight > 180 ? 'auto' : 'hidden'; }
 const wk = d => `${d}（${L.weekday(d)}）`;
@@ -378,8 +391,10 @@ function toNoteDialog() {
 }
 async function makeNote(ms, id) {
   // 本文: 先頭に、元のチャットメモ（日付と時刻の範囲）へのリンク。そのあとに、メモの文章（コピー。あとは別物）
-  const head = `元のチャットメモ: [${range(ms)}](${dayFile(dayOfMsg_(ms[0]))}#m-${ms[0].id})`;
-  const bodyText = head + '\n\n' + ms.map(m => (ms.length > 1 ? `${hm(m.t)} ` : '') + m.text.replace(/\[@([^\]]*)\]\(memo:[^)\s]+\)/g, '@$1')).join('\n\n');   // メンションは、ノートでは ふつうの文字に
+  // 複数選択は全IDをリンクに記録する（間の未選択メモは含めない）
+  const anchor = ms.length === 1 ? `m-${ms[0].id}` : `ms-${ms.map(m => m.id).join(',')}`;
+  const head = `元のチャットメモ: [${range(ms)}](${dayFile(dayOfMsg_(ms[0]))}#${anchor})`;
+  const bodyText = head + '\n\n' + ms.map(m => (ms.length > 1 ? `${hm(m.t)} ` : '') + m.text.replace(/\[@([^\]]*)\]\(memo:[^)\s]+\)/g, '@$1')).join('\n');   // メンションは、ノートでは ふつうの文字に。メモ同士に空行は挟まない
   const note = id ? await ctx.api.saveNote({ s: 'd', id, created: L.now(new Date(ms[0].t)), keywords: [], body: bodyText }) : await ctx.api.createNote({ kind: 'text', created: L.now(new Date(ms[0].t)), body: bodyText });
   if (!ctx.get('d', note.id)) ctx.notes().push(note);
   for (const m of ms) doc.noted[m.id] = [...new Set([...(doc.noted[m.id] || []), note.stem])];
@@ -480,6 +495,7 @@ document.addEventListener('click', e => {
     if (a === 'rcancel') { const id = e.target.closest('[data-id]') && e.target.closest('[data-id]').dataset.id; replyTos = id ? replyTos.filter(x => x !== id) : []; showReply(); }
     if (a === 'rdone') { redit = null; showRedit(); }
     if (a === 'selno') { sel = null; paint(); selbar(); }
+    if (a === 'source-clear') { sourceIds = null; render(); return; }
     if (a === 'selmove') { const ms = [...sel].map(id => msg(id)).filter(Boolean); if (ms.length) setTopicsDialog(ms); return; }
     if (a === 'seldel') { const ids = [...sel]; if (!ids.length || !confirm(`${ids.length} 件のメモを消しますか？（復元用に残しておきます。ノートにしたものは、残ります）`)) return; for (const id of ids) { const m = msg(id); if (!m) continue; doc.messages = doc.messages.filter(x => x !== m); doc.trash.push({ ...m, deleted: Date.now() }); memoToDay(m, m.text, true); } sel = null; save(); paint(); selbar(); ctx.renderList(); }
     if (a === 'selclear') { sel = new Set(); lastSel = null; paint(); selbar(); }   // 選択を全部外す（選ぶ状態は続く）
