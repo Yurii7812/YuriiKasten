@@ -761,10 +761,11 @@ function renderMeta(note) {
   if (note.noid) { const par = note.parentStem && notes.find(x => x.stem === note.parentStem); el.innerHTML = (par ? `<div class="sec"><div class="l">親</div><div class="mt ch" data-s="${par.s}" data-id="${esc(par.id)}"><a class="tl" style="margin-left:0">${esc(titleOf(par) || '（無題）')}</a></div></div>` : '') + childrenHtml(note) + '<div class="hint">IDなしのノートです。<br>「IDを付ける」と、キーワードやトピックIndex、バックリンクが使えます。</div>'; return; }
   const tops = topics.map(t => ({ t, kws: L.mergeTopic(t).rows.filter(r => r[note.s].some(x => L.splitAnchor(x).id === note.id)).map(r => r.kw) })).filter(x => x.kws.length); // 自分のキーワードがあるものだけ
   const bl = backlinks(note);
-  el.innerHTML = childrenHtml(note) +
+  el.innerHTML =
     (note.keywords.length ? `<div class="sec"><div class="l">キーワード</div>${note.keywords.map(k => `<div class="mk" title="${esc(readings[k] || '')}"><span>${esc(k)}</span><b data-kwdel="${esc(k)}" title="外す">×</b></div>`).join('')}</div>` : '') +
     (ownTopic(note) ? `<div class="sec"><div class="l">このノートのトピックIndex</div><div class="mt"><a class="tl" style="margin-left:0" data-topic="${esc(ownTopic(note).name)}">📑 ${esc(topicLabel(ownTopic(note)))}</a></div></div>` : '') +
     (tops.length ? `<div class="sec"><div class="l">索引されているトピックIndex</div>${tops.flatMap(x => x.kws.map(kw => `<div class="mt"><span>${esc(kw)}</span><a class="tl" data-topic="${esc(x.t.name)}">${esc(topicLabel(x.t))}</a></div>`)).join('')}</div>` : '') +
+    childrenHtml(note) +
     (bl.length ? `<div class="sec"><div class="l">バックリンク ${bl.length}</div>${bl.map(x => x.m
       ? `<div class="bl" data-s="${x.m.s}" data-id="${esc(x.m.id)}"><div class="bh"><b>${esc(titleOf(x.m))}</b><em>${esc(x.m.id)}</em></div><p>${x.c}</p></div>`
       : `<div class="bl" data-diary="${x.d.date}"><div class="bh"><b>${x.d.date.slice(5)}（${L.weekday(x.d.date)}）</b><em>日記</em></div><p>${x.c}</p></div>`).join('')}</div>` : '') +
