@@ -644,7 +644,7 @@ function openNote(s, id, n, keep, mid) {
         ${noid ? '<button class="gid" data-act="giveid">IDを付ける</button>' : ''}
         ${s === 'p' ? '<span class="dt">紙</span>' : ''}${L.KINDS[kind] ? `<span class="dt">${L.KINDS[kind]}</span>` : ''}
         ${s === 'd' ? `<span class="dt">${esc(note.created)}</span>` : ''}
-        <span class="grow"></span>${noid ? '' : `<button class="nb" data-act="sib" title="並列のノートを作る（同じ階層の次: ${esc(free(s, L.sibling(id)))}）">＋ 並列 <small>${esc(free(s, L.sibling(id)))}</small></button><button class="nb" data-act="chi" title="分岐のノートを作る（一つ下: ${esc(free(s, L.child(id)))}）">＋ 分岐 <small>${esc(free(s, L.child(id)))}</small></button>`}<button class="ic nm" data-act="mgn" title="右の欄を隠す・出す (Ctrl+\\)"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button><button class="ic nm" data-act="nmenu" title="このノートのメニュー">${'<svg class="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>'}</button>
+        <span class="grow"></span>${noid ? (s === 'd' && text ? '<button class="nb" data-act="sib" title="IDなしのまま、並列のノートを作る（親にIDが付くと、IDも決まる）">＋ 並列</button><button class="nb" data-act="chi" title="IDなしのまま、分岐のノートを作る（このノートにIDが付くと、IDも決まる）">＋ 分岐</button>' : '') : `<button class="nb" data-act="sib" title="並列のノートを作る（同じ階層の次: ${esc(free(s, L.sibling(id)))}）">＋ 並列 <small>${esc(free(s, L.sibling(id)))}</small></button><button class="nb" data-act="chi" title="分岐のノートを作る（一つ下: ${esc(free(s, L.child(id)))}）">＋ 分岐 <small>${esc(free(s, L.child(id)))}</small></button>`}<button class="ic nm" data-act="mgn" title="右の欄を隠す・出す (Ctrl+\\)"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button><button class="ic nm" data-act="nmenu" title="このノートのメニュー">${'<svg class="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>'}</button>
       </div>
       <input class="ntitle" id="f-title" value="${esc(note.title || '')}" placeholder="タイトル">
       ${!text ? '<div id="nbody"></div>' : s === 'p' ? `<div class="paper"><div class="pic">${note.image ? `<img src="${note.image}">` : '<button data-act="img">画像を入れる</button>'}</div><div class="ed" id="ed"></div></div>` : '<div class="ed" id="ed"></div>'}
@@ -699,6 +699,10 @@ async function changeId(note, v) {
   Object.assign(note, r, { body: r.body });
   for (const t of topics) if (t.entry && t.entry.s === note.s && t.entry.id === old) t.entry.id = v;
   for (const t of tabs) if (t.k === 'note' && t.s === note.s && t.id === old) t.id = v;
+  if (L.isNoid(old) && notes.some(x => x.parentStem === note.stem)) {   // IDなしだった親に ID が付いて、分岐していた子にも ID が付いた
+    const st = await api.state(); applyState(st);
+    for (const t of tabs) if (t.k === 'note' && t.s === 'd' && L.isNoid(t.id)) { const nn = notes.find(x => x.stem === t.id); if (nn) t.id = nn.id; }
+  }
   await refreshDiaries(); openNote(note.s, v, null, true); return true;
 }
 // IDを付けるダイアログ: IDを直接 / 親のノートにぶら下げる（分岐として）
@@ -745,12 +749,18 @@ function backlinks(note) { // このノートを指しているノート・日�
   return out;
 }
 const ownTopic = n => !n.noid && topicOf(n.s, n.id);   // このノートが入口のトピックIndex
+// 直下の子ノートの一覧（題だけ。IDは出さない）。IDなしの分岐も入る
+const childNotes = note => {
+  const has = x => !!get(note.s, x);
+  return notes.filter(n => n.s === note.s && n !== note && ((!note.noid && !n.noid && L.parentIn(n.id, has) === note.id) || (n.parentStem && n.parentStem === note.stem))).sort((a, b) => note.noid || (a.noid && b.noid) ? (a.created || '').localeCompare(b.created || '') : (a.noid ? 1 : b.noid ? -1 : L.cmpId(a.id, b.id)));
+};
+const childrenHtml = note => { const cs = childNotes(note); return cs.length ? `<div class="sec"><div class="l">子ノート ${cs.length}</div>${cs.map(c => `<div class="mt ch" data-s="${c.s}" data-id="${esc(c.id)}"><a class="tl" style="margin-left:0">${esc(titleOf(c) || '（無題）')}</a></div>`).join('')}</div>` : ''; };
 function renderMeta(note) {
   const el = $('#margin'); if (!el) return;
-  if (note.noid) { el.innerHTML = '<div class="hint">IDなしのノートです。<br>「IDを付ける」と、キーワードやトピックIndex、バックリンクが使えます。</div>'; return; }
+  if (note.noid) { const par = note.parentStem && notes.find(x => x.stem === note.parentStem); el.innerHTML = (par ? `<div class="sec"><div class="l">親</div><div class="mt ch" data-s="${par.s}" data-id="${esc(par.id)}"><a class="tl" style="margin-left:0">${esc(titleOf(par) || '（無題）')}</a></div></div>` : '') + childrenHtml(note) + '<div class="hint">IDなしのノートです。<br>「IDを付ける」と、キーワードやトピックIndex、バックリンクが使えます。</div>'; return; }
   const tops = topics.map(t => ({ t, kws: L.mergeTopic(t).rows.filter(r => r[note.s].some(x => L.splitAnchor(x).id === note.id)).map(r => r.kw) })).filter(x => x.kws.length); // 自分のキーワードがあるものだけ
   const bl = backlinks(note);
-  el.innerHTML =
+  el.innerHTML = childrenHtml(note) +
     (note.keywords.length ? `<div class="sec"><div class="l">キーワード</div>${note.keywords.map(k => `<div class="mk" title="${esc(readings[k] || '')}"><span>${esc(k)}</span><b data-kwdel="${esc(k)}" title="外す">×</b></div>`).join('')}</div>` : '') +
     (ownTopic(note) ? `<div class="sec"><div class="l">このノートのトピックIndex</div><div class="mt"><a class="tl" style="margin-left:0" data-topic="${esc(ownTopic(note).name)}">📑 ${esc(topicLabel(ownTopic(note)))}</a></div></div>` : '') +
     (tops.length ? `<div class="sec"><div class="l">索引されているトピックIndex</div>${tops.flatMap(x => x.kws.map(kw => `<div class="mt"><span>${esc(kw)}</span><a class="tl" data-topic="${esc(x.t.name)}">${esc(topicLabel(x.t))}</a></div>`)).join('')}</div>` : '') +
@@ -809,6 +819,7 @@ $('#pane').addEventListener('click', async e => {
   if (cur.k === 'topic') return topicAct(act);
   if (cur.k === 'diary') return diaryAct(act);
   const { s, id } = cur, note = get(s, id);
+  if (note && note.noid && (act === 'sib' || act === 'chi')) return createNoidRel(note, act);
   if (act === 'sib') create(s, free(s, L.sibling(id)));
   if (act === 'chi') create(s, free(s, L.child(id)));
   if (act === 'giveid') return giveIdDialog(note);
@@ -855,6 +866,13 @@ async function clearIdFlow(note) {
   toast('IDを消しました');
 }
 // IDなしのノートを作る（kind: text / rp / canvas）。あとでIDを付けて整理する
+// IDなしのノートから、IDなしのまま分岐・並列を作る。親にIDが付いた時に、子のIDも決まる
+async function createNoidRel(note, act) {
+  const parentStem = act === 'chi' ? note.stem : (note.parentStem || '');
+  const n = await api.createNote({ kind: 'text', created: L.now(), parentStem });
+  notes.push(n); await refreshDiaries(); openNote('d', n.id);
+  setTimeout(() => { const t = $('#f-title'); if (t) t.focus(); }, 30);
+}
 async function createNoid(kind) {
   const data = kind === 'rp' ? RP.emptyData() : kind === 'canvas' ? CV.emptyData() : null;
   const n = await api.createNote({ kind, data, created: L.now() });

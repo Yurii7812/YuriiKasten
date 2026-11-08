@@ -453,3 +453,17 @@ test('日のノート: 同じ時刻のメモは、空行なしでつなぐ。時
   v.appendToDay('日記', '2026-11-08', '10:05 四つ目');
   assert.strictEqual(v.openDiary('2026-11-08').body.trim(), '10:00 一つ目\n二つ目\n\n10:05 三つ目\n四つ目');
 });
+
+test('IDなしの分岐: 親にIDが付いた時に、子（と孫）のIDも順に決まる', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pkm-br-')), v = openVault(dir);
+  const p = v.createNote({ kind: 'text', title: '親', created: '2026-11-08 10:00:00' });
+  const a = v.createNote({ kind: 'text', title: '子1', created: '2026-11-08 10:00:01', parentStem: p.stem });
+  const b = v.createNote({ kind: 'text', title: '子2（並列）', created: '2026-11-08 10:00:02', parentStem: p.stem });
+  const c = v.createNote({ kind: 'text', title: '孫', created: '2026-11-08 10:00:03', parentStem: a.stem });
+  assert.ok(p.noid && a.noid && c.noid);
+  v.rename('d', p.id, '1c');
+  const ids = Object.fromEntries(v.state().notes.map(n => [n.title, n.id]));
+  assert.deepStrictEqual([ids['親'], ids['子1'], ids['子2（並列）'], ids['孫']], ['1c', '1c1', '1c2', '1c1a']);
+  const re = openVault(dir), again = Object.fromEntries(re.state().notes.map(n => [n.title, n.id]));   // 保存して読み直しても同じ
+  assert.deepStrictEqual([again['子1'], again['孫']], ['1c1', '1c1a']);
+});
