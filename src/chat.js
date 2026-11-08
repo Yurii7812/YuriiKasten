@@ -302,7 +302,7 @@ const encRel = n => n.replace(/[\s()<>%#?\\]/g, c => '%' + c.charCodeAt(0).toStr
 export async function attach(files) {
   const list = []; for (const f of files) list.push({ name: f.name || 'image.png', bytes: await f.arrayBuffer() });
   const names = await ctx.api.addFiles(list), inp = $('#c-in'); if (!inp) return;
-  inp.value += (inp.value && !inp.value.endsWith('\n') ? '\n' : '') + names.map(n => PIC.test(n) ? `![](${encRel(n)})` : `[${n.replace(/[\[\]]/g, '')}](${encRel(n)})`).join('\n') + '\n';
+  inp.value += (inp.value && !inp.value.endsWith('\n') ? '\n' : '') + names.map((n, i) => PIC.test(n) ? `![](${encRel(n)})` : `[${(list[i].name || n).replace(/[\[\]]/g, '')}](${encRel(n)})`).join('\n') + '\n';
   draft = inp.value; fit(inp); inp.focus();
 }
 

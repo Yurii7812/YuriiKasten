@@ -86,6 +86,8 @@ ipcMain.handle('saveTopic', (_e, t, old) => v.saveTopic(t, old));
 ipcMain.handle('deleteTopic', (_e, name) => v.deleteTopic(name));
 ipcMain.handle('deleteNotes', (_e, items) => v.deleteNotes(items));
 ipcMain.handle('addFiles', (_e, list) => v.addFiles(list));
+ipcMain.handle('filesInfo', () => v.filesInfo());
+ipcMain.handle('setFileInfo', (_e, name, info) => v.setFileInfo(name, info));
 // 本文のリンクを開く。ファイルは OS の既定のビューアーで、http(s) は既定のブラウザで
 ipcMain.handle('openPath', (_e, rel) => {
   if (process.env.YURIIKASTEN_OPENLOG) { fs.appendFileSync(process.env.YURIIKASTEN_OPENLOG, decodeURIComponent(rel) + '\n'); return ''; } // 試験用: 開かず記録だけ

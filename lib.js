@@ -42,15 +42,35 @@ const C = '[:：]', LP = '[(（]', RP = '[)）]';
 const RE = `(?<![0-9A-Za-z])(?:(${C})?(${ID})?${LP}(\\d+)${RP}(${C})?|${C}(${ID})(?![0-9A-Za-z])|(${ID})${C}(?![0-9]))`;
 
 const MDLINK = /!?\[[^\]\n]*\]\([^)\s]*\)/g; // [名前](パス) と ![名前](パス)
+// コードの範囲（``` で囲んだ行・`コード`・``コード``）。この中は、リンクにしない
+function codeRanges(text) {
+  const r = []; let pos = 0, open = -1;
+  for (const line of text.split('\n')) {
+    if (/^\s*(```|~~~)/.test(line)) { if (open < 0) open = pos; else { r.push([open, pos + line.length]); open = -1; } }
+    pos += line.length + 1;
+  }
+  if (open >= 0) r.push([open, text.length]);
+  const inFence = i => r.some(([a, b]) => i >= a && i < b);
+  for (const m of text.matchAll(/(`+)[^`\n][^\n]*?\1(?!`)/g)) if (!inFence(m.index)) r.push([m.index, m.index + m[0].length]);
+  return r;
+}
+const SEP = '[,，、]';
 function tokens(text) {
-  const re = new RegExp(RE, 'g'), out = [], skip = [...text.matchAll(MDLINK)].map(m => [m.index, m.index + m[0].length]); let m;
+  const re = new RegExp(RE, 'g'), out = [], skip = [...text.matchAll(MDLINK)].map(m => [m.index, m.index + m[0].length]).concat(codeRanges(text)); let m;
+  const hit = (a, b) => skip.some(([x, y]) => a < y && b > x);
   while ((m = re.exec(text))) {
-    if (skip.some(([a, b]) => m.index < b && m.index + m[0].length > a)) continue;
+    if (hit(m.index, m.index + m[0].length)) continue;
     const [all, c1, id1, n, c2, idB, idC] = m; let t;
     if (n !== undefined) t = id1 ? { k: 'ref', id: id1, n } : { k: 'self', n, bare: !c1 && !c2 };
     else t = { k: 'ref', id: idB || idC };
     t.from = m.index; t.to = m.index + all.length; t.text = all;
     out.push(t);
+    if (idB && n === undefined) { // :1a,1b,1c のように、ひとつの : で複数のID
+      const more = new RegExp(`^${SEP}(${ID})(?![0-9A-Za-z])`);
+      for (let p = t.to, x; (x = text.slice(p).match(more)) && !hit(p, p + x[0].length); p += x[0].length) {
+        out.push({ k: 'ref', id: x[1], from: p + 1, to: p + x[0].length, text: x[1] }); re.lastIndex = p + x[0].length;
+      }
+    }
   }
   return out;
 }
@@ -130,7 +150,15 @@ function exportMd(items) {
 //   ID の前の * は、そのIDの上に赤い点を付ける印（例: PKM *1 1a）。グローバルな Index でも同じ印
 function topicLine(line) {
   const s = line.match(/^(\s*[★☆+＋]\s*)(.*?)\s*$/);
-  if (s) return { star: s[2], from: s[1].length, to: s[1].length + s[2].length, ids: [] };
+  if (s) {
+    // +hoge 1 → 「★ hoge 1」（1 がリンク。そのIDのトピックIndex があってもなくても）。+GUI だけなら、トピックIndex への案内
+    const ps = [...s[2].matchAll(/\S+/g)], last = ps[ps.length - 1];
+    if (ps.length >= 2 && isId(last[0])) {
+      const at = s[1].length + last.index;
+      return { star: '', ref: { label: s[2].slice(0, last.index).trim(), id: last[0], from: at, to: at + last[0].length }, from: s[1].length, to: s[1].length + s[2].length, ids: [] };
+    }
+    return { star: s[2], from: s[1].length, to: s[1].length + s[2].length, ids: [] };
+  }
   const parts = [...line.matchAll(/[^\s,、，]+/g)], ids = [], bare = x => x.replace(/^[*＊]/, '');
   let i = parts.length - 1;
   while (i >= 0 && isId(bare(parts[i][0]))) {
@@ -142,16 +170,17 @@ function topicLine(line) {
 }
 // デジタル欄と紙欄をまとめて表示用に: [{kw, d:[ids], p:[ids]}], stars
 function mergeTopic(t) {
-  const m = new Map(), stars = [];
+  const m = new Map(), stars = [], refs = [];
   for (const s of ['d', 'p']) for (const line of (t[s] || '').split('\n')) {
     const r = topicLine(line);
+    if (r.ref) { if (!refs.some(x => x.s === s && x.id === r.ref.id && x.label === r.ref.label)) refs.push({ s, label: r.ref.label, id: r.ref.id }); continue; }
     if (r.star !== undefined) { if (r.star && !stars.includes(r.star)) stars.push(r.star); continue; }
     if (!r.kw && !r.ids.length) continue;
     const k = r.kw || '';
     if (!m.has(k)) m.set(k, { kw: k, d: [], p: [] });
     for (const x of r.ids) { if (!m.get(k)[s].includes(x.id)) m.get(k)[s].push(x.id); if (x.dot && !m.get(k).dot) m.get(k).dot = { s, id: x.id }; }
   }
-  return { rows: [...m.values()], stars };
+  return { rows: [...m.values()], stars, refs };
 }
 
 // トピックIndex の欄に「キーワード ID」を足す（同じキーワードの行があればその行の後ろに）
@@ -231,9 +260,30 @@ function diaryTree(dates) {
 
 // ===== IDなしのノート（とりあえず書いて、あとで整理する）=====
 // ファイル名は D_u20261107-143521.md のように日時。ID の形（数字で始まる）と区別できる
-const NOID = /^u\d{8}-\d{6}(-\d+)?$/;
+// 新しい名前は 20261108073511（YYYYMMDDHHmmss）。昔の u20261107-143521 も IDなしとして読む
+const NOID = /^(?:\d{14}(?:-\d+)?|u\d{8}-\d{6}(?:-\d+)?)$/;
 const isNoid = s => NOID.test(s);
-const noidStem = (d = new Date()) => `u${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+const noidStem = (d = new Date()) => `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+const STEM = /^\d{14}(?:-\d+)?$/;   // ノートのファイル名（拡張子なし）
+const isStem = s => STEM.test(s);
+
+// ===== YAML（ファイルの先頭の --- で囲んだ部分）=====
+// 値は JSON の形で書く（YAML としても正しい）。手で書いた plain な値と [a, b] も読む
+function fmParse(text) {
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
+  if (!m) return { meta: null, rest: text };
+  const meta = {};
+  for (const l of m[1].split(/\r?\n/)) {
+    const i = l.indexOf(':'); if (i <= 0 || /^\s/.test(l)) continue;
+    const k = l.slice(0, i).trim(), v = l.slice(i + 1).trim();
+    let x; try { x = JSON.parse(v); } catch {
+      x = /^\[.*\]$/.test(v) ? v.slice(1, -1).split(/[,、]/).map(y => y.trim().replace(/^["']|["']$/g, '')).filter(Boolean) : v.replace(/^["']|["']$/g, '');
+    }
+    meta[k] = x;
+  }
+  return { meta, rest: text.slice(m[0].length) };
+}
+const fmDump = o => '---\n' + Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== '').map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join('\n') + '\n---\n';
 
 // ===== ノートの種類: text（文章）/ rp（なりきりチャット）/ canvas（キャンバス）=====
 // なりきり・キャンバスはデータ（data）を持ち、本文はそこから作る（検索やMarkdownで文字が見えるように）
@@ -260,11 +310,12 @@ const fileName = name => name.replace(/[\\/:*?"<>|#%]/g, '_');
 const splitKw = s => (s || '').split(/[,、，]/).map(x => x.trim()).filter(Boolean);
 const now = (d = new Date()) => {
   const p = x => String(x).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 };
+const parseTime = c => { const m = (c || '').match(/^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2})(?::(\d{2}))?)?/); return m ? new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)) : null; };
 
 module.exports = {
   MDLINK, ID, isId, tok, cmpId, sibling, child, parentIn, root,
   tokens, anchorPos, selfTarget, bodyToMd, mdToBody,
-  fzRange, fzSubtree, exportMd, isNoid, noidStem, KINDS, deriveBody, DAY_START, todayStr, dayOf, weekday, isDate, addToSection, diaryTree, topicLine, mergeTopic, addToTopic, removeFromTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
+  fzRange, fzSubtree, exportMd, isNoid, noidStem, isStem, STEM, fmParse, fmDump, parseTime, KINDS, deriveBody, DAY_START, todayStr, dayOf, weekday, isDate, addToSection, diaryTree, topicLine, mergeTopic, addToTopic, removeFromTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
 };

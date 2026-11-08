@@ -10,7 +10,7 @@
 //     PUT    /api/file/<name>      中身を置く。ヘッダ X-Base-Hash（相手が最後に見た版の hash）。食い違えば競合
 //     DELETE /api/file/<name>      .trash へ（X-Base-Hash つき）
 //     GET    /api/events           変更の通知（SSE）
-//   競合: 新しいほうが本体。古いほうは「競合」のコピーとして、未整理（D_u…）のノートに残す
+//   競合: 新しいほうが本体。古いほうは「競合」のコピーとして、未整理（IDなし。日時の名前）のノートに残す
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto'), os = require('os');
 
 const DATA = path.resolve((process.env.YURIIKASTEN_DATA || path.join(os.homedir(), 'YuriiKasten-vault')).replace(/^~/, os.homedir()));
@@ -40,11 +40,11 @@ const notify = (name, op) => { const msg = `data: ${JSON.stringify({ name, op, t
 // 競合のコピー: 未整理のノートとして残す（D_u<日時>.md）
 function keepConflict(name, buf, why) {
   const d = new Date(), p = n => String(n).padStart(2, '0');
-  const stem = `u${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-  let n = `D_${stem}.md`, i = 1; while (fs.existsSync(abs(n))) n = `D_${stem}-${i++}.md`;
-  const created = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  const stamp = x => `${x.getFullYear()}${p(x.getMonth() + 1)}${p(x.getDate())}${p(x.getHours())}${p(x.getMinutes())}${p(x.getSeconds())}`;
+  let t = d.getTime(), n = `${stamp(new Date(t))}.md`; while (fs.existsSync(abs(n))) n = `${stamp(new Date(t += 1000))}.md`;
+  const created = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
   const body = `競合: ${name}（${why}）\n\n---\n\n${buf.toString('utf8')}`;
-  fs.writeFileSync(abs(n), `<!-- pkm ${JSON.stringify({ created, keywords: [], kind: 'text', title: `競合 ${name}` })} -->\n# 競合 ${name}\n\n<!-- body -->\n${body}\n<!-- nav -->\n`);
+  fs.writeFileSync(abs(n), `---\nsource: "digital"\ncreated: "${created}"\nupdated: "${created}"\ntitle: ${JSON.stringify('競合 ' + name)}\n---\n# 競合 ${name}\n\n<!-- body -->\n${body}\n<!-- nav -->\n`);
   notify(n, 'put'); return n;
 }
 

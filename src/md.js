@@ -44,7 +44,11 @@ function lines(view) {
     for (let pos = from; pos <= to;) {
       const line = doc.lineAt(pos); pos = line.to + 1;
       const text = line.text, onLine = sel.from <= line.to && sel.to >= line.from;
-      if (/^\s*```/.test(text)) { inCode = !inCode; push(line.from, line.from, Decoration.line({ class: 'md-code-line' })); continue; }
+      if (/^\s*(```|~~~)/.test(text)) { // ``` の行: カーソルが外にあるときは記号を隠す（コードの枠だけ見せる）
+        inCode = !inCode; push(line.from, line.from, Decoration.line({ class: 'md-code-line md-fence' + (inCode ? ' md-fence-top' : ' md-fence-end') }));
+        if (!onLine && line.to > line.from) push(line.from, line.to, Decoration.replace({}));
+        continue;
+      }
       if (inCode) { push(line.from, line.from, Decoration.line({ class: 'md-code-line' })); continue; }
       let m;
       if ((m = text.match(/^(#{1,6})\s+/))) {
@@ -61,17 +65,19 @@ function lines(view) {
           if (/[xX]/.test(m[4])) push(cf + m[4].length, line.to, Decoration.mark({ class: 'md-done' }));
         } else if (/[-*+]/.test(m[2])) push(s, e, Decoration.replace({ widget: new BulletWidget(ind >= 4 ? '◦' : '•') }));
         else push(s, e, Decoration.mark({ class: 'md-num' }));
-      } else if (/^>\s?/.test(text)) {
+      } else if ((m = text.match(/^(?:>[ \t]?)+/))) { // 引用: カーソルが外にあるとき > を隠す
         push(line.from, line.from, Decoration.line({ class: 'md-quote' }));
+        if (!onLine) push(line.from, line.from + m[0].length, Decoration.replace({}));
+        else push(line.from, line.from + m[0].length, Decoration.mark({ class: 'md-dim' }));
       } else if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(text)) {
-        if (!onLine && line.to > line.from) push(line.from, line.to, Decoration.replace({ widget: new HrWidget() })); // 記述は隠して、線だけ
+        if (!onLine && line.to > line.from) { push(line.from, line.from, Decoration.line({ class: 'md-hr-line' })); push(line.from, line.to, Decoration.replace({ widget: new HrWidget() })); } // 記述は隠して、線だけ（行の高さのまま、真ん中に線）
         else push(line.from, line.from, Decoration.line({ class: 'md-dim' }));
       }
       // 行の中: **太字** *斜体* `コード` ~~取り消し~~
-      for (const r of text.matchAll(/(\*\*|__)(?=\S)(.+?)(?<=\S)\1|(?<![*\w])\*(?=\S)([^*]+?)(?<=\S)\*(?![*\w])|`([^`\n]+)`|~~(?=\S)(.+?)(?<=\S)~~/g)) {
+      for (const r of text.matchAll(/(\*\*|__)(?=\S)(.+?)(?<=\S)\1|(?<![*\w])\*(?=\S)([^*]+?)(?<=\S)\*(?![*\w])|(`{2}|`)(?=[^`\n])([^\n]+?)\4|~~(?=\S)(.+?)(?<=\S)~~/g)) {
         const f = line.from + r.index, t = f + r[0].length;
         const cls = r[1] ? 'md-b' : r[3] !== undefined ? 'md-i' : r[4] !== undefined ? 'md-c' : 'md-s';
-        const k = r[1] ? 2 : r[3] !== undefined ? 1 : r[4] !== undefined ? 1 : 2;
+        const k = r[1] ? 2 : r[3] !== undefined ? 1 : r[4] !== undefined ? r[4].length : 2;
         const near = sel.from <= t && sel.to >= f;
         push(f, t, Decoration.mark({ class: cls }));
         if (!near) { push(f, f + k, Decoration.replace({})); push(t - k, t, Decoration.replace({})); }

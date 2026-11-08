@@ -41,10 +41,10 @@ test('同期: 両方が変えたら、新しいほうが本体で、古いほう
     const res = await b.c.sync();
     assert.strictEqual(res.conflicts.length, 1);
     assert.strictEqual(fs.readFileSync(path.join(srv.data, 'D_1.md'), 'utf8'), 'Bの版');
-    const cc = fs.readdirSync(srv.data).filter(f => /^D_u/.test(f));
+    const cc = fs.readdirSync(srv.data).filter(f => /^\d{14}\.md$/.test(f));
     assert.ok(cc.length === 1 && fs.readFileSync(path.join(srv.data, cc[0]), 'utf8').includes('Aの版'));
     await a.c.sync(); assert.strictEqual(r(a.dir, 'D_1.md'), 'Bの版');
-    assert.ok(fs.readdirSync(a.dir).some(f => /^D_u/.test(f)));        // 競合コピーも A に届く
+    assert.ok(fs.readdirSync(a.dir).some(f => /^\d{14}\.md$/.test(f)));        // 競合コピーも A に届く
   });
 });
 

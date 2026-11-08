@@ -229,7 +229,7 @@ function quoteToNote(m) {
     $('#qn-ok').onclick = () => {
       const s = $('#qn-s').value, id = $('#qn-id').value.trim().toLowerCase(), n = ctx.get(s, id);
       if (!n) return alert('そのノートがありません');
-      const href = `D_${note.id}.md#${m.id}`; // この会話（ノート）の、その発言へ
+      const href = `${note.stem}.md#${m.id}`; // この会話（ノート）の、その発言へ
       n.body = (n.body.trimEnd() ? n.body.trimEnd() + '\n\n' : '') + `> **${r.name}**: ` + m.text.split('\n').join('\n> ') + `\n> [↩ ${c.title}](${href})\n`;
       ctx.touchNote(n); close(); toast(`ノート ${id} に引用しました`);
     };
@@ -257,7 +257,7 @@ export async function attach(files) {
   const list = []; for (const f of files) list.push({ name: f.name || 'image.png', bytes: await f.arrayBuffer() });
   const names = await ctx.api.addFiles(list), inp = $('#c-in'); if (!inp) return;
   const enc = n => n.replace(/[\s()<>%#?\\]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0'));
-  inp.value += (inp.value && !inp.value.endsWith('\n') ? '\n' : '') + names.map(n => PIC.test(n) ? `![](${enc(n)})` : `[${n.replace(/[\[\]]/g, '')}](${enc(n)})`).join('\n') + '\n';
+  inp.value += (inp.value && !inp.value.endsWith('\n') ? '\n' : '') + names.map((n, i) => PIC.test(n) ? `![](${enc(n)})` : `[${(list[i].name || n).replace(/[\[\]]/g, '')}](${enc(n)})`).join('\n') + '\n';
   draft = inp.value; fit(inp); inp.focus();
 }
 document.addEventListener('click', e => {

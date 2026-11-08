@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('api', {
   deleteTopic: name => r.invoke('deleteTopic', name),
   deleteNotes: items => r.invoke('deleteNotes', items),
   addFiles: list => r.invoke('addFiles', list),
+  filesInfo: () => r.invoke('filesInfo'),
+  setFileInfo: (name, info) => r.invoke('setFileInfo', name, info),
   openPath: rel => r.invoke('openPath', rel),
   diaryState: () => r.invoke('diaryState'),
   openDiary: date => r.invoke('openDiary', date),

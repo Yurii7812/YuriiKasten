@@ -44,7 +44,8 @@ export function build(notes, titleOf, topics, mergeTopic, topicLabel) {
     if (t.entry && has.has(t.entry.s + ':' + t.entry.id)) edges.push({ a: key, b: t.entry.s + ':' + t.entry.id, t: 'tree' });
   }
   for (const t of topics || []) {
-    const key = tkey.get(t.name), { rows, stars } = mergeTopic(t);
+    const key = tkey.get(t.name), { rows, stars, refs } = mergeTopic(t);
+    for (const r of refs || []) if (has.has(r.s + ':' + r.id)) edges.push({ a: key, b: r.s + ':' + r.id, t: 'link' });
     for (const r of rows) { if (!r.kw) continue; add(r.kw); edges.push({ a: key, b: 'K:' + r.kw, t: 'kw' }); for (const sp of ['d', 'p']) for (const id of r[sp]) add(r.kw, sp + ':' + id); }
     for (const st of stars) if (tkey.has(st)) edges.push({ a: key, b: tkey.get(st), t: 'link' });
   }

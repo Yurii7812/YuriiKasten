@@ -22,10 +22,10 @@ const trash = (dir, n) => { fs.mkdirSync(path.join(dir, '.trash'), { recursive: 
 // 競合のコピーを、未整理のノートとして手元に作る
 function conflictCopy(dir, name, buf, why) {
   const d = new Date(), p = n => String(n).padStart(2, '0');
-  const stem = `u${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-  let n = `D_${stem}.md`, i = 1; while (fs.existsSync(path.join(dir, n))) n = `D_${stem}-${i++}.md`;
-  const created = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-  fs.writeFileSync(path.join(dir, n), `<!-- pkm ${JSON.stringify({ created, keywords: [], kind: 'text', title: `競合 ${name}` })} -->\n# 競合 ${name}\n\n<!-- body -->\n競合: ${name}（${why}）\n\n---\n\n${buf.toString('utf8')}\n<!-- nav -->\n`);
+  const stamp = x => `${x.getFullYear()}${p(x.getMonth() + 1)}${p(x.getDate())}${p(x.getHours())}${p(x.getMinutes())}${p(x.getSeconds())}`;
+  let t = d.getTime(), n = `${stamp(new Date(t))}.md`; while (fs.existsSync(path.join(dir, n))) n = `${stamp(new Date(t += 1000))}.md`;
+  const created = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  fs.writeFileSync(path.join(dir, n), `---\nsource: "digital"\ncreated: "${created}"\nupdated: "${created}"\ntitle: ${JSON.stringify('競合 ' + name)}\n---\n# 競合 ${name}\n\n<!-- body -->\n競合: ${name}（${why}）\n\n---\n\n${buf.toString('utf8')}\n<!-- nav -->\n`);
   return n;
 }
 
