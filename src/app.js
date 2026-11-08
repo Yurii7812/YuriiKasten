@@ -1314,7 +1314,7 @@ function openGraph(keep) {
   cur = place({ k: 'graph' }, keep); mode = 'notes';
   cur.gs = cur.gs || {};   // Link map / Tree map・線の長さ・固定（タブに覚える）
   const rootKey = lastNote ? lastNote.s + ':' + lastNote.id : null;
-  GR.mount($('#pane'), { notes, titleOf, rootKey, state: cur.gs, onOpen: (s, id) => openNote(s, id),
+  GR.mount($('#pane'), { notes, titleOf, rootKey, topics, mergeTopic: L.mergeTopic, get, renderMd, state: cur.gs, onOpen: (s, id, e, topic) => topic ? openTopic(topic) : openNote(s, id),
     onMenu: (node, e) => popMenu(e, [['開く', () => openNote(node.s, node.nid)], ['新しいタブで開く', () => { bgOpen = true; try { openNote(node.s, node.nid); } finally { bgOpen = false; } }]]) });
   renderTabs(); renderList();
 }
