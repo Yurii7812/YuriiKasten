@@ -117,7 +117,7 @@ export function init(docs) {
 const save = () => ctx.later('doc:C', () => ctx.api.saveDoc('C_チャット', doc));
 const topic = name => doc.topics.find(t => t.name === name);
 const msg = id => doc.messages.find(m => m.id === id);
-// トピックは並列（フォルダにしない）。メモは、トピック（下）を 1 つと、上（別のトピック）を いくつでも 持てる
+// トピックは並列（フォルダではない）。メモは所属トピック1つと、複数の上位トピックを持てる。保存形式は topic / ups のまま。
 const upsOf = m => m.ups || [];
 const inView = Relations.inTopic;
 const countOf = name => name === '*' ? doc.messages.length : doc.messages.filter(m => inView(m, name)).length;
@@ -266,11 +266,11 @@ const firstLine = t => (t || '').replace(/\[@[^\]]*\]\(memo:[^)]*\)\s*/g, '').sp
 export const repliesOf = Relations.repliesOf;   // 返信先（いくつでも。昔の 1 つだけの形も読む）
 const quoteHtml = m => repliesOf(m).map(id => { const o = msg(id); return o ? `<div class="b-quote" data-qm="${esc(o.id)}"><b>${esc(o.topic ? o.topic + ' ・ ' : '')}${hm(o.t)}</b><span>${esc(firstLine(o.text).slice(0, 80))}</span></div>` : '<div class="b-quote gone"><span>（消されたメモ）</span></div>'; }).join('');
 // 入力欄の上の「返信先」
-// 書き込み先: トピック（下）と、上（いくつでも）。変えない限り、次に書くメモも同じ
+// 書き込み先: 所属トピックと上位トピック（複数可）。変更しない限り次のメモにも引き継ぐ。
 const topicLabel = n => n === '' ? 'トピック未選択' : n === DIARY ? '日記' : n;
 function showTarget() {
   const el = $('#c-target'); if (!el) return; const t = doc.target;
-  el.innerHTML = `<span class="tg" data-tg="topic" title="このメモを書くトピック">📁 ${esc(topicLabel(t.topic))} ▾</span><span class="tg-l">上</span>${t.ups.map(u => `<span class="tg tg-up" data-tgx="${esc(u)}" title="外す">${esc(u)} ×</span>`).join('')}<span class="tg tg-add" data-tg="up" title="上のトピックを足す">＋ 上</span>`;
+  el.innerHTML = `<span class="tg" data-tg="topic" title="所属トピックを選ぶ">所属トピック: ${esc(topicLabel(t.topic))} ▾</span><span class="tg-l">上位トピック</span>${t.ups.map(u => `<span class="tg tg-up" data-tgx="${esc(u)}" title="外す">${esc(u)} ×</span>`).join('')}<span class="tg tg-add" data-tg="up" title="上位トピックを追加">＋ 上位トピック</span>`;
 }
 // 選ぶ窓（探せる。最近使った順。「上」は、そこで過去に使ったものが先）。multi は、押すごとに入れる・外す
 function openPicker(anchor, { multi, selected, near, exclude = [], extra = [], onPick }) {
@@ -317,8 +317,8 @@ function showChildren() {
   const available = new Set(rows.map(r => r.name));
   for (const n of childFilter) if (!available.has(n)) childFilter.delete(n);
   const total = rows.reduce((n, r) => n + r.count, 0);
-  box.innerHTML = `<span class="sub">下位トピック</span><button data-child-all class="${childFilter.size ? '' : 'on'}" aria-pressed="${!childFilter.size}">すべて ${total}</button>`
-    + rows.map(r => `<button data-child="${esc(r.name)}" class="${childFilter.has(r.name) ? 'on' : ''}" aria-pressed="${childFilter.has(r.name)}">${esc(r.name || '下位トピックなし')} ${r.count}</button>`).join('');
+  box.innerHTML = `<span class="sub">所属トピックで絞り込み</span><button data-child-all class="${childFilter.size ? '' : 'on'}" aria-pressed="${!childFilter.size}">すべて ${total}</button>`
+    + rows.map(r => `<button data-child="${esc(r.name)}" class="${childFilter.has(r.name) ? 'on' : ''}" aria-pressed="${childFilter.has(r.name)}">${esc(r.name || '直接・未指定')} ${r.count}</button>`).join('');
 }
 function paint(toBottom) {
   showChildren();
@@ -338,7 +338,7 @@ function paint(toBottom) {
 }
 function selbar() {
   const b = $('#c-selbar'); if (!b) return;
-  b.innerHTML = sel ? `<span>${sel.size} 件を選択</span><span class="grow"></span><button data-c="selall">全部</button><button data-c="selclear" ${sel.size ? '' : 'disabled'}>選択解除</button><button data-c="selcopy" ${sel.size ? '' : 'disabled'}>コピー</button><button data-c="selmove" ${sel.size ? '' : 'disabled'}>トピック・上</button><button data-c="seldel" class="danger" ${sel.size ? '' : 'disabled'}>消す</button><button class="p" data-c="tonote" ${sel.size ? '' : 'disabled'}>ノートにする</button><button data-c="selno">やめる</button>` : '';
+  b.innerHTML = sel ? `<span>${sel.size} 件を選択</span><span class="grow"></span><button data-c="selall">全部</button><button data-c="selclear" ${sel.size ? '' : 'disabled'}>選択解除</button><button data-c="selcopy" ${sel.size ? '' : 'disabled'}>コピー</button><button data-c="selmove" ${sel.size ? '' : 'disabled'}>所属・上位トピック</button><button data-c="seldel" class="danger" ${sel.size ? '' : 'disabled'}>消す</button><button class="p" data-c="tonote" ${sel.size ? '' : 'disabled'}>ノートにする</button><button data-c="selno">やめる</button>` : '';
   b.style.display = sel ? 'flex' : 'none';
 }
 
@@ -448,7 +448,7 @@ function setTopicsDialog(ms) {
   const one = ms.length === 1 ? ms[0] : null;
   let topicSel = one ? one.topic : null, upsSel = new Set(one ? upsOf(one) : []), upsTouched = !!one;
   const names = recentNames(one ? one.topic : undefined);
-  dialog(`<h3>${ms.length > 1 ? ms.length + ' 件の' : ''}トピック・上を変える</h3><input id="sd-q" placeholder="トピックを探す" style="width:100%;margin-bottom:6px"><div class="sd-cols"><div><div class="sub">トピック（下）</div><div id="sd-t" class="sd-list"></div></div><div><div class="sub">上（いくつでも）</div><div id="sd-u" class="sd-list"></div></div></div><div class="row"><button class="p" id="sd-ok">決定</button><button id="sd-no">やめる</button></div>`, close => {
+  dialog(`<h3>${ms.length > 1 ? ms.length + ' 件の' : ''}所属・上位トピックを変える</h3><input id="sd-q" placeholder="トピックを探す" style="width:100%;margin-bottom:6px"><div class="sd-cols"><div><div class="sub">所属トピック</div><div id="sd-t" class="sd-list"></div></div><div><div class="sub">上位トピック（いくつでも）</div><div id="sd-u" class="sd-list"></div></div></div><div class="row"><button class="p" id="sd-ok">決定</button><button id="sd-no">やめる</button></div>`, close => {
     const draw = () => {
       const q = $('#sd-q').value.trim().toLowerCase(), f = n => !q || topicLabel(n).toLowerCase().includes(q);
       $('#sd-t').innerHTML = ['', ...names].filter(f).map(n => `<div class="sdi${topicSel === n ? ' on' : ''}" data-t="${esc(n)}">${esc(topicLabel(n))}</div>`).join('');
