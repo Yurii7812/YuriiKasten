@@ -387,6 +387,9 @@ html.dark{filter:invert(.92) hue-rotate(180deg);background:#fff}html.dark img,ht
 .sdlg .srow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:4px 0}.sdlg .srow>span{min-width:110px;font-size:13px}.sdlg .sw{display:inline-block;width:24px;height:24px;border-radius:50%;cursor:pointer;border:2px solid transparent}.sdlg .sw.on{border-color:#222}
 .sdlg input[type=range]{flex:1;min-width:120px}.sdlg select,.sdlg input[type=text],.sdlg input[type=number]{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;padding:2px 6px}
 .box:has(.sdlg){width:min(560px,94vw);max-height:88vh;overflow:auto}
+/* 画面の文字（ボタン・一覧・見出しなど）は範囲選択できない。ノートの本文・入力欄・チャットのメモは選べる */
+body{-webkit-user-select:none;user-select:none}
+.cm-editor,.cm-content,input,textarea,select,[contenteditable],.b-body,.md,.mprev{-webkit-user-select:text;user-select:text}
 </style>
 </head>
 <body>
