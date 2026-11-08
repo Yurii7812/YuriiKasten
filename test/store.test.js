@@ -485,3 +485,43 @@ test('時系列記録: 上位を、いくつでも決められる（どの上位
   assert.strictEqual(v.setRecordParent('仕事', ['哲学メモ']), false);   // 輪になる上位は、だめ
   const re = openVault(dir); assert.deepStrictEqual(re.openDiary('2026-11-08', '哲学メモ').parents, ['仕事', '学び']);   // 読み直しても同じ
 });
+
+test('ノート化: 元のチャットを残したまま通常のノートとして索引・分岐・ID変更ができる', () => {
+  const dir = tmp(), v = openVault(dir), read = name => fs.readFileSync(path.join(dir, name), 'utf8');
+  const t = new Date(2026, 10, 9, 10, 19).getTime();
+  v.saveDoc('C_チャット', { topics: [], messages: [
+    { id: 'm1', topic: '哲学', t, text: '国家元首と政治権力について考える' },
+    { id: 'm2', topic: '哲学', t: t + 60000, text: '前の考えからさらに発展する' }
+  ], noted: {} });
+  const n = v.createNote({ kind: 'memo-group', id: '1a', title: 'ヘーゲルの君主制論', created: '2026-11-09 10:30:00',
+    data: { memoIds: ['m1', 'm2'] }, keywords: ['政治哲学'] });
+  const m = v.state().notes.find(x => x.id === '1a');
+  assert.strictEqual(m.kind, 'memo-group');
+  assert.deepStrictEqual(m.data.memoIds, ['m1', 'm2']);
+  assert.match(m.body, /国家元首と政治権力/);
+  assert.match(read(n.stem + '.md'), /C_2026-11-09\.md#m-m1/);
+  assert.match(read('キーワード.md'), /政治哲学/);
+  v.saveTopic({ name: '1a-政治哲学', entry: { s: 'd', id: '1a' }, keyword: '', text: '政治哲学 1a' });
+  const child = v.createNote({ kind: 'text', id: '1a1', title: '派生したノート', body: ':1a' });
+  assert.match(read(n.stem + '.md'), /ChildBranch:/);
+  assert.match(read(n.stem + '.md'), /TopicBranch:/);
+  const original = v.state().docs['C_チャット'].messages[0].text;
+  v.saveDoc('C_チャット', { topics: [], messages: [
+    { id: 'm1', topic: '哲学', t, text: '更新後の元の文章' },
+    { id: 'm2', topic: '哲学', t: t + 60000, text: '前の考えからさらに発展する' }
+  ], noted: {} });
+  assert.match(v.state().notes.find(x => x.id === '1a').body, /更新後の元の文章/);
+  assert.doesNotMatch(v.state().notes.find(x => x.id === '1a').body, /国家元首と政治権力/);
+  assert.match(read(n.stem + '.md'), /更新後の元の文章/);
+  assert.notStrictEqual(original, v.state().docs['C_チャット'].messages[0].text);
+  const reopened = openVault(dir);
+  assert.deepStrictEqual(reopened.state().notes.find(x => x.id === '1a').data.memoIds, ['m1', 'm2']);
+  assert.match(reopened.state().notes.find(x => x.id === '1a').body, /更新後の元の文章/);
+  reopened.clearId('d', '1a');
+  const stemNote = reopened.state().notes.find(x => x.stem === n.stem);
+  assert.ok(stemNote.noid && stemNote.kind === 'memo-group');
+  assert.ok(reopened.rename('d', stemNote.id, '1b'));
+  assert.strictEqual(reopened.state().notes.find(x => x.id === '1b').kind, 'memo-group');
+  assert.strictEqual(reopened.state().docs['C_チャット'].messages.length, 2);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
