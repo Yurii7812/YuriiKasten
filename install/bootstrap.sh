@@ -1,8 +1,8 @@
 #!/bin/sh
-# YuriiKasten 導入（Linux / macOS）。リリースは使わず、GitHub から取ってきて、その場で組み立てる
+# YuriiNote 導入（Linux / macOS）。リリースは使わず、GitHub から取ってきて、その場で組み立てる
 #   curl -fsSL https://raw.githubusercontent.com/Yurii7812/YuriiKasten/master/install/bootstrap.sh | sh
 # やること: git と Node.js が無ければ用意 → ~/.local/share/YuriiKasten-src に取得 → npm install → ビルド → ショートカットと YuriiKasten コマンド
-# もう一度実行すると、最新に更新します（YuriiKasten --update でも同じ）
+# もう一度実行すると、最新に更新します（YuriiNote --update でも同じ）
 set -e
 REPO="${YURIIKASTEN_REPO:-https://github.com/Yurii7812/YuriiKasten.git}"
 SRC="${YURIIKASTEN_SRC:-$HOME/.local/share/YuriiKasten-src}"
@@ -54,13 +54,13 @@ npm install --no-audit --no-fund
 npm run build
 chmod +x yuriikasten.sh
 
-# ---- ショートカットと YuriiKasten コマンド
+# ---- ショートカットと YuriiNote コマンド
 if [ "$OS" = Linux ]; then
   ./yuriikasten.sh --install-shortcuts
 else
   mkdir -p "$HOME/.local/bin"
-  printf '#!/bin/sh\nexec "%s/yuriikasten.sh" "$@"\n' "$SRC" > "$HOME/.local/bin/YuriiKasten"; chmod +x "$HOME/.local/bin/YuriiKasten"
-  printf '#!/bin/sh\nexec "%s/yuriikasten.sh"\n' "$SRC" > "$HOME/Desktop/YuriiKasten.command"; chmod +x "$HOME/Desktop/YuriiKasten.command"
-  say "デスクトップに YuriiKasten.command を作りました（ダブルクリックで開きます）"
+  printf '#!/bin/sh\nexec "%s/yuriikasten.sh" "$@"\n' "$SRC" > "$HOME/.local/bin/YuriiNote"; chmod +x "$HOME/.local/bin/YuriiNote"; cp "$HOME/.local/bin/YuriiNote" "$HOME/.local/bin/YuriiKasten"   # 昔のコマンドも残す
+  printf '#!/bin/sh\nexec "%s/yuriikasten.sh"\n' "$SRC" > "$HOME/Desktop/YuriiNote.command"; chmod +x "$HOME/Desktop/YuriiNote.command"
+  say "デスクトップに YuriiNote.command を作りました（ダブルクリックで開きます）"
 fi
-say "入れました。ターミナルで YuriiKasten と打つと開きます。更新は YuriiKasten --update"
+say "入れました。ターミナルで YuriiNote と打つと開きます。更新は YuriiNote --update"

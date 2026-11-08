@@ -1,7 +1,7 @@
 {
-  "name": "yuriikasten",
+  "name": "yuriinote",
   "version": "0.4.0",
-  "description": "YuriiKasten — 紙のPKM（ツェッテルカステン）をデジタルで",
+  "description": "YuriiNote — 紙のPKM（ツェッテルカステン）をデジタルで",
   "main": "main.js",
   "scripts": {
     "build": "esbuild src/app.js --bundle --outfile=dist/app.js --format=iife",
@@ -26,13 +26,13 @@
   "dependencies": {
     "kuromoji": "^0.1.2"
   },
-  "productName": "YuriiKasten",
+  "productName": "YuriiNote",
   "homepage": "https://github.com/Yurii7812/YuriiKasten",
   "author": "Yurii7812",
   "build": {
-    "appId": "jp.yurii.yuriikasten",
-    "productName": "YuriiKasten",
-    "copyright": "YuriiKasten",
+    "appId": "jp.yurii.yuriinote",
+    "productName": "YuriiNote",
+    "copyright": "YuriiNote",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -53,7 +53,7 @@
     "asarUnpack": [
       "node_modules/kuromoji/dict/**"
     ],
-    "artifactName": "YuriiKasten-${version}-${os}-${arch}.${ext}",
+    "artifactName": "YuriiNote-${version}-${os}-${arch}.${ext}",
     "linux": {
       "target": [
         {
@@ -84,7 +84,7 @@
       "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "YuriiKasten",
+      "shortcutName": "YuriiNote",
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false
     },
@@ -102,12 +102,12 @@
       "icon": "build/icon.png"
     },
     "dmg": {
-      "title": "YuriiKasten ${version}"
+      "title": "YuriiNote ${version}"
     },
     "extraResources": [
       {
-        "from": "downloads/YuriiKasten-memo.apk",
-        "to": "YuriiKasten-memo.apk"
+        "from": "downloads/YuriiNote-memo.apk",
+        "to": "YuriiNote-memo.apk"
       }
     ]
   }

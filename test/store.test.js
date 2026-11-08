@@ -19,27 +19,31 @@ test('全部が1つのフォルダに平らに置かれ、リンクは同じフ�
   const F = (s, id) => v.state().notes.find(n => n.s === s && n.id === id).stem; // ファイル名は作った日時
   assert.strictEqual(F('d', '1'), '20261010111230'); assert.strictEqual(F('d', '1a'), '20261010111300');
   assert.match(F('p', '1'), /^\d{14}$/);
-  assert.deepStrictEqual(ls(dir), ['.pkm-layout', dfile(v, '2026-10-10'), 'Index.md', F('d', '1') + '.md', F('d', '1a') + '.md', F('p', '1') + '.jpg', F('p', '1') + '.md', 'T_1-PKM.md', 'デジタル.md', '日記.md', '紙.md'].sort()); // 日記は作った日のものが自動で
+  assert.deepStrictEqual(ls(dir), ['.pkm-layout', dfile(v, '2026-10-10'), 'Index.md', F('d', '1') + '.md', F('d', '1a') + '.md', F('p', '1') + '.jpg', F('p', '1') + '.md', 'T_1-PKM.md', 'キーワード.md', 'デジタル.md', '日記.md', '未整理.md', '紙.md'].sort()); // 日記は作った日のものが自動で
   const D1 = F('d', '1') + '.md', D1a = F('d', '1a') + '.md', P1 = F('p', '1');
   assert.ok(fs.readdirSync(dir).every(f => fs.statSync(path.join(dir, f)).isFile())); // サブフォルダなし
   const r = f => fs.readFileSync(path.join(dir, f), 'utf8');
   const d1 = r(D1);
   assert.match(r(D1), /^---\nfolgezettel: "1"\nsource: "digital"\ncreated: "2026-10-10 11:12:30"\nupdated: "[^"]+"\nkeywords: \["PKM"\]\n---\n/); // 先頭は YAML
-  assert.match(d1, /<p style="color:#888;font-size:.9em">2026-10-10 11:12:30　索引 <a href="Index.md#k-[a-z0-9]+">PKM<\/a><\/p>/);
-  assert.match(d1, new RegExp(`分岐 <a href="${D1a}">1a</a>`));
-  assert.match(d1, /<a href="T_1-PKM.md">トピックIndex 1-PKM<\/a>/);
+  // Gnosis 風: YAML ／ # 題 ／ ParentBranch・TopicBranch・Topic ／ 本文 ／ ChildBranch。前・次・一覧のリンクは無い
+  assert.match(d1, /\n# 1\n\nTopicBranch: \[1-PKM\]\(T_1-PKM\.md\)  \nTopic: \[1-PKM\]\(T_1-PKM\.md\)\n\n<!-- body -->/);   // 自分が入口のトピックIndex・載っているトピックIndex。親は無いので ParentBranch の行は出ない
+  assert.ok(d1.endsWith(`\nChildBranch: [1a](${D1a})\n`));
+  assert.doesNotMatch(d1, /<hr>|Index\.md|デジタル一覧|<p /);
   assert.ok(d1.includes(`[:1a](${D1a})`));
   assert.ok(r(D1a).includes(`[1(1)](${D1}#c1)`));
-  assert.ok(r(D1a).includes(`<a href="${D1}">← 1</a>`));
+  assert.ok(r(D1a).includes(`\nParentBranch: [1](${D1})  \nTopic: [1-PKM](T_1-PKM.md)\n`));   // 親・自分が載っているトピックIndex
   assert.ok(r(P1 + '.md').includes(`![1](${P1}.jpg)`));
   assert.match(r(P1 + '.md'), /^---\nfolgezettel: "1"\nsource: "paper"/);
   assert.doesNotMatch(r(P1 + '.md').replace(/^---[\s\S]*?---\n/, ''), /\d{4}-\d\d-\d\d \d\d:\d\d/); // 紙の本文に日付は無い（YAML にだけ）
-  assert.ok(r('Index.md').includes(`<a href="${D1}">1</a> <a href="${P1}.md">紙1</a>`));
-  assert.doesNotMatch(r('Index.md'), /トピックIndex/);
-  assert.match(r('Index.md'), /## デジタル\n\n\[1\]\(T_1-PKM\.md\)[\s\S]*## 紙\n\n\[紙1\]\([^)]*\.md\)[\s\S]*## 未整理[\s\S]*## Index/); // 最上位の番号だけ。トピックIndex があればそこへ
+  assert.ok(r('キーワード.md').includes(`<a href="${D1}">1</a> <a href="${P1}.md">紙1</a>`));
+  assert.doesNotMatch(r('キーワード.md'), /トピックIndex/);
+  // Index.md には、一覧へのリンクだけを縦に（ほかのファイルには、そのリンクを出さない）
+  assert.match(r('Index.md'), /^# Index\n\n- \[デジタル\]\([^)]*\)\n- \[紙\]\([^)]*\)\n- \[未整理\]\([^)]*\)\n- \[Index（キーワード）\]\([^)]*\)\n- \[日記\]\([^)]*\)\n$/);
+  for (const f of ['デジタル.md', '紙.md', '未整理.md', 'キーワード.md', '日記.md', 'T_1-PKM.md', D1, D1a]) assert.doesNotMatch(r(f), /Index\.md/);
+  assert.match(r('デジタル.md'), /^# デジタル\n\n\[1\]\(T_1-PKM\.md\)\n/);   // 最上位の番号だけ。トピックIndex があればそこへ
+  assert.match(r('紙.md'), /\[紙1\]\([^)]*\.md\)/);
   assert.ok(r('T_1-PKM.md').includes(`入口 <a href="${D1}">1</a>`));
   assert.ok(r('T_1-PKM.md').includes(`| PKM | [1](${D1}) [1a](${D1a}) [紙1](${P1}.md) |`));
-  assert.ok(r('デジタル.md').includes(`[1](${D1})`));
   assert.doesNotMatch(r('デジタル.md'), /1a/); // 先頭の ID だけ
 
   v = openVault(dir); // 読み直し
@@ -52,14 +56,14 @@ test('全部が1つのフォルダに平らに置かれ、リンクは同じフ�
 
   // 読みで並べ、行ごとに分ける
   v.setReading('紙', 'かみ'); v.setReading('PKM', 'ぴーけーえむ');
-  assert.match(r('Index.md'), /### <a id="row0"><\/a>か[\s\S]*紙 <small style="color:#888">かみ<\/small>[\s\S]*### <a id="row1"><\/a>は[\s\S]*PKM/);
+  assert.match(r('キーワード.md'), /### <a id="row0"><\/a>か[\s\S]*紙 <small style="color:#888">かみ<\/small>[\s\S]*### <a id="row1"><\/a>は[\s\S]*PKM/);
 
   // キーワードのトピックIndex（赤い点は入口のIDの真上）
   v.saveNote({ s: 'd', id: '9', keywords: [], body: '上位' });
   v.saveTopic({ name: '9-PKM', entry: { s: 'd', id: '9' }, keyword: 'PKM', d: 'PKM 1 9', p: 'PKM 1' });
   const D9 = () => F('d', '9') + '.md';
-  assert.ok(new RegExp(`PKM[^\\n]*<a href="T_9-PKM.md"[^>]*>●</a><br><a href="${D9()}">9</a>`).test(r('Index.md')));
-  assert.match(r('T_9-PKM.md'), /キーワード <a href="Index.md#k-[a-z0-9]+">PKM<\/a>/);
+  assert.ok(new RegExp(`PKM[^\\n]*<a href="T_9-PKM.md"[^>]*>●</a><br><a href="${D9()}">9</a>`).test(r('キーワード.md')));
+  assert.match(r('T_9-PKM.md'), /キーワード <a href="%E3%82%AD%E3%83%BC%E3%83%AF%E3%83%BC%E3%83%89\.md#k-[a-z0-9]+">PKM<\/a>/);
   assert.strictEqual(openVault(dir).state().topics.find(t => t.name === '9-PKM').keyword, 'PKM');
 
   // 添付: 同じフォルダに、日時の名前でコピー（元の名前は K_files.json）。同じ秒はずらす
@@ -100,7 +104,7 @@ test('v2（digital/ paper/ topic/ files/）を平らに移す', () => {
   w('Index.md', '<!-- pkm-index {"readings":{"図":"ず"}} -->\n# Index\n');
   const v = openVault(dir), body = id => v.state().notes.find(n => n.s === 'd' && n.id === id).body;
   const sx = (s, id) => v.state().notes.find(n => n.s === s && n.id === id).stem;
-  assert.deepStrictEqual(ls(dir), ['.pkm-layout', sx('d', '1b') + '.md', sx('d', '2') + '.md', 'Index.md', sx('p', '3') + '.jpg', sx('p', '3') + '.md', 'T_1-X.md', 'y.png', 'デジタル.md', '図(1)-1.html', '図(1).html', '日記.md', '紙.md'].sort());
+  assert.deepStrictEqual(ls(dir), ['.pkm-layout', sx('d', '1b') + '.md', sx('d', '2') + '.md', 'Index.md', sx('p', '3') + '.jpg', sx('p', '3') + '.md', 'T_1-X.md', 'y.png', 'キーワード.md', '未整理.md', 'デジタル.md', '図(1)-1.html', '図(1).html', '日記.md', '紙.md'].sort());
   assert.ok(fs.readdirSync(dir).some(f => f.startsWith('.backup-')));   // 日時の名前に移す前の複製
   assert.ok(fs.readdirSync(dir).filter(f => !f.startsWith('.backup-')).every(f => fs.statSync(path.join(dir, f)).isFile()));
   assert.strictEqual(body('1b'), '[図(1).html](%E5%9B%B3%281%29.html)'); // リンクも平らに
@@ -171,9 +175,9 @@ test('IDなしのノート・なりきり・キャンバスもノート。ID は
   assert.ok(rp.body.includes('**孔子**: 学ぶとは') && cv.body.includes('メモ')); // 本文は種類ごとに作られる（検索に出る）
   assert.ok(fs.existsSync(path.join(dir, `${a.id}.md`)) && a.stem === a.id && a.id === '20261107110000');
   assert.match(r(`${rp.id}.md`), /<!-- pkm-data \{.*"title":"論語"/);
-  assert.match(r('Index.md'), new RegExp('## 未整理[\\s\\S]*' + a.id + '[\\s\\S]*## Index'));   // IDなしは「未整理」に出る（キーワードの表には出ない）
-  assert.doesNotMatch(r('Index.md').split('## Index')[1], new RegExp(a.id));
-  assert.match(r('デジタル.md'), /## 未整理（IDなし）[\s\S]*とりあえず書いた/);
+  assert.match(r('未整理.md'), new RegExp(a.id));   // IDなしは「未整理」に出る（キーワードの表には出ない）
+  assert.doesNotMatch(r('キーワード.md'), new RegExp(a.id));
+  assert.match(r('未整理.md'), /とりあえず書いた/);
   assert.match(r(dfile(v, '2026-11-07')), /- \[未整理 11:00\]\(\d{14}\.md\)/);   // 日記には日時のリンク
   // 読み直し: 種類・データ・IDなしのまま
   v = openVault(dir); const st = v.state(), rp2 = st.notes.find(n => n.id === rp.id);
@@ -211,7 +215,7 @@ test('タイトル: 保存・読み直し・見出し。なりきり・キャン
   v.saveNote({ s: 'd', id: '1', created: '2026-11-07 10:00', keywords: [], body: '本文', title: 'PKMとは何か' });
   const S1 = v.state().notes[0].stem + '.md';
   assert.match(r(S1), /title: "PKMとは何か"/);
-  assert.match(r(S1), /# PKMとは何か\n\n<p[^>]*>1<\/p>/); // 見出しはタイトル、IDは小さく
+  assert.match(r(S1), /\n# PKMとは何か\n\n<!-- body -->/); // 見出しはタイトル
   assert.ok(r('デジタル.md').includes(`[1 PKMとは何か](${S1})`));
   const rp = v.createNote({ kind: 'rp', title: '論語を読む', data: { title: '', cast: [], messages: [] } });
   assert.strictEqual(rp.title, '論語を読む');
@@ -253,13 +257,13 @@ test('紙のIndex: 取り込み前のIDも書ける。紙のノートができ�
   const pd = st.docs.K_paperindex;
   assert.deepStrictEqual(pd.entries, [{ kw: 'GUI', reading: 'ぐい', ids: ['12', '12a'] }]); // 3 はもうノートがあるのでマージ済み、12 と 12a は取り込み前
   assert.deepStrictEqual(st.notes.find(n => n.s === 'p' && n.id === '3').keywords, ['GUI']);
-  assert.match(r('Index.md'), /GUI[^\n]*紙3/);                                          // 本 Index には、ノートがあるものだけ
-  assert.doesNotMatch(r('Index.md'), /紙12/);
+  assert.match(r('キーワード.md'), /GUI[^\n]*紙3/);                                          // 本 Index には、ノートがあるものだけ
+  assert.doesNotMatch(r('キーワード.md'), /紙12/);
   // 紙の 12 を取り込む → 自動でマージされる
   st = v.saveImage('p', '12', Buffer.from([0xff, 0xd8, 0xff])) && v.state();
   assert.deepStrictEqual(st.docs.K_paperindex.entries[0].ids, ['12a']);
   assert.deepStrictEqual(st.notes.find(n => n.s === 'p' && n.id === '12').keywords, ['GUI']);
-  assert.match(r('Index.md'), /紙12/);
+  assert.match(r('キーワード.md'), /紙12/);
   // 同じ名前の読みを後から直せる。外す: 取り込み前のIDは表から、ノートがあるIDはキーワードから
   st = v.addPaperIndex({ kw: 'GUI', reading: 'ジーユーアイ', ids: [] });
   assert.strictEqual(st.readings.GUI, 'ジーユーアイ');
@@ -388,7 +392,7 @@ test('記録の種類（日記・夢・ビジネス）: 足す・上位・DailyN
   assert.strictEqual(get('営業').parent, 'ビジネス');                                   // 種類の上位が、新しい日の初期値になる
   assert.deepStrictEqual(get('日記').lower.sort(), ['ビジネス', '夢'].sort());          // 日記には最上位だけ
   assert.deepStrictEqual(get('ビジネス').lower, ['営業']);                             // 各記録には、その日の直接の下位
-  assert.match(r(get('日記').stem + '.md'), /DailyNotes: .*<a href="[^"]+">夢<\/a>/); assert.match(r(get('夢').stem + '.md'), /^---\nrecord: "夢"\ndate: "2026-11-08"/);
+  assert.match(r(get('日記').stem + '.md'), /DailyNotes: .*\[夢\]\([^)]+\)/); assert.match(r(get('夢').stem + '.md'), /^---\nrecord: "夢"\ndate: "2026-11-08"/);
   // 上位が変わっても、もう作った日は変わらない（これから作る日だけ）
   assert.ok(v.setRecordParent('営業', '')); v.saveDiary({ date: '2026-11-09', kind: '営業', body: '次の日' });
   const st2 = v.state(); assert.strictEqual(st2.diaries.find(d => d.kind === '営業' && d.date === '2026-11-08').parent, 'ビジネス'); assert.strictEqual(st2.diaries.find(d => d.kind === '営業' && d.date === '2026-11-09').parent, '');

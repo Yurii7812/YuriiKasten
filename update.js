@@ -1,9 +1,9 @@
 'use strict';
-// 更新。自動では何もしない（確認も更新も、ユーザーが「更新」を押したときや `YuriiKasten --update` を実行したときだけ）
+// 更新。自動では何もしない（確認も更新も、ユーザーが「更新」を押したときや `YuriiNote --update` を実行したときだけ）
 //  - Linux（AppImage）: GitHub の最新リリースの AppImage を、いまのファイルに置き換える
 //  - 開発用（git のフォルダ）: git pull して、必要なら npm install とビルド
 //  - Windows / Mac: 最新のインストーラーのページを開く（インストーラーを実行すると更新される）
-// このファイルは、アプリの中からも、`YuriiKasten --update`（ELECTRON_RUN_AS_NODE / node で直接）からも使う
+// このファイルは、アプリの中からも、`YuriiNote --update`（ELECTRON_RUN_AS_NODE / node で直接）からも使う
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -19,7 +19,7 @@ function newer(a, b) { // a が b より新しいか
   return false;
 }
 async function latestRelease() {
-  const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { 'User-Agent': 'YuriiKasten', Accept: 'application/vnd.github+json' } });
+  const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { 'User-Agent': 'YuriiNote', Accept: 'application/vnd.github+json' } });
   if (r.status === 404) return null;
   if (!r.ok) throw new Error(`GitHub から読めませんでした（${r.status}）`);
   return r.json();
@@ -32,7 +32,7 @@ function pickAsset(rel, platform, arch) {
   return list.find(x => x.name.includes(a)) || list[0] || null;
 }
 async function download(url, dest, say) {
-  const r = await fetch(url, { headers: { 'User-Agent': 'YuriiKasten' }, redirect: 'follow' });
+  const r = await fetch(url, { headers: { 'User-Agent': 'YuriiNote' }, redirect: 'follow' });
   if (!r.ok) throw new Error(`ダウンロードできませんでした（${r.status}）`);
   const total = +r.headers.get('content-length') || 0, out = fs.createWriteStream(dest);
   let got = 0, last = 0;
@@ -76,7 +76,7 @@ async function apply(info, c, say = () => { }) {
   return { done: false, manual: true, url: (c.asset && c.asset.browser_download_url) || c.url || PAGE, message: '最新のインストーラーのページを開きます。ダウンロードして実行すると更新されます' };
 }
 
-// ===== `YuriiKasten --update`（ELECTRON_RUN_AS_NODE や node で直接）=====
+// ===== `YuriiNote --update`（ELECTRON_RUN_AS_NODE や node で直接）=====
 function readInstall() {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'install.json'), 'utf8')); } catch { return null; }
 }
@@ -87,12 +87,12 @@ async function cli(argv) {
   if (inst) info = { version: inst.version, appImage: inst.appImage, platform: process.platform, arch: process.arch };
   else if (fs.existsSync(path.join(__dirname, '.git'))) info = { version: require('./package.json').version, devDir: __dirname, platform: process.platform, arch: process.arch };
   else { console.error('インストールの情報が見つかりません（アプリの「更新を確認」から更新してください）'); process.exit(1); }
-  if (flags.has('--version')) return say(`YuriiKasten ${info.version}`);
+  if (flags.has('--version')) return say(`YuriiNote ${info.version}`);
   const c = await check(info);
   if (c.none) return say('まだ公開されたバージョンがありません。');
   if (!c.newer) return say(`最新です（${c.current}）`);
   say(info.devDir ? `新しい変更があります（${c.latest}）` : `新しいバージョンがあります: ${c.current} → ${c.latest}`);
-  if (flags.has('--check')) return say('更新するには: YuriiKasten --update');
+  if (flags.has('--check')) return say('更新するには: YuriiNote --update');
   const r = await apply(info, c, say);
   say(r.message); if (r.manual) say(r.url);
 }

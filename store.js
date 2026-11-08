@@ -15,6 +15,7 @@ const L = require('./lib');
 
 const PRE = { d: 'D_', p: 'P_' };
 const LIST = { d: 'デジタル.md', p: '紙.md' };
+const UNSORTED = '未整理.md', KEYWORDS = 'キーワード.md';
 const DIARY_LIST = '日記.md';
 const DOC_PRE = /^(C|K)_.+\.json$/; // チャットメモ・役のライブラリ（JSON）。なりきり・キャンバスは今はノート
 const SP = { d: 'デジタル', p: '紙' };
@@ -33,7 +34,7 @@ const sep = '　｜　';
 const MARK = '.pkm-layout'; // 平らな置き方になったことの印（昔の置き方を二度読まないため）
 
 // 添付の名前。D_ P_ T_ で始まる名前や、Index などとぶつかるときは F_ を付け、同名があれば -1, -2 …
-const RESERVED = /^(D_|P_|T_|C_|R_|K_|V_)|^(Index|デジタル|紙|日記)\.md$|^\./;
+const RESERVED = /^(D_|P_|T_|C_|R_|K_|V_)|^(Index|デジタル|紙|日記|未整理|キーワード)\.md$|^\./;
 function uniqueName(dir, name) {
   let base = path.basename(name).replace(/[\\/:*?"<>|]/g, '_') || 'file';
   if (RESERVED.test(base)) base = 'F_' + base.replace(/^\.+/, '');
@@ -252,9 +253,9 @@ function openVault(vault) {
     notes.set(key(sp, id), n);
   }
   for (const l of pages.values()) l.sort((x, y) => (+((x.match(/_(\d+)\./) || [])[1]) || 1) - (+((y.match(/_(\d+)\./) || [])[1]) || 1));
-  if (fs.existsSync(abs('Index.md'))) {
-    const text = fs.readFileSync(abs('Index.md'), 'utf8'); cache.set('Index.md', text);
-    readings = (meta(text, 'pkm-index') || {}).readings || {};
+  for (const f of [KEYWORDS, 'Index.md']) if (fs.existsSync(abs(f))) {   // 読みは キーワード.md に（昔は Index.md）
+    const text = fs.readFileSync(abs(f), 'utf8'); cache.set(f, text); const r = (meta(text, 'pkm-index') || {}).readings;
+    if (r) { readings = r; break; }
   }
 
   const FILES = 'K_files';   // 添付の情報: { files: { <保存名>: { orig, title, desc, added } } }
@@ -267,57 +268,43 @@ function openVault(vault) {
   const label = (s, id) => (s === 'p' ? '紙' : '') + id;
 
   const titleOfNote = n => n.title ? n.title : n.kind && n.kind !== 'text' ? ((n.data && n.data.title) || (n.kind === 'rp' ? '会話' : 'キャンバス')) : (n.body.split('\n').find(x => x.trim()) || '').replace(/^#+\s*/, '').slice(0, 30);
+  // ノートの md（Gnosis 風）:  YAML ／ # 題 ／ ParentBranch: TopicBranch: Topic: ／ 本文 ／ ChildBranch:   空の行は出さない。前・次・一覧へのリンクは Index.md にだけ
+  //   ParentBranch ＝ 親（番号の1つ上）　TopicBranch ＝ このノートが入口のトピックIndex　Topic ＝ このノートが載っているトピックIndex　ChildBranch ＝ 分岐（子）
+  const ml = (href, text) => `[${esc(text)}](${href})`;
+  const lk = (s_, id) => { const m = get(s_, id); return ml(noteHref(s_, id), `${label(s_, id)}${m && m.title ? ' ' + m.title : ''}`); };
   function noteMd(n) {
-    if (L.isNoid(n.id)) { // IDなし: 前後・上下は無い
-      return [fmOf(n).replace(/\n$/, ''), n.data ? `<!-- pkm-data ${J(n.data)} -->` : null,
-        `# ${n.title ? esc(n.title) : '未整理 ' + n.created}`, n.title ? `\n<p ${SUB}>未整理 ${n.created}</p>` : '', '', BODY + L.bodyToMd(n.body, x => noteHref(n.s, x)) + '\n' + NAV, '<hr>', '',
-        `<p ${SUB}>${[a('Index.md', 'Index'), a(enc(LIST.d), 'デジタル一覧'), a(enc(DIARY_LIST), '日記一覧')].join(sep)}</p>`, ''].filter(x => x !== null).join('\n');
-    }
-    const list = ids(n.s), has = x => !!get(n.s, x), i = list.indexOf(n.id);
-    const parent = L.parentIn(n.id, has), kids = list.filter(x => L.parentIn(x, has) === n.id);
-    const go = x => noteHref(n.s, x), t = topicOf(n.s, n.id);
-    const sub = [n.s === 'd' && h(n.created), n.keywords.length && '索引 ' + n.keywords.map(k => a(`Index.md#${L.kwAnchor(k)}`, h(k))).join('・')].filter(Boolean).join('　');
-    const nav1 = [
-      i > 0 && a(go(list[i - 1]), '← ' + list[i - 1]),
-      parent && a(go(parent), '↑ ' + parent),
-      kids.length && '分岐 ' + kids.map(k => a(go(k), k)).join(' '),
-      i < list.length - 1 && a(go(list[i + 1]), list[i + 1] + ' →')
-    ].filter(Boolean).join(sep);
-    const nav2 = [t && a(topicHref(t.name), 'トピックIndex ' + h(t.name)), a('Index.md', 'Index'), a(enc(LIST[n.s]), SP[n.s] + '一覧')].filter(Boolean).join(sep);
-    return [
-      fmOf(n).replace(/\n$/, ''),
-      n.data ? `<!-- pkm-data ${J(n.data)} -->` : null,
-      `# ${n.title ? esc(n.title) : (n.s === 'p' ? '紙 ' : '') + n.id}`, n.title ? `\n<p ${SUB}>${n.s === 'p' ? '紙 ' : ''}${n.id}</p>` : '', '',
-      sub ? `<p ${SUB}>${sub}</p>\n` : null,
+    const head = `# ${n.title ? esc(n.title) : L.isNoid(n.id) ? '未整理 ' + n.created : (n.s === 'p' ? '紙 ' : '') + n.id}`;
+    const body = BODY + L.bodyToMd(n.body, x => noteHref(n.s, x)) + '\n' + NAV;
+    if (L.isNoid(n.id)) return [fmOf(n).replace(/\n$/, ''), n.data ? `<!-- pkm-data ${J(n.data)} -->` : null, head, '', body, ''].filter(x => x !== null).join('\n');
+    const has = x => !!get(n.s, x), parent = L.parentIn(n.id, has), kids = ids(n.s).filter(x => L.parentIn(x, has) === n.id), t = topicOf(n.s, n.id);
+    const listed = [...topics.values()].filter(o => L.mergeTopic(o).rows.some(r => r[n.s].some(x => L.splitAnchor(x).id === n.id)));
+    const line = (k, items) => items.length ? `${k}: ${items.join('　')}` : null;
+    const top = [line('ParentBranch', parent ? [lk(n.s, parent)] : []), line('TopicBranch', t ? [ml(topicHref(t.name), t.name)] : []), line('Topic', listed.map(o => ml(topicHref(o.name), o.name)))].filter(Boolean);
+    return [fmOf(n).replace(/\n$/, ''), n.data ? `<!-- pkm-data ${J(n.data)} -->` : null, head, '',
+      top.length ? top.join('  \n') + '\n' : null,
       n.img ? `![${n.id}](${enc(n.img)})\n` : null,
-      BODY + L.bodyToMd(n.body, x => noteHref(n.s, x)) + '\n' + NAV,
-      '<hr>', '', `<p ${SUB}>${nav1 ? nav1 + '<br>' : ''}${nav2}</p>`, ''
-    ].filter(x => x !== null).join('\n');
+      body, kids.length ? '\n' + line('ChildBranch', kids.map(k => lk(n.s, k))) : null, ''].filter(x => x !== null).join('\n');
   }
 
   // 一覧: 先頭の ID（祖先の無いもの）だけ
-  function listMd(s) {
-    const has = x => !!get(s, x), o = s === 'd' ? 'p' : 'd';
-    const roots = ids(s).filter(id => !L.parentIn(id, has));
-    const un = s === 'd' ? noidNotes() : [];
-    return [`# ${SP[s]}`, '', `<p ${SUB}>${a('Index.md', 'Index')}${sep}${a(enc(LIST[o]), SP[o] + '一覧')}</p>`, '',
-      roots.map(id => `[${id}${get(s, id).title ? ' ' + esc(get(s, id).title) : ''}](${noteHref(s, id)})`).join('　') || '（まだありません）', '',
-      ...(un.length ? ['## 未整理（IDなし）', '', ...un.map(n => `- [${esc(titleOfNote(n) || n.created)}](${noteHref('d', n.id)}) <small>${n.created}</small>`), ''] : [])].join('\n');
-  }
+  // デジタル・紙の一覧: いちばん上の番号（1・2・3 …）だけ。入口になっているトピックIndex があればそこへ、無ければノートへ
+  const tops = sp => { const has = x => !!get(sp, x); return ids(sp).filter(id => !L.parentIn(id, has)).map(id => { const n = get(sp, id), t = topicOf(sp, id); return `[${label(sp, id)}${n.title ? ' ' + esc(n.title) : ''}](${t ? topicHref(t.name) : noteHref(sp, id)})`; }).join('　') || '（まだありません）'; };
+  const listMd = sp => [`# ${SP[sp]}`, '', tops(sp), ''].join('\n');
+  const unsortedMd = () => ['# 未整理', '', ...(noidNotes().map(n => `- [${esc(titleOfNote(n) || n.created)}](${noteHref('d', n.id)}) <small>${n.created}</small>`)), ...(noidNotes().length ? [] : ['（ありません）']), ''].join('\n');
+  // Index.md: 入口。ここにだけ、一覧へのリンクを縦に並べる
+  const indexMd = () => ['# Index', '', ...[[LIST.d, 'デジタル'], [LIST.p, '紙'], [UNSORTED, '未整理'], [KEYWORDS, 'Index（キーワード）'], [DIARY_LIST, '日記']].map(([f, t]) => `- [${t}](${enc(f)})`), ''].join('\n');
 
   const sameKind = d => [...diaries.values()].filter(x => x.kind === d.kind).sort((x, y) => x.date < y.date ? -1 : 1);
   function diaryMd(d) {
-    const list = sameKind(d), i = list.findIndex(x => x.date === d.date), prev = list[i - 1], next = list[i + 1], low = lowerOf(d);
-    const nav = [prev && a(diaryHref(prev), '← ' + prev.date), next && a(diaryHref(next), next.date + ' →'), a('Index.md', 'Index'), a(enc(DIARY_LIST), '日記一覧')].filter(Boolean).join(sep);
-    const head = `${d.date}${d.kind !== DIARY ? '（' + esc(d.kind) + '）' : ''}${d.title ? '-' + esc(d.title) : ''}`;
+    const low = lowerOf(d), head = `${d.date}${d.kind !== DIARY ? '（' + esc(d.kind) + '）' : ''}${d.title ? '-' + esc(d.title) : ''}`;
     return [L.fmDump({ record: d.kind, date: d.date, parent_record: d.parent || undefined, title: d.title || undefined, created: d.created || undefined, updated: d.updated || d.created || undefined }).replace(/\n$/, ''), `# ${head}`, '',
-      low.length ? `<p ${SUB}>DailyNotes: ${low.map(o => a(diaryHref(o), h(o.kind))).join('　')}</p>\n` : null,
-      BODY + L.bodyToMd(d.body, x => noteHref('d', x)) + '\n' + NAV, '<hr>', '', `<p ${SUB}>${nav}</p>`, ''].filter(x => x !== null).join('\n');
+      low.length ? `DailyNotes: ${low.map(o => `[${esc(o.kind)}](${diaryHref(o)})`).join('　')}\n` : null,
+      BODY + L.bodyToMd(d.body, x => noteHref('d', x)) + '\n' + NAV, ''].filter(x => x !== null).join('\n');
   }
   // 日記の一覧: 種類ごとに。月はいつも、年は2つ以上の年にまたがってから（Gnosis 同様）
   function diaryListMd() {
     const label = d => `${d.date}（${L.weekday(d.date)}）${d.title ? ' ' + esc(d.title) : ''}`;
-    const out = ['# 日記', '', `<p ${SUB}>${a('Index.md', 'Index')}${sep}${a(enc(LIST.d), 'デジタル一覧')}${sep}${a(enc(LIST.p), '紙一覧')}</p>`, ''];
+    const out = ['# 日記', ''];
     const kinds = kindNames().filter(k => k === DIARY || [...diaries.values()].some(d => d.kind === k));
     for (const k of kinds) {
       const mine = new Map([...diaries.values()].filter(d => d.kind === k).map(d => [d.date, d]));
@@ -357,13 +344,9 @@ function openVault(vault) {
   };
 
   // 読みのあいうえお順。行（あ・か・さ…）ごとに分ける
-  function indexMd() {
-    const out = [`<!-- pkm-index ${J({ readings: { ...readings } })} -->`, '# Index', '',
-      `<p ${SUB}>${a(enc(LIST.d), 'デジタル一覧')}${sep}${a(enc(LIST.p), '紙一覧')}${sep}${a(enc(DIARY_LIST), '日記一覧')}</p>`, ''];
-    // Index の入口: デジタル・紙は、いちばん上の番号（1, 2, 3 …）だけ。トピックIndex があればそこへ、無ければノートへ
-    const tops = sp => { const has = x => !!get(sp, x); return ids(sp).filter(id => !L.parentIn(id, has)).map(id => { const n = get(sp, id), t = topicOf(sp, id); return `[${label(sp, id)}${n.title ? ' ' + esc(n.title) : ''}](${t ? topicHref(t.name) : noteHref(sp, id)})`; }).join('　') || '（まだありません）'; };
-    out.push('## デジタル', '', tops('d'), '', '## 紙', '', tops('p'), '', '## 未整理', '');
-    const un = noidNotes(); out.push(...(un.length ? un.map(n => `- [${esc(titleOfNote(n) || n.created)}](${noteHref('d', n.id)}) <small>${n.created}</small>`) : ['（ありません）']), '', '## Index', '');
+  // キーワードの一覧（Index）。読みのあいうえお順。行（あ・か・さ…）ごとに分ける。キーワードの読みも、ここに持つ
+  function keywordsMd() {
+    const out = [`<!-- pkm-index ${J({ readings: { ...readings } })} -->`, '# Index（キーワード）', ''];
     const groups = new Map();
     for (const [k, v] of globalIndex()) {
       const r = L.kanaRow(readings[k] || k);
@@ -384,7 +367,7 @@ function openVault(vault) {
     const { rows, stars, refs } = L.mergeTopic(t), e = t.entry;
     const out = [
       `<!-- pkm-topic ${J(t)} -->`, `# ${esc(t.name)}`, '',
-      `<p ${SUB}>入口 ${e ? a(noteHref(e.s, e.id), label(e.s, e.id)) : 'なし'}${t.keyword ? `　キーワード ${a(`Index.md#${L.kwAnchor(t.keyword)}`, h(t.keyword))}` : ''}</p>`, ''
+      `<p ${SUB}>入口 ${e ? a(noteHref(e.s, e.id), label(e.s, e.id)) : 'なし'}${t.keyword ? `　キーワード ${a(`${enc(KEYWORDS)}#${L.kwAnchor(t.keyword)}`, h(t.keyword))}` : ''}</p>`, ''
     ];
     if (rows.length) {
       out.push('| キーワード | ID |', '|---|---|');
@@ -401,7 +384,6 @@ function openVault(vault) {
     }
     if (stars.length) out.push('', ...stars.map(s => `★ [${esc(s)}](${topicHref(s)})  `));
     if (refs.length) out.push('', ...refs.map(r => `★ ${esc(r.label)} [${label(r.s, r.id)}](${noteHref(r.s, r.id)})  `));
-    out.push('', '<hr>', '', `<p ${SUB}>${a('Index.md', 'Index')}</p>`);
     return out.join('\n') + '\n';
   }
 
@@ -447,7 +429,7 @@ function openVault(vault) {
   }
   function rebuild() {
     mergePaperIndex(); pruneDiaryLinks();
-    const files = new Map([['Index.md', indexMd()], [LIST.d, listMd('d')], [LIST.p, listMd('p')], [DIARY_LIST, diaryListMd()]]);
+    const files = new Map([['Index.md', indexMd()], [KEYWORDS, keywordsMd()], [UNSORTED, unsortedMd()], [LIST.d, listMd('d')], [LIST.p, listMd('p')], [DIARY_LIST, diaryListMd()]]);
     for (const d of diaries.values()) files.set(diaryFile(d), diaryMd(d));
     for (const n of notes.values()) files.set(noteFile(n.s, n.id), noteMd(n));
     for (const t of topics.values()) files.set(topicFile(t.name), topicMd(t));
@@ -648,7 +630,7 @@ function openVault(vault) {
     // 取り込んだファイル（画像・html・csv など）の一覧。タイトル・説明・元の名前つき。ノートや Index などは含めない
     filesInfo() {
       const meta = (docs.get(FILES) || { files: {} }).files, imgs = new Set([...notes.values()].map(n => n.img).filter(Boolean));
-      const sys = /^(D_|P_|T_|C_|K_|R_|V_)|^(Index|デジタル|紙|日記)\.md$|^\./;
+      const sys = /^(D_|P_|T_|C_|K_|R_|V_)|^(Index|デジタル|紙|日記|未整理|キーワード)\.md$|^\./;
       return fs.readdirSync(vault, { withFileTypes: true }).filter(d => d.isFile() && !sys.test(d.name) && !imgs.has(d.name) && !(/^\d{14}(-\d+)?\.md$/.test(d.name))).map(d => {
         const st = fs.statSync(abs(d.name)), m = meta[d.name] || {};
         return { name: d.name, orig: m.orig || d.name, title: m.title || '', desc: m.desc || '', added: m.added || L.now(st.mtime), size: st.size, ext: path.extname(d.name).toLowerCase() };

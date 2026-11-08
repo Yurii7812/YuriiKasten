@@ -1482,7 +1482,20 @@ $('#scan').onkeydown = e => {
 };
 
 // ===== 保存フォルダ =====
+// 初めて起動したとき: 保存先（vault）を選ぶ。既存のフォルダを開く／新しく作る
+function firstRun(st) {
+  dialog(`<h3>ようこそ。YuriiNote の保存先を選びます</h3>
+    <div class="sub">ノートは、普通のフォルダ（vault）に、md ファイルとして入ります。あとで、右上の 📁 からも変えられます。フォルダごと別の PC にコピーしても、全部そのまま使えます。</div>
+    ${st.found.length ? `<div class="sub">見つかった vault（押すと、これを開きます）</div>${st.found.map(p => `<div class="row"><button data-vp="${esc(p)}" style="flex:1;text-align:left">📁 ${esc(p)}</button></div>`).join('')}` : ''}
+    <div class="row"><button class="p" data-vp="${esc(st.suggest)}" style="flex:1">✨ 新しく作る（${esc(st.suggest)}）</button></div>
+    <div class="row"><button id="vp-pick" style="flex:1">📂 フォルダを選ぶ（既存の vault を開く・新しい場所に作る）</button></div>`, close => {
+    $('#modal').onkeydown = null;
+    $('#modal .box').onclick = async e => { const b = e.target.closest('[data-vp]'); if (!b) return; const r = await api.useVault(b.dataset.vp); if (r) { close(); loaded(r); } };
+    $('#vp-pick').onclick = async () => { const r = await api.chooseVault(); if (r) { close(); loaded(r); } };
+  });
+}
 function loaded(st) {
+  if (st && st.firstRun) return firstRun(st);
   ({ notes, topics, vault } = st); readings = st.readings || {}; diaries = st.diaries || []; records = st.records || records; Chat.init(st.docs || {}); RP.init(st.docs || {}); PI.init(st.docs || {}); cur = null; tabs = []; active = -1; refreshFiles();
   $('#vault').textContent = '📁 ' + vault.split('/').pop(); $('#vault').title = vault + '\n（Brave では Index.md を開くと全部たどれます）';
   try {

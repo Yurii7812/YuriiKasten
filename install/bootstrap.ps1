@@ -1,4 +1,4 @@
-# YuriiKasten 導入（Windows）。リリースは使わず、GitHub から取ってきて、その場で組み立てる
+# YuriiNote 導入（Windows）。リリースは使わず、GitHub から取ってきて、その場で組み立てる
 #   irm https://raw.githubusercontent.com/Yurii7812/YuriiKasten/master/install/bootstrap.ps1 | iex
 # やること: git と Node.js が無ければ winget で入れる → 取得 → npm install → ビルド → デスクトップとスタートメニューにショートカット
 # もう一度実行すると、最新に更新します
@@ -22,9 +22,9 @@ Write-Host '部品を入れています（初回は数分かかります）…'
 npm install --no-audit --no-fund
 npm run build
 
-# 起動用の cmd（YuriiKasten / YuriiKasten --update）
+# 起動用の cmd（YuriiNote / YuriiNote --update。昔の YuriiKasten も残す）
 $bin = Join-Path $env:LOCALAPPDATA 'YuriiKasten-bin'; New-Item -ItemType Directory -Force $bin | Out-Null
-Set-Content (Join-Path $bin 'YuriiKasten.cmd') -Encoding ASCII -Value @"
+Set-Content (Join-Path $bin 'YuriiNote.cmd') -Encoding ASCII -Value @"
 @echo off
 cd /d "$src"
 if "%1"=="--update" (node update.js --update & goto :eof)
@@ -39,8 +39,8 @@ if ($userPath -notlike "*$bin*") { [Environment]::SetEnvironmentVariable('Path',
 # ショートカット（デスクトップ・スタートメニュー）
 $ws = New-Object -ComObject WScript.Shell
 foreach ($dir in @([Environment]::GetFolderPath('Desktop'), (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'))) {
-  $l = $ws.CreateShortcut((Join-Path $dir 'YuriiKasten.lnk'))
+  $l = $ws.CreateShortcut((Join-Path $dir 'YuriiNote.lnk'))
   $l.TargetPath = Join-Path $src 'node_modules\electron\dist\electron.exe'; $l.Arguments = '.'; $l.WorkingDirectory = $src
   if (Test-Path (Join-Path $src 'build\icon.ico')) { $l.IconLocation = (Join-Path $src 'build\icon.ico') + ',0' }; $l.Save()
 }
-Write-Host '入れました。デスクトップの YuriiKasten から開きます。更新は、この1行をもう一度実行するか、新しい PowerShell で YuriiKasten --update'
+Write-Host '入れました。デスクトップの YuriiNote から開きます。更新は、この1行をもう一度実行するか、新しい PowerShell で YuriiKasten --update'

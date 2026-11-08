@@ -1,7 +1,7 @@
 #!/bin/sh
 # 起動（git のフォルダ）。bootstrap.sh で入れたときも、これで開く
-#   YuriiKasten            ビルドして開く
-#   YuriiKasten --update   git pull して更新（--check は確認だけ、--version は番号）。画面は開かない
+#   YuriiNote              ビルドして開く
+#   YuriiNote --update     git pull して更新（--check は確認だけ、--version は番号）。画面は開かない
 cd "$(dirname "$(readlink -f "$0")")" || exit 1
 [ -x "$HOME/.local/share/YuriiKasten-node/bin/node" ] && PATH="$HOME/.local/share/YuriiKasten-node/bin:$PATH"
 case "$1" in

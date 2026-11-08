@@ -37,7 +37,7 @@ test('入れる（USB）。設定は渡さない', async () => {
   const d = tmp(); process.env.ADB = fakeAdb(d, 'ABC123\\tdevice');
   const r = await load().install({}, () => { });
   assert.ok(r.ok, r.message);
-  assert.match(fs.readFileSync(path.join(d, 'calls.log'), 'utf8'), /-s ABC123 install -r .*YuriiKasten-memo\.apk/);
+  assert.match(fs.readFileSync(path.join(d, 'calls.log'), 'utf8'), /-s ABC123 install -r .*YuriiNote-memo\.apk/);
   assert.ok(!fs.existsSync(path.join(d, 'settings.out')));
 });
 
@@ -54,10 +54,10 @@ function fakePhone(dir) {
 D="${data}"
 case "$*" in
   devices) printf 'List of devices attached\\nPH1\\tdevice\\n' ;;
-  *"pm path"*) echo 'package:/x' ;;
-  *"exec-out run-as net.yurii.kasten cat "*) rel="\${*##*cat }"; cat "$D/$rel" ;;
+  *"pm path net.yurii.note"*) echo 'package:/x' ;;
+  *"exec-out run-as net.yurii.note cat "*) rel="\${*##*cat }"; cat "$D/$rel" ;;
   *"sh -c 'cat > "*) rel="\$(echo "$*" | sed -E "s/.*cat > ([^']*)'.*/\\1/")"; cat > "$D/$rel" ;;
-  *"run-as net.yurii.kasten mv "*) all="$*"; tail="\${all##*mv }"; set -- $tail; mv "$D/$1" "$D/$2" ;;
+  *"run-as net.yurii.note mv "*) all="$*"; tail="\${all##*mv }"; set -- $tail; mv "$D/$1" "$D/$2" ;;
 esac
 exit 0
 `, { mode: 0o755 });

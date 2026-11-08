@@ -7,7 +7,7 @@ android {
     namespace = "net.yurii.kasten"
     compileSdk = 34
     defaultConfig {
-        applicationId = "net.yurii.kasten"
+        applicationId = "net.yurii.note"
         minSdk = 26
         targetSdk = 34
         versionCode = 4
