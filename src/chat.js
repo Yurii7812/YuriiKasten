@@ -12,6 +12,8 @@ let sel = null;        // 選んでいるメモの id（ノートにする・引
 let lastSel = null;
 let draft = '';
 const DIARY = '日記';
+const recKinds = () => (ctx.records ? ctx.records() : []).map(r => r.name).filter(n => n !== DIARY);   // 夢などの時系列記録の種類（日記と同じように使える）
+const isRec = n => n === DIARY || recKinds().includes(n);
 
 export function init(docs) {
   const d = docs['C_チャット'] || {};
@@ -31,7 +33,8 @@ export function listHtml() {
   const row = (name, label, n, icon) => `<div class="item${ctx.cur() && ctx.cur().k === 'chat' && ctx.cur().topic === name ? ' on' : ''}" data-chat="${esc(name)}"><span class="ci">${icon}</span><b style="color:var(--fg);font-weight:400">${esc(label)}</b>${n === null ? '' : `<small>${n}</small>`}</div>`;
   return `<div id="clist"><div class="dtop"><button class="p" id="c-new">＋ トピック</button></div>`
     + row('*', '全部表示', countOf('*'), '💬') + row('', 'トピック未選択', countOf(''), '📥') + row(DIARY, '日記', countOf(DIARY), '📔')
-    + doc.topics.filter(t => t.name !== DIARY).map(t => row(t.name, t.name, t.type === 'bubble' ? countOf(t.name) : null, t.type === 'bubble' ? '💬' : '📄')).join('') + '</div>';
+    + recKinds().map(k => row(k, k, countOf(k), '📔')).join('')
+    + doc.topics.filter(t => !isRec(t.name)).map(t => row(t.name, t.name, t.type === 'bubble' ? countOf(t.name) : null, t.type === 'bubble' ? '💬' : '📄')).join('') + '</div>';
 }
 
 // ===== 表示するもの =====
@@ -78,7 +81,7 @@ function render() {
     <div class="chat memo">
       <div class="row chat-head">
         <h2 style="margin:0">${esc(title)}</h2>
-        <span class="sub">${view === DIARY ? '日記にも、時刻つきの行で入ります' : view === '*' ? '書いたものは「未選択」に入ります' : t && t.type === 'whole' ? '全体で1つのノート' : ''}</span>
+        <span class="sub">${isRec(view) ? '日記にも、時刻つきの行で入ります' : view === '*' ? '書いたものは「未選択」に入ります' : t && t.type === 'whole' ? '全体で1つのノート' : ''}</span>
         <span class="grow"></span>
         ${be ? '' : `<span class="vseg"><button data-c="vall" class="${viewMode === 'all' ? 'on' : ''}">全部</button><button data-c="vday" class="${viewMode === 'day' ? 'on' : ''}">日ごと</button></span>
           ${viewMode === 'day' ? `<button data-c="dprev" title="前の日">←</button><input type="date" id="c-day" value="${esc(day || L.todayStr())}"><button data-c="dnext" title="次の日">→</button>` : '<input type="date" id="c-jump" title="日付を入れると、その日へ">'}
@@ -128,7 +131,7 @@ function send() {
   } else {
     const m = { id: uid(), topic: view === '*' ? '' : view, t: now, text };
     doc.messages.push(m); save();
-    if (m.topic === DIARY) ctx.api.appendToDay(DIARY, L.dayOf(L.now(new Date(now))), `${hm(now)} ${text.replace(/\n{2,}/g, '\n')}`).then(() => ctx.refreshDiaries());   // 日記の行にも（片方向。あとで日記を直しても、メモは変わらない）
+    if (isRec(m.topic)) ctx.api.appendToDay(m.topic, L.dayOf(L.now(new Date(now))), `${hm(now)} ${text.replace(/\n{2,}/g, '\n')}`).then(() => ctx.refreshDiaries());   // 日記の行にも（片方向。あとで日記を直しても、メモは変わらない）
   }
   inp.value = ''; draft = ''; fit(inp); mentionOff(); paint(); ctx.renderList();
 }
@@ -192,7 +195,7 @@ function removeMsg(m) {
   save(); paint(); ctx.renderList();
 }
 function moveDialog(m) {
-  const names = ['', DIARY, ...doc.topics.filter(t => t.type === 'bubble' && t.name !== DIARY).map(t => t.name)];
+  const names = ['', DIARY, ...recKinds(), ...doc.topics.filter(t => t.type === 'bubble' && !isRec(t.name)).map(t => t.name)];
   dialog(`<h3>トピックを変える</h3>${names.map(n => `<button class="m-add" data-t="${esc(n)}">${n === '' ? 'トピック未選択' : esc(n)}</button>`).join('')}<div class="row"><button id="mv-no">やめる</button></div>`, close => {
     $('#modal .box').onclick = e => { const b = e.target.closest('[data-t]'); if (b) { m.topic = b.dataset.t; save(); close(); paint(); ctx.renderList(); } };
     $('#mv-no').onclick = close;
@@ -258,7 +261,7 @@ export function newTopicDialog() {
     $('#tp-name').focus(); $('#tp-no').onclick = close;
     $('#tp-ok').onclick = async () => {
       const name = $('#tp-name').value.trim();
-      if (!name) return; if (topic(name) || ['全部表示', DIARY].includes(name)) return alert('その名前は使えません');
+      if (!name) return; if (topic(name) || ['全部表示', DIARY].includes(name) || isRec(name)) return alert('その名前は使えません');
       const t = { name, type: 'bubble', stamp: true, entry: null };   // 新しいトピックは、1 件ずつのメモ（旧い「全体型」は、あるものだけ残す）
       doc.topics.push(t); save(); close(); open(name);
     };

@@ -472,7 +472,7 @@ document.addEventListener('keydown', e => {
   const ae = document.activeElement, editing = ae && (/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.isContentEditable);
   if (editing) { if (e.key === 'Escape' && ae.closest && ae.closest('.cm-editor')) { ae.blur(); e.preventDefault(); } return; }   // Esc で書く状態から抜けると、キー操作が使える
   const k = e.key;
-  if (k === 'Backspace' && !$('#q').value) { e.preventDefault(); return go(-1); }   // 前に開いていたものへ（戻るボタンと同じ）
+  if (k === 'Backspace' && !$('#q').value) { e.preventDefault(); go(-1); const off = () => { const a = document.activeElement; if (a && a !== document.body && (a.closest('.cm-editor') || /^(INPUT|TEXTAREA)$/.test(a.tagName))) a.blur(); }; off(); setTimeout(off, 0); setTimeout(off, 80); return; }   // 戻っても入力状態にならない（続けて Backspace で戻れる）   // 前に開いていたものへ（戻るボタンと同じ）
   if (k === 'o' && !decided && cur && ['note', 'topic'].includes(cur.k)) { e.preventDefault(); return locateCur(); }   // 黄色（決めたもの）が無いときは、いま開いているものを一覧の真ん中に
   if (k === 's' && cur && cur.k === 'note') { e.preventDefault(); return startSimilar(); }
   if (k === 'i' && cur && cur.k === 'note') { e.preventDefault(); const t = $('#c-in'); return t ? t.focus() : lastView && lastView.dom.isConnected && lastView.focus(); }   // なりきり・チャットの入力欄、ふつうのノートの本文に入る
@@ -1774,7 +1774,7 @@ function applyState(st) { ({ notes, topics } = st); diaries = st.diaries || diar
 // チャット・なりきり・キャンバスの部品に、アプリの機能を渡す
 Object.assign(ctx, {
   api, later, flush, place, renderTabs, openLink, applyState, readings: () => readings, lastNote: () => lastNote,
- renderList, pick, get, free, refreshDiaries, openNote, openDiary, getDiary,
+ renderList, pick, get, free, refreshDiaries, records: () => records, openNote, openDiary, getDiary,
   setCur: c => { cur = c; }, setMode: m => { mode = m; }, cur: () => cur, notes: () => notes, vault: () => vault,
   touchNote: n => saveNote(n),
   touchDiary: d => later('dy' + (d.kind || '日記') + d.date, () => api.saveDiary({ date: d.date, kind: d.kind || '日記', body: d.body })),
