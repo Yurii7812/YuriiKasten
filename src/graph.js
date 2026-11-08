@@ -86,9 +86,9 @@ export const matches = (n, groups) => !groups.length || groups.some(g => g.every
 // ----- データ（Trilium の data.ts / note_map API 相当 ＋ Obsidian のフィルター）-----
 // notes: [{s,id,keywords,body,noid,color}]  link map の辺 = :ID のリンク（紙とデジタルの間も）／ tree map の辺 = 番号の親子
 export function loadNotesAndRelations(notes, titleOf, mapType, opt = {}) {
-  const real = notes.filter(n => !n.noid), has = new Set(real.map(n => n.s + ':' + n.id)), byKey = new Map(real.map(n => [n.s + ':' + n.id, n]));
+  const real = notes.slice(), has = new Set(real.map(n => n.s + ':' + n.id)), byKey = new Map(real.map(n => [n.s + ':' + n.id, n])), byStem = new Map(real.filter(n => n.stem).map(n => [n.stem, n.s + ':' + n.id]));
   const topicsOf = new Map(); for (const t of opt.topics || []) { const add = k => { if (!topicsOf.has(k)) topicsOf.set(k, []); if (!topicsOf.get(k).includes(t.name)) topicsOf.get(k).push(t.name); }; if (t.entry) add(t.entry.s + ':' + t.entry.id); for (const r of opt.mergeTopic(t).rows) for (const sp of ['d', 'p']) for (const id of r[sp]) add(sp + ':' + L.splitAnchor(id).id); }
-  let nodes = real.filter(n => opt.paper !== false || n.s !== 'p').map(n => { const k = n.s + ':' + n.id; return { id: k, s: n.s, nid: n.id, kind: 'note', name: (n.s === 'p' ? '紙 ' : '') + n.id + ' ' + titleOf(n), color: n.color || null, body: n.body || '', kws: n.keywords || [], tops: topicsOf.get(k) || [] }; });
+  let nodes = real.filter(n => opt.paper !== false || n.s !== 'p').map(n => { const k = n.s + ':' + n.id; return { id: k, s: n.s, nid: n.id, kind: 'note', name: (n.s === 'p' ? '紙 ' : n.noid ? '' : '') + (n.noid ? '' : n.id + ' ') + titleOf(n), glyph: n.kind === 'rp' ? '🎭' : n.kind === 'canvas' ? '🗺' : '', color: n.color || null, body: n.body || '', kws: n.keywords || [], tops: topicsOf.get(k) || [] }; });
   const keep = new Set(nodes.map(n => n.id)); let links = [];
   const addLink = (a, b) => { if (keep.has(a) && keep.has(b)) links.push({ id: a + '-' + b, source: a, target: b, name: '' }); };
   if (mapType === 'tree') { for (const n of real) { const p = L.parentIn(n.id, x => has.has(n.s + ':' + x)); if (p) addLink(n.s + ':' + p, n.s + ':' + n.id); } }
@@ -102,6 +102,27 @@ export function loadNotesAndRelations(notes, titleOf, mapType, opt = {}) {
   const add = (id, kind, name) => { if (!keep.has(id)) { keep.add(id); nodes.push({ id, kind, name, color: null, body: '', kws: [], tops: [] }); } };
   if (opt.showTopics) for (const t of opt.topics || []) { const tid = 'T:' + t.name; const rows = opt.mergeTopic(t).rows; const ents = []; if (t.entry && keep.has(t.entry.s + ':' + t.entry.id)) ents.push(t.entry.s + ':' + t.entry.id); for (const r of rows) for (const sp of ['d', 'p']) for (const id of r[sp]) { const k = sp + ':' + L.splitAnchor(id).id; if (keep.has(k)) ents.push(k); } if (!ents.length) continue; add(tid, 'topic', t.name); for (const e of new Set(ents)) links.push({ id: tid + '-' + e, source: tid, target: e, name: '' }); }
   if (opt.showKw) { const kn = new Map(); for (const n of nodes) if (n.kind === 'note') for (const k of n.kws) (kn.get(k) || kn.set(k, []).get(k)).push(n.id); for (const [k, ids] of kn) { if (ids.length < 2) continue; add('K:' + k, 'kw', k); for (const e of ids) links.push({ id: 'K:' + k + '-' + e, source: 'K:' + k, target: e, name: '' }); } }
+  // チャットメモ（トピック・引用したもの/されたもの）と、添付ファイル
+  if (mapType !== 'tree') {
+    const ch = opt.chat, fl = opt.files || [];
+    const fileNode = new Map(); const fileOf = text => { const out = []; for (const f of fl) if (text && text.includes(f.name)) out.push(f); return out; };
+    const addFile = f => { const id = 'F:' + f.name; add(id, 'file', f.title || f.orig || f.name); const nd = nodes.find(x => x.id === id); if (nd) { nd.fname = f.name; nd.ext = f.ext; } return id; };
+    if (opt.showFiles) for (const n of nodes.filter(x => x.kind === 'note')) for (const f of fileOf(n.body)) links.push({ id: n.id + '-F:' + f.name, source: n.id, target: addFile(f), name: '' });
+    if (opt.showChat && ch) {
+      const MEN = /\(memo:([^)\s]+)\)/g, memoById = new Map(ch.messages.map(m => [m.id, m]));
+      const quoted = new Set(), quoting = new Set(), noted = new Set(Object.keys(ch.noted || {}).filter(k => (ch.noted[k] || []).length));
+      for (const m of ch.messages) { let x; MEN.lastIndex = 0; while ((x = MEN.exec(m.text || ''))) if (memoById.has(x[1])) { quoted.add(x[1]); quoting.add(m.id); } }
+      const inc = new Set([...quoted, ...quoting, ...noted]), topicId = name => 'C:' + name;
+      for (const t of ch.topics) { add(topicId(t.name), 'chat', t.name); if (t.parent) links.push({ id: topicId(t.parent) + '-' + topicId(t.name), source: topicId(t.parent), target: topicId(t.name), name: '' }); }
+      for (const m of ch.messages) if (inc.has(m.id)) {
+        const id = 'M:' + m.id; add(id, 'memo', (m.text || '').split('\n')[0].replace(/\[@[^\]]*\]\(memo:[^)]*\)\s*/g, '').slice(0, 24) || '（メモ）');
+        const tn = m.topic && ch.topics.find(t => t.name === m.topic); if (tn) links.push({ id: topicId(tn.name) + '-' + id, source: topicId(tn.name), target: id, name: '' });
+        let x; MEN.lastIndex = 0; while ((x = MEN.exec(m.text || ''))) if (inc.has(x[1])) links.push({ id: id + '-M:' + x[1], source: id, target: 'M:' + x[1], name: '' });
+        for (const stem of ch.noted[m.id] || []) { const k = byStem.get(stem); if (k && keep.has(k)) links.push({ id: id + '-' + k, source: id, target: k, name: '' }); }
+        if (opt.showFiles) for (const f of fileOf(m.text)) links.push({ id: id + '-F:' + f.name, source: id, target: addFile(f), name: '' });
+      }
+    }
+  }
   if (opt.orphans === false) { const used = new Set(links.flatMap(l => [l.source, l.target])); nodes = nodes.filter(n => used.has(n.id)); }
   // 大きさ（Trilium）
   const sizes = {};
@@ -110,14 +131,14 @@ export function loadNotesAndRelations(notes, titleOf, mapType, opt = {}) {
   return { nodes: nodes.filter(n => n.id in sizes), links: links.filter(l => keep.has(l.source) && keep.has(l.target)), noteIdToSizeMap: sizes };
 }
 
-const DEF = () => ({ mapType: 'link', f: { q: '', kw: false, topics: false, orphans: true, paper: true }, groups: [], d: { arrows: true, fade: .5, nodeSize: 1, linkW: 1 }, force: { center: .2, repel: null, link: null, dist: 40 }, fixNodes: false, dock: false, tab: 'set', dockW: 320, open: { f: true, g: true, d: true, c: true }, sel: null });
+const DEF = () => ({ mapType: 'link', f: { q: '', kw: false, topics: false, orphans: true, paper: true, chat: true, files: true }, groups: [], d: { arrows: true, fade: .5, nodeSize: 1, linkW: 1 }, force: { center: .12, repel: null, link: null, dist: 40 }, fixNodes: false, dock: false, tab: 'set', dockW: 320, open: { f: true, g: true, d: true, c: true }, sel: null });
 const GROUP_COLORS = ['#e03131', '#f08c00', '#2f9e44', '#1c7ed6', '#7048e8', '#d6336c'];
 
 export function mount(box, o) {
   const st = o.state; { const d = DEF(); for (const k in d) if (st[k] === undefined) st[k] = d[k]; for (const k of ['f', 'd', 'force', 'open']) st[k] = { ...d[k], ...st[k] }; }
   box.innerHTML = '<div class="note-map-widget"><div class="nm-style"><span class="nm-bg"></span><span class="nm-anchor"></span><span class="nm-anchor-icon"></span></div><div class="note-map-container"></div><aside class="nm-dock"><div class="nm-grip" title="ドラッグして幅を変える"></div><div class="nm-tabs"><button data-tab="set">設定</button><button data-tab="note">ノート</button></div><div class="nm-set"></div><div class="nm-note"></div></aside></div>';
   const wrap = box.querySelector('.note-map-widget'), container = box.querySelector('.note-map-container'), styleEl = box.querySelector('.nm-style'), noteEl = box.querySelector('.nm-note'), setEl = box.querySelector('.nm-set'), dockTabs = box.querySelector('.nm-tabs');
-  const data = loadNotesAndRelations(o.notes, o.titleOf, st.mapType, { query: st.f.q, showKw: st.f.kw, showTopics: st.f.topics, orphans: st.f.orphans, paper: st.f.paper, topics: o.topics, mergeTopic: o.mergeTopic });
+  const data = loadNotesAndRelations(o.notes, o.titleOf, st.mapType, { query: st.f.q, showKw: st.f.kw, showTopics: st.f.topics, orphans: st.f.orphans, paper: st.f.paper, topics: o.topics, mergeTopic: o.mergeTopic, chat: o.chat, files: o.files, showChat: st.f.chat, showFiles: st.f.files });
   const remount = (focusSel) => { teardown(); mount(box, o); if (focusSel) { const e = box.querySelector(focusSel); if (e) { e.focus(); try { e.setSelectionRange(e.value.length, e.value.length); } catch { } } } };
   if (data.nodes.length > MAX_NOTES_THRESHOLD && !st.bypass) { wrap.innerHTML = `<div class="none">ノートが ${data.nodes.length} 件あります。多すぎると重くなります。<br><button class="p" id="nm-any" style="margin-top:10px">それでも表示</button></div>`; wrap.querySelector('#nm-any').onclick = () => { st.bypass = true; mount(box, o); }; return; }
   const cs = getComputedStyle(container), colorOf = sel => { const e = styleEl.querySelector(sel); return e ? rgb2hex(getComputedStyle(e).color) : ''; };
@@ -135,7 +156,7 @@ export function mount(box, o) {
   const nodeFocus = createFade(data.nodes, n => hoverNode && !inNeighbourhood(n) ? -1 : 0), linkFocus = createFade(data.links, l => !hoverNode ? 0 : highlightLinks.has(l) ? 1 : -1);
   const colorResolver = document.createElement('canvas').getContext('2d');
   const normalizeColor = c => { if (!colorResolver) return c; colorResolver.fillStyle = '#000000'; colorResolver.fillStyle = c; return typeof colorResolver.fillStyle === 'string' ? colorResolver.fillStyle : c; };
-  const getNodeColors = n => { const g = groups.find(x => x.pq.length && matches(n, x.pq)); const base = g ? g.color : n.kind === 'kw' ? '#c0392b' : n.color || cssData.anchorColor; return { fill: base, icon: cssData.backgroundColor }; };
+  const getNodeColors = n => { const g = groups.find(x => x.pq.length && matches(n, x.pq)); const base = g ? g.color : n.kind === 'kw' ? '#c0392b' : n.kind === 'chat' ? '#0b7285' : n.kind === 'memo' ? '#868e96' : n.kind === 'file' ? '#e67700' : n.color || cssData.anchorColor; return { fill: base, icon: cssData.backgroundColor }; };
   const keepPainting = () => { graph.autoPauseRedraw(false); clearTimeout(fadeTimer); fadeTimer = setTimeout(() => graph.autoPauseRedraw(true), HOVER_FADE_MS + 100); };
   function setHovered(node) {
     nodeFocus.restart(); linkFocus.restart(); keepPainting(); hoverNode = node; neighbours = new Set(); highlightLinks = new Set(); if (!node) return;
@@ -148,7 +169,13 @@ export function mount(box, o) {
   function paintNode(node, color, ctx) {
     const { x, y } = node; if (x === undefined || y === undefined) return;
     const size = S(node.id), radius = size * NODE_RADIUS_RATIO;
-    ctx.fillStyle = color; ctx.beginPath(); if (node.kind === 'topic') ctx.rect(x - radius, y - radius, radius * 2, radius * 2); else ctx.arc(x, y, radius, 0, 2 * Math.PI, false); ctx.fill();
+    ctx.fillStyle = color; ctx.beginPath();
+    if (node.kind === 'topic' || node.kind === 'file') ctx.rect(x - radius, y - radius, radius * 2, radius * 2);
+    else if (node.kind === 'chat') { ctx.moveTo(x, y - radius * 1.25); ctx.lineTo(x + radius * 1.25, y); ctx.lineTo(x, y + radius * 1.25); ctx.lineTo(x - radius * 1.25, y); ctx.closePath(); }
+    else ctx.arc(x, y, radius, 0, 2 * Math.PI, false);
+    ctx.fill();
+    const glyph = node.glyph || (node.kind === 'file' ? (/^(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(node.ext || '') ? '🖼' : '📎') : node.kind === 'chat' ? '💬' : '');
+    if (glyph && radius * zoomLevel >= 6) { ctx.save(); ctx.font = `${radius * 1.3}px ${cssData.fontFamily}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(glyph, x, y + radius * .08); ctx.restore(); }
     if (node.id === mapRootId || node.id === st.sel) { const w = ANCHOR_RING_PX / zoomLevel; ctx.strokeStyle = node.id === st.sel ? cssData.textColor : cssData.anchorIconColor; ctx.lineWidth = w; ctx.beginPath(); ctx.arc(x, y, radius + w / 2, 0, 2 * Math.PI, false); ctx.stroke(); }
     if (!labelOn(node.id, node)) return;
     const fs = getLabelFontSize(LABEL_FONT_PX, zoomLevel);
@@ -172,7 +199,7 @@ export function mount(box, o) {
   // ---- 力（Obsidian の Forces）----
   const ratio = data.nodes.length / Math.max(1, data.links.length), charge0 = Math.min(-3, -20 / Math.pow(ratio, 1.5));
   if (st.force.repel === null) st.force.repel = Math.round(-charge0 * 10) / 10;
-  const gravity = Object.assign(alpha => { for (const n of data.nodes) { if (n.x === undefined) continue; n.vx -= n.x * st.force.center * .35 * alpha; n.vy -= n.y * st.force.center * .35 * alpha; } }, { initialize() { } });   // 中心へ引く力: 原点に向けて、遠いほど強く引く
+  const gravity = Object.assign(alpha => { for (const n of data.nodes) { if (n.x === undefined) continue; const k = st.force.center * st.force.center * .12 * alpha; n.vx -= n.x * k; n.vy -= n.y * k; } }, { initialize() { } });   // 中心へ引く力: 原点に向けて、遠いほど強く引く
   const applyForces = () => { graph.d3Force('gravity', gravity); graph.d3Force('center')?.strength(0); graph.d3Force('charge')?.strength(-st.force.repel); graph.d3Force('charge')?.distanceMax(1000); if (st.force.link !== null) graph.d3Force('link')?.strength(st.force.link); graph.d3Force('link')?.distance(st.force.dist); };
   applyForces();
   // ---- 枠合わせ（Trilium の setupFraming）----
@@ -184,7 +211,7 @@ export function mount(box, o) {
   let ticks = 0; graph.onEngineTick(() => { if (!container.isConnected) { teardown(); return; } if (framing) fit(0); if (++ticks === TICKS_UNTIL_DAMPED && framedIds.size < DAMPING_MAX_NOTES) graph.d3VelocityDecay(0.4); });
   // ---- 操作: 1 回押す = 横にノート／ 2 回押す = ノートを開く ----
   let lastClick = { id: null, t: 0 };
-  graph.onNodeClick(node => { if (!node.id) return; const now = Date.now(); if (lastClick.id === node.id && now - lastClick.t < 400 && node.kind === 'note') { o.onOpen(node.s, node.nid, null); return; } lastClick = { id: node.id, t: now }; st.sel = node.id; showNote(); keepPainting(); })
+  graph.onNodeClick(node => { if (!node.id) return; const now = Date.now(); if (lastClick.id === node.id && now - lastClick.t < 400) { if (node.kind === 'note') o.onOpen(node.s, node.nid, null); else if (node.kind === 'chat') o.onChat(node.name); else if (node.kind === 'memo') o.onMemo(node.id.slice(2)); else if (node.kind === 'file') o.onFile(node.fname); return; } lastClick = { id: node.id, t: now }; st.sel = node.id; showNote(); keepPainting(); })
     .onNodeRightClick((node, e) => { if (node.id && node.kind === 'note' && o.onMenu) o.onMenu(node, e); })
     .onNodeDragEnd(node => { if (st.fixNodes) { node.fx = node.x; node.fy = node.y; } else { node.fx = undefined; node.fy = undefined; } })
     .onBackgroundClick(() => { st.sel = null; showNote(); keepPainting(); });
@@ -207,7 +234,10 @@ export function mount(box, o) {
     const nb = id => data.links.filter(l => idOf(l.source) === id || idOf(l.target) === id).map(l => idOf(l.source) === id ? idOf(l.target) : idOf(l.source)), by = new Map(data.nodes.map(x => [x.id, x]));
     const outs = data.links.filter(l => idOf(l.source) === n.id).map(l => idOf(l.target)), ins = data.links.filter(l => idOf(l.target) === n.id).map(l => idOf(l.source));
     const pill = id => `<span class="nm-pill" data-id="${esc(id)}">${esc((by.get(id) || {}).name || id)}</span>`;
-    if (n.kind !== 'note') { noteEl.innerHTML = `<h3>${n.kind === 'topic' ? '📑 ' : '# '}${esc(n.name)}</h3><div class="sub">${n.kind === 'topic' ? 'トピックIndex' : 'キーワード'}</div><div class="nm-rel">つながっているノート</div>${[...new Set(nb(n.id))].map(pill).join('')}${n.kind === 'topic' ? '<div class="nm-btn"><button data-open-topic class="p">開く</button></div>' : ''}`; noteEl.querySelector('[data-open-topic]')?.addEventListener('click', () => o.onOpen(null, null, null, n.name)); }
+    if (n.kind === 'chat') { noteEl.innerHTML = `<div class="nm-ntitle"><span class="nm-nid">💬</span><b>${esc(n.name)}</b></div><div class="nm-btn"><button data-oc class="p">チャットメモで開く</button></div><div class="nm-rel">つながり</div>${[...new Set(nb(n.id))].map(pill).join('')}`; noteEl.querySelector('[data-oc]')?.addEventListener('click', () => o.onChat(n.name)); }
+    else if (n.kind === 'memo') { const m = ((o.chat && o.chat.messages) || []).find(x => 'M:' + x.id === n.id); noteEl.innerHTML = `<div class="nm-ntitle"><span class="nm-nid">${m ? new Date(m.t).toLocaleString() : ''}</span><button data-om class="nm-open" title="チャットメモで開く">↗</button></div><div class="nm-body md">${m ? o.renderMd(m.text || '') : ''}</div><div class="nm-links"><div class="nm-rel">つながり</div>${[...new Set(nb(n.id))].map(pill).join('')}</div>`; noteEl.querySelector('[data-om]')?.addEventListener('click', () => o.onMemo(n.id.slice(2))); }
+    else if (n.kind === 'file') { const img = /^(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(n.ext || ''); noteEl.innerHTML = `<div class="nm-ntitle"><span class="nm-nid">${img ? '🖼' : '📎'}</span><b>${esc(n.name)}</b></div>${img && o.fileUrl ? `<img class="nm-img" src="${esc(o.fileUrl(n.fname))}">` : ''}<div class="nm-btn"><button data-of class="p">ファイルを開く</button></div><div class="nm-rel">使っている所</div>${[...new Set(nb(n.id))].map(pill).join('')}`; noteEl.querySelector('[data-of]')?.addEventListener('click', () => o.onFile(n.fname)); }
+    else if (n.kind !== 'note') { noteEl.innerHTML = `<h3>${n.kind === 'topic' ? '📑 ' : '# '}${esc(n.name)}</h3><div class="sub">${n.kind === 'topic' ? 'トピックIndex' : 'キーワード'}</div><div class="nm-rel">つながっているノート</div>${[...new Set(nb(n.id))].map(pill).join('')}${n.kind === 'topic' ? '<div class="nm-btn"><button data-open-topic class="p">開く</button></div>' : ''}`; noteEl.querySelector('[data-open-topic]')?.addEventListener('click', () => o.onOpen(null, null, null, n.name)); }
     else {
       const outs2 = outs, ins2 = ins, host = document.createElement('div'); host.className = 'nm-real'; noteEl.innerHTML = ''; noteEl.append(host);
       if (!(o.mountNote && o.mountNote(host, n.s, n.nid))) { const note = o.get(n.s, n.nid); host.innerHTML = `<div class="nm-ntitle"><b>${esc(n.name)}</b><button data-open class="nm-open" title="ノートを開く">↗</button></div><div class="nm-body md">${note ? o.renderMd(note.body || '') : ''}</div>`; host.querySelector('[data-open]')?.addEventListener('click', () => o.onOpen(n.s, n.nid, null)); }
@@ -230,10 +260,10 @@ export function mount(box, o) {
   const tog = (key, label, on) => `<div class="nm-row"><span>${label}</span><label class="nm-sw"><input type="checkbox" data-t="${key}" ${on ? 'checked' : ''}><i></i></label></div>`;
   const sec = (k, title, body) => `<details data-sec="${k}" ${st.open[k] ? 'open' : ''}><summary>${title}</summary>${body}</details>`;
   const panel = document.createElement('div'); panel.className = 'nm-panel';
-  panel.innerHTML = sec('f', 'フィルター', `<input class="nm-q" data-q placeholder="ノートを検索（例: id:1a  kw:GUI  -下書き  topic:PKM）" value="${esc(st.f.q)}">${tog('f.kw', 'キーワード', st.f.kw)}${tog('f.topics', 'トピックIndex', st.f.topics)}${tog('f.paper', '紙のノート', st.f.paper)}${tog('f.orphans', 'つながりの無いノート', st.f.orphans)}`)
+  panel.innerHTML = sec('f', 'フィルター', `<input class="nm-q" data-q placeholder="ノートを検索（例: id:1a  kw:GUI  -下書き  topic:PKM）" value="${esc(st.f.q)}">${tog('f.kw', 'キーワード', st.f.kw)}${tog('f.topics', 'トピックIndex', st.f.topics)}${tog('f.paper', '紙のノート', st.f.paper)}${tog('f.chat', 'チャットメモ', st.f.chat)}${tog('f.files', '添付ファイル', st.f.files)}${tog('f.orphans', 'つながりの無いノート', st.f.orphans)}`)
     + sec('g', 'グループ（検索で色分け）', `<div data-groups>${st.groups.map((g, i) => `<div class="nm-g"><input type="color" data-gc="${i}" value="${g.color}"><input data-gq="${i}" value="${esc(g.query)}" placeholder="検索（例: kw:GUI）"><button data-gx="${i}" title="消す">×</button></div>`).join('')}</div><button class="nm-add" data-gadd>新しいグループ</button>`)
     + sec('d', '表示', `${tog('d.arrows', '矢印', st.d.arrows)}${slider('d.fade', '文字の消える閾値', 0, 1, .05, st.d.fade)}${slider('d.nodeSize', 'ノードの大きさ', .3, 3, .1, st.d.nodeSize)}${slider('d.linkW', '線の太さ', .3, 4, .1, st.d.linkW)}`)
-    + sec('c', '力', `${slider('force.center', '中心へ引く力', 0, 1, .01, st.force.center)}${slider('force.repel', '反発する力', 0, 60, .5, st.force.repel)}${slider('force.link', '線で引く力', 0, 1, .01, st.force.link ?? .5)}${slider('force.dist', '線の長さ', 1, 200, 1, st.force.dist)}`);
+    + sec('c', '力', `${slider('force.center', '中心へ引く力', 0, 1, .005, st.force.center)}${slider('force.repel', '反発する力', 0, 60, .5, st.force.repel)}${slider('force.link', '線で引く力', 0, 1, .01, st.force.link ?? .5)}${slider('force.dist', '線の長さ', 1, 200, 1, st.force.dist)}`);
   setEl.append(panel);
   const setPath = (path, v) => { const [a, b] = path.split('.'); st[a][b] = v; };
   panel.addEventListener('toggle', e => { const d = e.target.closest('details'); if (d) st.open[d.dataset.sec] = d.open; }, true);
