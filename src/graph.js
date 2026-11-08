@@ -100,13 +100,13 @@ export function loadNotesAndRelations(notes, titleOf, mapType, opt = {}) {
     for (const n of real) for (const t of L.tokens(n.body || '')) { const k = (t.sp || n.s) + ':' + t.id, me = n.s + ':' + n.id, key = me + '-' + k; if (t.k === 'ref' && k !== me && has.has(k) && !seen.has(key)) { seen.add(key); addLink(me, k); } }
   }
   // 検索（フィルター）: 当たったノートだけ
-  const qg = parseQuery(opt.query); if (qg.length) { const ok = new Set(nodes.filter(n => matches(n, qg)).map(n => n.id)); nodes = nodes.filter(n => ok.has(n.id)); keep.clear(); nodes.forEach(n => keep.add(n.id)); links = links.filter(l => keep.has(l.source) && keep.has(l.target)); }
+  const qg = parseQuery(opt.query), fzScope = qg.some(g => g.some(t => !t.neg && (t.key === 'folgezettel' || t.key === 'fz'))); if (qg.length) { const ok = new Set(nodes.filter(n => matches(n, qg)).map(n => n.id)); nodes = nodes.filter(n => ok.has(n.id)); keep.clear(); nodes.forEach(n => keep.add(n.id)); links = links.filter(l => keep.has(l.source) && keep.has(l.target)); }
   // トピックIndex・キーワードのノード（Obsidian の「タグ」に当たる）
   const add = (id, kind, name) => { if (!keep.has(id)) { keep.add(id); nodes.push({ id, kind, name, color: null, body: '', kws: [], tops: [] }); } };
-  if (opt.showTopics) for (const t of opt.topics || []) { const tid = 'T:' + t.name; const rows = opt.mergeTopic(t).rows; const ents = []; if (t.entry && keep.has(t.entry.s + ':' + t.entry.id)) ents.push(t.entry.s + ':' + t.entry.id); for (const r of rows) for (const sp of ['d', 'p']) for (const id of r[sp]) { const k = sp + ':' + L.splitAnchor(id).id; if (keep.has(k)) ents.push(k); } if (!ents.length) continue; add(tid, 'topic', t.name); for (const e of new Set(ents)) links.push({ id: tid + '-' + e, source: tid, target: e, name: '' }); }
-  if (opt.showKw) { const kn = new Map(); for (const n of nodes) if (n.kind === 'note') for (const k of n.kws) (kn.get(k) || kn.set(k, []).get(k)).push(n.id); for (const [k, ids] of kn) { if (ids.length < 2) continue; add('K:' + k, 'kw', k); for (const e of ids) links.push({ id: 'K:' + k + '-' + e, source: 'K:' + k, target: e, name: '' }); } }
+  if (opt.showTopics && !fzScope) for (const t of opt.topics || []) { const tid = 'T:' + t.name; const rows = opt.mergeTopic(t).rows; const ents = []; if (t.entry && keep.has(t.entry.s + ':' + t.entry.id)) ents.push(t.entry.s + ':' + t.entry.id); for (const r of rows) for (const sp of ['d', 'p']) for (const id of r[sp]) { const k = sp + ':' + L.splitAnchor(id).id; if (keep.has(k)) ents.push(k); } if (!ents.length) continue; add(tid, 'topic', t.name); for (const e of new Set(ents)) links.push({ id: tid + '-' + e, source: tid, target: e, name: '' }); }
+  if (opt.showKw && !fzScope) { const kn = new Map(); for (const n of nodes) if (n.kind === 'note') for (const k of n.kws) (kn.get(k) || kn.set(k, []).get(k)).push(n.id); for (const [k, ids] of kn) { if (ids.length < 2) continue; add('K:' + k, 'kw', k); for (const e of ids) links.push({ id: 'K:' + k + '-' + e, source: 'K:' + k, target: e, name: '' }); } }
   // チャットメモ（トピック・引用したもの/されたもの）と、添付ファイル
-  if (mapType !== 'tree') {
+  if (mapType !== 'tree' && !fzScope) {
     const ch = opt.chat, fl = opt.files || [];
     const fileNode = new Map(); const fileOf = text => { const out = []; for (const f of fl) if (text && text.includes(f.name)) out.push(f); return out; };
     const addFile = f => { const id = 'F:' + f.name; add(id, 'file', f.title || f.orig || f.name); const nd = nodes.find(x => x.id === id); if (nd) { nd.fname = f.name; nd.ext = f.ext; } return id; };
@@ -128,7 +128,7 @@ export function loadNotesAndRelations(notes, titleOf, mapType, opt = {}) {
       }
     }
   }
-  if (opt.orphans === false && !qg.some(g => g.some(t => !t.neg && (t.key === 'folgezettel' || t.key === 'fz')))) { const used = new Set(links.flatMap(l => [l.source, l.target])); nodes = nodes.filter(n => used.has(n.id)); }
+  if (opt.orphans === false && !fzScope) { const used = new Set(links.flatMap(l => [l.source, l.target])); nodes = nodes.filter(n => used.has(n.id)); }
   // 大きさ（Trilium）
   const sizes = {};
   if (mapType === 'tree') { const kids = new Map(); for (const l of links) (kids.get(l.source) || kids.set(l.source, []).get(l.source)).push(l.target); const desc = k => (kids.get(k) || []).reduce((a, c) => a + 1 + desc(c), 0); for (const n of nodes) { sizes[n.id] = 4; const c = desc(n.id); if (c > 0) sizes[n.id] += 1 + Math.round(Math.log(c) / Math.log(1.5)); } }
