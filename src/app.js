@@ -1059,7 +1059,18 @@ function openExport(t, keep) {
 }
 // ===== カードビュー（Google Keep 風。画面いっぱいにカードだけ。保存ボタンは無く、書くたびに自動保存）=====
 const keepPrefs = { f: 'all', q: '' };
-const KCOL = { '': '#ffffff', red: '#fde2e0', orange: '#fdebd0', yellow: '#fff6c2', green: '#dff5e1', teal: '#d9f3f1', blue: '#dce9fd', purple: '#eadcfb', pink: '#fbdcec', gray: '#e8eaed' };
+const KCOL = { '': '#ffffff', red: '#F28B82', orange: '#FBBC04', yellow: '#FFF475', green: '#CCFF90', teal: '#A7FFEB', blue: '#CBF0F8', darkblue: '#AECBFA', purple: '#D7AEFB', pink: '#FDCFE8', brown: '#E6C9A8', gray: '#E8EAED' };   // Google Keep と同じ色
+// Material の線画アイコン（Google Keep のクローンと同じ種類）
+const MI = { palette: 'M12 3a9 9 0 0 0 0 18c1.1 0 1.5-.9 1.5-1.5 0-.4-.2-.8-.4-1-.2-.3-.4-.6-.4-1 0-.8.7-1.5 1.5-1.5H16a5 5 0 0 0 5-5c0-4.4-4-8-9-8zm-5.5 9a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3-4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3 4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z',
+  check: 'M19 5v14H5V5h14m0-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-9 14l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z',
+  label: 'M17.63 5.84C17.27 5.33 16.67 5 16 5L5 5.01C3.9 5.01 3 5.9 3 7v10c0 1.1.9 1.99 2 1.99L16 19c.67 0 1.27-.33 1.63-.84L22 12l-4.37-6.16zM16 17H5V7h11l3.55 5L16 17z',
+  copy: 'M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z',
+  del: 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM8 9h8v10H8V9zm7.5-5l-1-1h-5l-1 1H5v2h14V4z',
+  arch: 'M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5L6.5 12H10v-2h4v2h3.5L12 17.5zM5.12 5l.81-1h12l.94 1H5.12z',
+  pin: 'M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3zM8.5 12c.64-.74 1.5-1.82 1.5-3V4h4v5c0 1.18.86 2.26 1.5 3h-7z',
+  open: 'M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z',
+  img: 'M19 5v14H5V5h14m0-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-4.86 8.86l-3 3.87L9 13.14 6 17h12l-3.86-5.14z' };
+const mi = n => `<svg class="mi" viewBox="0 0 24 24" width="18" height="18"><path d="${MI[n]}"/></svg>`;
 let trashCache = [];
 function openCards(keep) { cur = place({ k: 'cards' }, keep); mode = 'notes'; drawCards(true); }
 const kImg = n => { try { return `${vault.replace(/\/$/, '')}/${decodeURIComponent(n)}`.split('/').map(encodeURIComponent).join('/').replace(/^%2F/, '/'); } catch { return ''; } };
@@ -1084,14 +1095,17 @@ function drawCards(full) {
     $('#pane').innerHTML = `<div class="keep"><div class="ktop"><input class="ksearch" id="k-q" placeholder="カードを探す" value="${esc(keepPrefs.q)}">
       ${[['all', '🗒 すべて'], ['d', '💻'], ['p', '📜'], ['u', '📥'], ['arch', '🗄'], ['trash', '🗑']].map(([k, l]) => `<span class="kchip" data-kf="${k}" title="${{ all: 'すべて', d: 'デジタル', p: '紙', u: 'IDなし', arch: 'アーカイブ', trash: 'ごみ箱' }[k]}">${l}</span>`).join('')}
       <select id="k-sort"><option value="fz"${sortBy === 'fz' ? ' selected' : ''}>番号順</option><option value="created"${sortBy === 'created' ? ' selected' : ''}>作成順</option><option value="updated"${sortBy === 'updated' ? ' selected' : ''}>更新順</option></select><span class="kchip" id="k-dir"></span></div>
-      <div class="kadd" id="k-add"><input class="kt" id="k-t" placeholder="タイトル"><input id="k-b1" placeholder="メモを入力…"><textarea id="k-b" placeholder="メモを入力…"></textarea><div class="ktools"><span data-ka="check" title="チェックリスト">☑</span><span data-ka="img" title="画像">🖼</span></div></div>
-      <div class="kboard" id="k-board"></div><div id="kover" hidden></div></div>`;
+      <div class="kadd" id="k-add"><input class="kt" id="k-t" placeholder="タイトル"><input id="k-b1" placeholder="メモを入力…"><textarea id="k-b" placeholder="メモを入力…"></textarea><div class="ktools"><span data-ka="check" title="チェックリスト">${mi('check')}</span><span data-ka="img" title="画像">${mi('img')}</span><span class="grow"></span><button class="kclose" data-ka="close">閉じる</button></div></div>
+      <div class="kscroll"><div class="kboard" id="k-board"></div></div><div id="kover" hidden></div></div>`;
     renderTabs(); renderList();
   }
   document.querySelectorAll('.keep [data-kf]').forEach(c => c.classList.toggle('on', c.dataset.kf === f));
   $('#k-dir').textContent = sortDir === 'asc' ? '↑' : '↓';
   drawBoard();
 }
+// Keep と同じ: カードの幅は 232px で、窓の幅に入るだけの列を、まん中に並べる
+function fitBoard() { const b = $('#k-board'); if (!b || !b.parentElement) return; b.style.width = '100%'; b.style.maxWidth = 'none'; const avail = b.parentElement.clientWidth - 16, n = Math.max(1, Math.min(8, Math.floor(avail / 240))); b.style.width = n * 240 + 16 + 'px'; b.style.columnCount = String(n); b.style.columnWidth = '232px'; }
+window.addEventListener('resize', () => { if (cur && cur.k === 'cards') fitBoard(); });
 function drawBoard() {
   const q = keepPrefs.q.trim().toLowerCase(), f = keepPrefs.f;
   if (f === 'trash') {
@@ -1106,12 +1120,13 @@ function drawBoard() {
   const card = n => {
     const long = (n.body || '').length > 260 || (n.body || '').split('\n').length > 10;
     return `<div class="kcard" data-s="${n.s}" data-id="${esc(n.id)}" style="background:${KCOL[n.color] || '#fff'}">
-      <span class="kpin${n.pinned ? ' on' : ''}" data-kpin title="固定">📌</span>
+      <span class="kpin${n.pinned ? ' on' : ''}" data-kpin title="固定">${mi('pin')}</span>
       ${(n.title || firstLine(n)) ? `<div class="kh">${icon(n) ? icon(n) + ' ' : ''}${esc(titleOf(n))}</div>` : ''}<div class="kb">${kBody(n, 9)}</div>${long ? '<span class="kmore">…</span>' : ''}
       <div class="km"><span>${n.noid ? '📥' : n.s === 'p' ? '📜 ' + esc(n.id) : '💻 ' + esc(n.id)}</span>${n.keywords.map(k => `<span class="kw">${esc(k)}</span>`).join('')}</div>
-      <div class="kact"><span data-kcolor title="色">🎨</span><span data-karch title="${n.archived ? 'アーカイブから戻す' : 'アーカイブ'}">🗄</span><span data-kopen title="ノートの画面で開く">↗</span><span data-kdel title="削除">🗑</span></div></div>`;
+      <div class="kact"><span data-kcolor title="色">${mi('palette')}</span><span data-karch title="${n.archived ? 'アーカイブから戻す' : 'アーカイブ'}">${mi('arch')}</span><span data-kopen title="ノートの画面で開く">${mi('open')}</span><span data-kdel title="削除">${mi('del')}</span></div></div>`;
   };
   $('#k-board').innerHTML = (pinned.length ? `<div class="ksec">📌 固定</div>${pinned.map(card).join('')}${rest.length ? '<div class="ksec">その他</div>' : ''}` : '') + rest.map(card).join('') || '<div class="none">カードがありません。上の欄から、すぐ書けます</div>';
+  fitBoard();
 }
 // カードをその場でふくらませて編集（保存ボタンは無い。書くたびに自動保存。外を押す・Esc で閉じる）
 function kExpand(n, fromEl) {
@@ -1120,7 +1135,7 @@ function kExpand(n, fromEl) {
     <input class="kt" id="ke-t" placeholder="タイトル" value="${esc(n.title || '')}" ${n.kind && n.kind !== 'text' ? 'disabled' : ''}>
     <textarea id="ke-b" placeholder="メモ…" ${n.kind && n.kind !== 'text' ? 'readonly' : ''}>${esc(n.body || '')}</textarea>
     <div class="klabels" id="ke-l"></div>
-    <div class="ktools2"><span data-ke="pin" title="固定">📌</span><span data-ke="color" title="色">🎨</span><span data-ke="check" title="チェックリスト">☑</span><span data-ke="img" title="画像">🖼</span><span data-ke="arch" title="アーカイブ">🗄</span><span data-ke="copy" title="コピー">📋</span><span data-ke="open" title="ノートの画面で開く">↗</span><span data-ke="del" title="削除">🗑</span><span class="grow"></span><small class="sub">${n.noid ? 'IDなし' : esc(n.id)}</small></div>
+    <div class="ktools2"><span data-ke="pin" title="固定">${mi('pin')}</span><span data-ke="color" title="色">${mi('palette')}</span><span data-ke="check" title="チェックリスト">${mi('check')}</span><span data-ke="img" title="画像">${mi('img')}</span><span data-ke="arch" title="アーカイブ">${mi('arch')}</span><span data-ke="copy" title="コピー">${mi('copy')}</span><span data-ke="open" title="ノートの画面で開く">↗</span><span data-ke="del" title="削除">🗑</span><span class="grow"></span><small class="sub">${n.noid ? 'IDなし' : esc(n.id)}</small></div>
     <div class="kpal" id="ke-pal" hidden>${Object.entries(KCOL).map(([k, c]) => `<i data-kc="${k}" style="background:${c}" class="${n.color === k ? 'on' : ''}"></i>`).join('')}</div></div>`;
   const ed = ov.querySelector('.kedit'), t = $('#ke-t'), b = $('#ke-b'), text = !(n.kind && n.kind !== 'text');
   const fit = () => { b.style.height = 'auto'; b.style.height = Math.min(b.scrollHeight + 4, innerHeight * 0.55) + 'px'; };
@@ -1158,6 +1173,7 @@ document.addEventListener('click', async e => {
   if (e.target.closest('#k-b1')) { add.classList.add('open'); $('#k-b').focus(); return; }
   if (add.classList.contains('open') && e.target.closest('[data-ka]')) {
     const a = e.target.closest('[data-ka]').dataset.ka, b = $('#k-b');
+    if (a === 'close') { await commitAdd(); return; }
     if (a === 'check') { b.value += (b.value && !b.value.endsWith('\n') ? '\n' : '') + '- [ ] '; b.focus(); }
     if (a === 'img') pick(false, async f => { const [nm] = await api.addFiles([{ name: f[0].name || 'image.png', bytes: await f[0].arrayBuffer() }]); b.value += (b.value && !b.value.endsWith('\n') ? '\n' : '') + `![](${encRel(nm)})\n`; });
     return;
