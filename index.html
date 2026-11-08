@@ -423,6 +423,12 @@ button{font-size:14.5px;padding:5px 13px;border-color:#d6d9e1;color:#3d4150}
 .idex-view-index .ix{font-size:15px}
 .idex-preview .idex-section .item{padding:6px 10px;border-bottom:1px solid var(--line);cursor:pointer}
 .idex-preview .idex-section .item:hover{background:var(--hl)}
+/* 探索結果の表示順と各グループの並べ替え */
+.idex-result-section>h3{display:flex;align-items:center;flex-wrap:wrap;gap:6px;justify-content:space-between}
+.idex-section-actions{display:flex;align-items:center;gap:3px;flex:none}
+.idex-section-actions select{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--fg);padding:4px 2px}
+.idex-section-actions button{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--fg);padding:4px 7px;cursor:pointer}
+.idex-section-actions button:disabled{opacity:.35;cursor:default}
 /* 長いタイトルは一覧・カード・本文のいずれでも読めるようにする。
    リスト行の高さは自然に広げ、タイトル欄は入力中も折り返し自動伸長。 */
 .item.note .nt,.item.topicrow .nt,.idex-result-section .nt{
