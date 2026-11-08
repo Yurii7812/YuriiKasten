@@ -122,11 +122,15 @@ function links(mode, space) {
     return b.finish();
   };
   return ViewPlugin.fromClass(class {
-    constructor(v) { this.decorations = build(v); }
-    update(u) { if (u.docChanged || u.selectionSet) this.decorations = build(u.view); }
+    constructor(v) { this.decorations = build(v); this.pending = false; }
+    update(u) {
+      if (u.view.composing) { if (u.docChanged) this.decorations = this.decorations.map(u.changes); this.pending = true; return; }   // 日本語の変換中は、作り直さない
+      if (u.docChanged || u.selectionSet || this.pending) { this.decorations = build(u.view); this.pending = false; }
+    }
   }, {
     decorations: v => v.decorations,
     eventHandlers: {
+      compositionend(_e, view) { setTimeout(() => view.dispatch({}), 0); },
       mousedown(e, view) {
         const el = e.target.closest('[data-l]');
         if (!el || (e.button !== 0 && e.button !== 1)) return false;
@@ -215,7 +219,8 @@ function globalIndex() {
   return [...m].sort((a, b) => L.byReading(k => readings[k])(a[0], b[0]));
 }
 // id は 1a のほか 1a(1) も（(番号) は、ノートの中のその場所へ）
-const chip = (s, raw, topic) => { const { id, n } = L.splitAnchor(raw); return `<span class="chip ${s}${get(s, id) ? '' : ' miss'}${topic ? ' dotted' : ''}" data-s="${s}" data-id="${esc(id)}"${n ? ` data-n="${n}"` : ''}>${topic ? (topic.name ? `<i class="dotabove" data-topic="${esc(topic.name)}" title="トピックIndex ${esc(topic.name)}">●</i>` : '<i class="dotabove">●</i>') : ''}${s === 'p' ? '紙' : ''}${esc(raw)}</span>`; };
+const entryOn = (s_, id) => { const o = cur && cur.k === 'topic' && topics.find(x => x.name === cur.name); return !!(o && o.entry && o.entry.s === s_ && o.entry.id === id); };
+const chip = (s, raw, topic) => { const { id, n } = L.splitAnchor(raw); return `<span class="chip ${s}${get(s, id) ? '' : ' miss'}${topic ? ' dotted' : ''}${entryOn(s, id) ? ' entry-on' : ''}" data-s="${s}" data-id="${esc(id)}"${n ? ` data-n="${n}"` : ''}>${topic ? (topic.name ? `<i class="dotabove" data-topic="${esc(topic.name)}" title="トピックIndex ${esc(topic.name)}">●</i>` : '<i class="dotabove">●</i>') : ''}${s === 'p' ? '紙' : ''}${esc(raw)}</span>`; };
 // t があれば、その入口のIDだけ点を付ける
 const dotOf = (t, kw) => { const r = t && L.mergeTopic(t).rows.find(x => x.kw === (kw !== undefined ? kw : t.keyword) && x.dot); return r ? r.dot : t && t.entry; }; // * の印があればそのID、なければ入口
 // トピックIndex の中の行: ID の前の * の印のIDの上に赤い点（そのIDが入口のトピックIndexがあれば、押すとそこへ）
@@ -463,6 +468,7 @@ document.addEventListener('keydown', e => {
   const ae = document.activeElement, editing = ae && (/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.isContentEditable);
   if (editing) { if (e.key === 'Escape' && ae.closest && ae.closest('.cm-editor')) { ae.blur(); e.preventDefault(); } return; }   // Esc で書く状態から抜けると、キー操作が使える
   const k = e.key;
+  if (k === 'Backspace' && !$('#q').value) { e.preventDefault(); return go(-1); }   // 前に開いていたものへ（戻るボタンと同じ）
   if (k === 'c' && cur && ['note', 'topic'].includes(cur.k)) { e.preventDefault(); return locateCur(); }
   if (k === 's' && cur && cur.k === 'note') { e.preventDefault(); return startSimilar(); }
   if (k === 'i' && cur && cur.k === 'note') { e.preventDefault(); const t = $('#c-in'); return t ? t.focus() : lastView && lastView.dom.isConnected && lastView.focus(); }   // なりきり・チャットの入力欄、ふつうのノートの本文に入る
@@ -647,7 +653,7 @@ function openNote(s, id, n, keep, mid) {
     const ok = await changeId(note, v);
     if (!ok) { alert('そのIDは使えません（形が違うか、既にあります）'); e.target.value = noid ? '' : id; }
   };
-  renderTabs(); renderList();
+  renderTabs(); renderList(); if (!$('#q').value) centerOn();   // タブの移動・リンクで開いたときも、見ているノートが一覧の真ん中に（同じタブにあるとき。検索中は動かさない）
   if (!text) { // なりきりチャット・キャンバス: ノートの中に、それぞれの画面
     if (kind === 'rp') RP.render($('#nbody'), note, mid); else CV.render($('#nbody'), note);
     return;
@@ -720,7 +726,7 @@ const ownTopic = n => !n.noid && topicOf(n.s, n.id);   // このノートが入�
 function renderMeta(note) {
   const el = $('#margin'); if (!el) return;
   if (note.noid) { el.innerHTML = '<div class="hint">IDなしのノートです。<br>「IDを付ける」と、キーワードやトピックIndex、バックリンクが使えます。</div>'; return; }
-  const tops = topics.map(t => ({ t, kws: L.mergeTopic(t).rows.filter(r => r[note.s].includes(note.id)).map(r => r.kw) })).filter(x => x.kws.length); // 自分のキーワードがあるものだけ
+  const tops = topics.map(t => ({ t, kws: L.mergeTopic(t).rows.filter(r => r[note.s].some(x => L.splitAnchor(x).id === note.id)).map(r => r.kw) })).filter(x => x.kws.length); // 自分のキーワードがあるものだけ
   const bl = backlinks(note);
   el.innerHTML =
     (note.keywords.length ? `<div class="sec"><div class="l">キーワード</div>${note.keywords.map(k => `<div class="mk" title="${esc(readings[k] || '')}"><span>${esc(k)}</span><b data-kwdel="${esc(k)}" title="外す">×</b></div>`).join('')}</div>` : '') +
@@ -1298,8 +1304,10 @@ function openGraph(keep) {
 }
 function openTopic(name, tmode = 'view', keep) {
   const t = topics.find(x => x.name === name); if (!t) return;
+  if (bgOpen) { place({ k: 'topic', name, mode: tmode }, false); return; }   // ホイールクリック: 背景の新しいタブで開く。いまのタブは動かない
   cur = place({ k: 'topic', name, mode: tmode }, keep); cur.mode = tmode; mode = 'notes';
   if (!inPreview) decided = { k: 'topic', name };
+  if (!inPreview && !$('#q').value && t.entry) tab = t.entry.s === 'p' ? 'p' : 'd';   // 一覧を、そのトピックIndex のあるタブに
   const { rows, stars, refs } = L.mergeTopic(t), e = t.entry;
   let body;
   if (tmode === 'edit') body = `<div class="sub">1行に「キーワード ID ID …」。ID の前に * を付けるとそのIDの上に赤い点（例: PKM *1 1a）。+ で始めると別のトピックIndexへの案内（例: +GUI）。「+名前 ID」なら、その ID へのリンク付きの星（例: +hoge 1）。デジタルと紙は別々に書き、表示はまとめます。</div>
@@ -1330,7 +1338,7 @@ function openTopic(name, tmode = 'view', keep) {
     if (s === 'd') v.focus();
   }
   if (tmode === 'conf') $('#t-id').focus();
-  renderTabs(); renderList();
+  renderTabs(); renderList(); if (!$('#q').value) centerOn();   // 開いたトピックIndex の行が、一覧の真ん中に（青い枠）
 }
 async function topicAct(act) {
   const t = topics.find(x => x.name === cur.name); if (!t) return;

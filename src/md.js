@@ -86,10 +86,14 @@ function lines(view) {
   }
   return Decoration.set(b, true);
 }
+// 日本語の入力（変換中）のあいだは、飾りを作り直さない（作り直すと、変換中の文字や画面の位置が揺れる）。確定したら作り直す
 const linePlugin = ViewPlugin.fromClass(class {
-  constructor(v) { this.decorations = lines(v); }
-  update(u) { if (u.docChanged || u.viewportChanged || u.selectionSet) this.decorations = lines(u.view); }
-}, { decorations: v => v.decorations });
+  constructor(v) { this.decorations = lines(v); this.pending = false; }
+  update(u) {
+    if (u.view.composing) { if (u.docChanged) this.decorations = this.decorations.map(u.changes); this.pending = true; return; }
+    if (u.docChanged || u.viewportChanged || u.selectionSet || this.pending) { this.decorations = lines(u.view); this.pending = false; }
+  }
+}, { decorations: v => v.decorations, eventHandlers: { compositionend(_e, view) { setTimeout(() => view.dispatch({}), 0); } } });
 
 // ===== 表（カーソルが外にあるとき、整形して表示）=====
 const splitRow = l => l.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
