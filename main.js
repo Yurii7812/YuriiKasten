@@ -172,9 +172,9 @@ if (!argv.some(a => ['--version', '--update', '--check', '--install'].includes(a
   if (process.platform === 'win32') app.setAppUserModelId('jp.yurii.yuriinote');
   Menu.setApplicationMenu(null);
   const w = new BrowserWindow({
-    width: 1200, height: 800, title: 'YuriiNote', backgroundColor: '#ffffff',
+    width: 1200, height: 800, title: 'YuriiNote', backgroundColor: '#ffffff', show: false,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
   });
-  mainWin = w; w.loadFile('index.html'); 
+  mainWin = w; w.maximize(); w.once('ready-to-show', () => w.show()); w.loadFile('index.html');
 });
 app.on('window-all-closed', () => app.quit());
