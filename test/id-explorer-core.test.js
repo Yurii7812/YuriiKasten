@@ -17,7 +17,7 @@ const read = { 哲学:'てつがく', 政治哲学:'せいじてつがく' };
 test('本文・タイトル・ID・グローバルIndex・トピックIndexを同時に検索できる',()=>{
   assert.deepEqual(X.search(notes,topics,read,'ヘーゲル').notes.map(n=>n.id),['1']);
   assert.deepEqual(X.search(notes,topics,read,'国家論').topics.map(t=>t.name),['1-哲学']);
-  assert.equal(X.search(notes,topics,read,'てつがく').keywords.length,1);
+  assert.equal(X.search(notes,topics,read,'てつがく').keywords.length,2); // 2種類のキーワードのよみに一致
   assert.equal(X.search(notes,topics,read,'チャットの本文').notes[0].kind,'memo-group');
   assert.equal(X.search(notes,topics,read,'未分類').keywords.length,0); // IDなしのメモはグローバルIndexに載せない
 });
