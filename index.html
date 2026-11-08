@@ -318,35 +318,32 @@ button{font-size:14.5px;padding:5px 13px;border-color:#d6d9e1;color:#3d4150}
 .sortbar{display:flex;align-items:center;gap:6px;padding:6px 12px;border-bottom:1px solid #f2f2f2;position:sticky;top:0;background:var(--bg,#fff);z-index:2}.sortbar select{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:6px;padding:2px 4px;background:#fff}
 .item.card{display:block;margin:6px 10px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:#fff}.item.card:hover,.item.card.on{background:var(--hl)}
 .item.card .nt{font-weight:600}.item.card .cbody{color:#555;font-size:12.5px;line-height:1.5;margin:4px 0;max-height:6em;overflow:hidden;white-space:normal}.item.card .ns{font-size:11px;color:var(--sub)}
-#pane:has(.stage){overflow:hidden}.stage{height:100%;min-height:0;align-items:stretch}
-.stage>.col{overflow:auto;min-height:0}.stage>.mgn{position:static;min-height:0;height:100%;overflow:auto;margin:0 0 0 8px}
-.stage.nomgn>.mgn{display:none}
+/* 本文は、ページの真ん中。右の欄は右に置き、本文とは別にスクロール（ページの高さに合わせて固定） */
+.stage{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,var(--colw,720px)) minmax(290px,1fr);align-items:start}
+.stage:has(.col.wide){--colw:1000px}
+.stage:has(#nbody){display:flex}
+.stage>.col{width:auto;max-width:none;margin:0;grid-column:2;padding:30px 12px 0}
+.stage>.mgn{grid-column:3;position:sticky;top:0;height:var(--ph,100vh);min-height:0;overflow:auto;margin:0;width:290px;align-self:start}
+.stage.nomgn{grid-template-columns:minmax(0,1fr) minmax(0,var(--colw,720px)) minmax(0,1fr)}.stage.nomgn>.mgn{display:none}
 
-.mandala{display:flex;flex-direction:column;height:100%;outline:0;min-height:0}.mhead{padding:2px 4px 6px;font-size:15px}.mhead .sub{margin-left:8px}
-.mbar{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:0 0 8px}.mbar button{font:inherit;font-size:12.5px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:3px 9px;cursor:pointer}.mbar button.on{background:#e8edff;border-color:#b9c6f7;color:#3b5bdb}.mbar kbd,.mhelp kbd{font:11px ui-monospace,monospace;color:#889;margin-right:4px}
-.mbody{flex:1;min-height:0;display:flex;gap:14px}.mboard{flex:1 1 auto;min-width:0;display:flex;align-items:center;justify-content:center}
-.mg{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:6px;width:100%;max-width:640px;aspect-ratio:1.15;max-height:100%}
-.mc{position:relative;border:1px solid #d9deeb;border-radius:12px;background:#fff;padding:6px 8px;display:flex;flex-direction:column;justify-content:center;gap:2px;cursor:pointer;overflow:hidden;text-align:center;min-width:0}
-.mc:hover{background:#f5f7ff}.mc.ctr{background:#eef1ff;border-color:#8da2f0;font-weight:600}.mc.sel{outline:3px solid #3b5bdb;outline-offset:-2px}.mc b{color:#3b5bdb;font-size:15px}.mc .mt{font-size:13px;color:#2b2d33;line-height:1.35}.mc i{font-style:normal;font-size:10.5px;color:#8b909c}.mc .mn{position:absolute;left:6px;top:3px;font-size:10px;color:#b0b4c0}
-.mc.empty{border-style:dashed;background:#fafbfd;color:#c4c8d2;align-items:center}.mc.empty:hover{background:#f0f4ff;color:#3b5bdb}.mc .plus{font-size:20px}
-.mc.k-p{border-left:4px solid #3b5bdb}.mc.k-c{border-left:4px solid #2f9e44}.mc.k-l{border-left:4px solid #e8a317}.mc.k-b{border-left:4px solid #d9480f}.mc.k-k{border-left:4px solid #c0392b}
-.mbig{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:10px;width:100%;height:100%;max-height:100%}.mbig>.mg{max-width:none;gap:2px;aspect-ratio:auto;height:100%}.mbig>.mg.selb{outline:3px solid #3b5bdb;outline-offset:2px;border-radius:12px}
-.mc.sm{padding:2px 3px;border-radius:6px}.mc.sm b{font-size:11px}.mc.sm .mt{font-size:10px;line-height:1.2}.mc.sm i,.mc.sm .mn{display:none}.mc.sm.empty .plus{font-size:12px}
-.mg.none-b{border:1px dashed #e4e7f0;border-radius:12px;background:none}
-.mprev{flex:0 0 340px;overflow:auto;border-left:1px solid #f0f0f3;padding:6px 14px 20px;font-size:14px;line-height:1.7;white-space:pre-wrap;color:#33363f}.mprev h3{margin:4px 0 8px}
-.mhelp{position:absolute;right:20px;bottom:20px;background:#fff;border:1px solid #cfd5e3;border-radius:10px;box-shadow:0 6px 24px rgba(30,40,80,.18);padding:12px 16px;font-size:13px;line-height:1.8;max-width:560px}
-#tabs{flex-wrap:nowrap;gap:2px;padding-left:10px;padding-right:6px}#tabs button{white-space:nowrap;padding:5px 8px}.sortbar button,.sortbar select,.ixbar button{white-space:nowrap;flex:none}
-.sortbar{flex-wrap:nowrap;overflow:hidden}.sortbar select{max-width:100%}
-#tabs button .te{font-size:19px;line-height:1}#tabs button .tl{display:none;margin-left:5px}#tabs button.on .tl{display:none}#tabs button{display:flex;align-items:center;padding:4px 9px}
-#cardtoggle.on{background:#e8edff;color:#3b5bdb}
-.item.card .cbody{white-space:pre-wrap;max-height:none}.item.card .cmore{display:inline-block;font-size:12px;color:var(--acc);margin:0 0 4px;cursor:pointer}.item.card{box-shadow:0 1px 2px rgba(30,40,80,.08)}.item.card:hover{box-shadow:0 3px 10px rgba(30,40,80,.14)}
+.keep{display:flex;flex-direction:column;height:100%;min-height:0}.keep .ktop{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:2px 2px 10px}
+.keep .ktop input.ksearch{flex:1;min-width:180px;max-width:420px;border:1px solid var(--line);border-radius:22px;padding:7px 14px;font:inherit;background:#f6f7fb}
+.keep .kchip{border:1px solid var(--line);background:#fff;border-radius:16px;padding:4px 11px;cursor:pointer;font-size:14px}.keep .kchip.on{background:#e8edff;border-color:#b9c6f7;color:#3b5bdb}
+.keep .kadd{max-width:560px;margin:0 auto 14px;width:100%;border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 4px rgba(30,40,80,.12);background:#fff;padding:8px 14px}
+.keep .kadd input,.keep .kadd textarea{width:100%;border:0;outline:0;font:inherit;background:none;resize:none;padding:5px 0}.keep .kadd .kt{font-weight:600;display:none}.keep .kadd.open .kt{display:block}.keep .kadd textarea{display:none;min-height:80px}.keep .kadd.open textarea{display:block}.keep .kadd .kbtn{display:none;justify-content:flex-end;gap:8px}.keep .kadd.open .kbtn{display:flex}
+.keep .kboard{flex:1;min-height:0;overflow:auto;column-width:250px;column-gap:14px;padding:4px 4px 40px}
+.keep .kcard{break-inside:avoid;margin:0 0 14px;border:1px solid var(--line);border-radius:12px;background:#fff;padding:12px 14px;cursor:pointer;position:relative;box-shadow:0 1px 2px rgba(30,40,80,.08);transition:box-shadow .15s}
+.keep .kcard:hover{box-shadow:0 4px 14px rgba(30,40,80,.18)}.keep .kcard .kh{font-weight:700;font-size:15.5px;margin-bottom:5px;padding-right:46px}.keep .kcard .kb{white-space:pre-wrap;font-size:14px;line-height:1.55;color:#33363f;word-break:break-word}
+.keep .kcard .kmore{font-size:12px;color:var(--acc);margin-top:4px;display:inline-block}.keep .kcard .km{margin-top:8px;font-size:11.5px;color:var(--sub);display:flex;flex-wrap:wrap;gap:4px 8px}.keep .kcard .km .kw{background:#eef1f8;border-radius:9px;padding:0 7px;color:#4a5170}
+.keep .kcard .kact{position:absolute;right:8px;top:8px;display:none;gap:2px}.keep .kcard:hover .kact{display:flex}.keep .kact button{border:0;background:#f1f3f9;border-radius:50%;width:26px;height:26px;cursor:pointer;font-size:13px}.keep .kact button:hover{background:#dfe5fb}
+.kedit .kt{width:100%;font:inherit;font-size:19px;font-weight:700;border:0;outline:0;padding:4px 0}.kedit textarea{width:100%;min-height:260px;border:0;outline:0;font:inherit;line-height:1.7;resize:vertical}
 </style>
 </head>
 <body>
 <main>
-  <nav id="rail"><button data-mode="notes" title="ノート">📝</button><button data-mode="diary" title="日記">📔</button><button data-mode="chat" title="チャットメモ">💬</button><button data-mode="pindex" title="紙のIndex（並べ替え）">🗂</button><button data-mode="graph" title="グラフ">🕸</button><button data-mode="mandala" title="曼荼羅">❖</button></nav>
+  <nav id="rail"><button data-mode="notes" title="ノート">📝</button><button data-mode="diary" title="日記">📔</button><button data-mode="chat" title="チャットメモ">💬</button><button data-mode="pindex" title="紙のIndex（並べ替え）">🗂</button><button data-mode="graph" title="グラフ">🕸</button><button data-mode="mandala" title="曼荼羅">❖</button><button data-mode="cards" title="カード（Google Keep 風・画面いっぱい）">🗒️</button></nav>
   <aside>
-    <div id="tabs"><button data-tab="d" title="デジタル"><span class="te">💻</span><span class="tl">デジタル</span></button><button data-tab="p" title="紙"><span class="te">📜</span><span class="tl">紙</span></button><button data-tab="u" title="未整理（IDなし）"><span class="te">📥</span><span class="tl">未整理</span></button><button data-tab="f" title="ファイル（画像・html・csv など）"><span class="te">📎</span><span class="tl">ファイル</span></button><button data-tab="i" title="Index（キーワード）"><span class="te">🔖</span><span class="tl">Index</span></button></div>
+    <div id="tabs"><button data-tab="d" title="デジタル"><span class="te">💻</span></button><button data-tab="p" title="紙"><span class="te">📜</span></button><button data-tab="u" title="未整理（IDなし）"><span class="te">📥</span></button><button data-tab="f" title="ファイル（画像・html・csv など）"><span class="te">📎</span></button><button data-tab="i" title="Index（キーワード）"><span class="te">🔖</span></button></div>
     <div id="selbar"></div>
     <div id="list"></div>
   </aside>

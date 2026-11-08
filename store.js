@@ -298,7 +298,7 @@ function openVault(vault) {
     const rd = k => readings[k];
     return [...m].sort((x, y) => L.byReading(rd)(x[0], y[0]));
   }
-  const idLinks = (s, list) => list.slice().sort(L.cmpId).map(x => `[${label(s, x)}](${noteHref(s, x)})`).join(' ');
+  const idLinks = (s, list) => list.slice().sort((a, b) => L.cmpId(L.splitAnchor(a).id, L.splitAnchor(b).id)).map(x => { const { id, n } = L.splitAnchor(x); return `[${label(s, id)}${n ? `(${n})` : ''}](${noteHref(s, id)}${n ? '#c' + n : ''})`; }).join(' ');
   // k のトピックIndex があれば、その入口のIDの真上に赤い点（Index.md 用）
   const cell = (v, k) => {
     const t = k && [...topics.values()].find(x => x.keyword === k && x.entry);
@@ -344,11 +344,12 @@ function openVault(vault) {
     if (rows.length) {
       out.push('| キーワード | ID |', '|---|---|');
       for (const r of rows) { // * の印のIDには、上に赤い点（そのIDが入口のトピックIndex があればそこへのリンク）
-        const dotted = (s, list) => list.slice().sort(L.cmpId).map(x => {
-          const link = `[${label(s, x)}](${noteHref(s, x)})`, tp = r.dot && r.dot.s === s && r.dot.id === x;
+        const dotted = (s, list) => list.slice().sort((x, y) => L.cmpId(L.splitAnchor(x).id, L.splitAnchor(y).id)).map(raw => {
+          const { id: x, n } = L.splitAnchor(raw), href = noteHref(s, x) + (n ? '#c' + n : ''), text = label(s, x) + (n ? `(${n})` : '');
+          const link = `[${text}](${href})`, tp = r.dot && r.dot.s === s && r.dot.id === x;
           if (!tp) return link;
           const to = topicOf(s, x);
-          return `<span style="display:inline-block;text-align:center;line-height:1.15">${to ? `<a href="${topicHref(to.name)}" style="color:#c0392b;font-size:.7em;text-decoration:none">●</a>` : '<span style="color:#c0392b;font-size:.7em">●</span>'}<br><a href="${noteHref(s, x)}">${label(s, x)}</a></span>`;
+          return `<span style="display:inline-block;text-align:center;line-height:1.15">${to ? `<a href="${topicHref(to.name)}" style="color:#c0392b;font-size:.7em;text-decoration:none">●</a>` : '<span style="color:#c0392b;font-size:.7em">●</span>'}<br><a href="${href}">${text}</a></span>`;
         }).join(' ');
         out.push(`| ${esc(r.kw)} | ${[dotted('d', r.d), dotted('p', r.p)].filter(Boolean).join(' ')} |`);
       }
@@ -367,7 +368,7 @@ function openVault(vault) {
     let changed = false;
     for (const e of d.entries) {
       e.ids = e.ids.filter(id => {
-        const n = get('p', id); if (!n) return true;
+        const n = get('p', L.splitAnchor(id).id); if (!n) return true;
         if (!n.keywords.includes(e.kw)) n.keywords.push(e.kw);
         if (e.reading && !readings[e.kw]) readings[e.kw] = e.reading;
         changed = true; return false;
@@ -585,7 +586,7 @@ function openVault(vault) {
       let e = d.entries.find(x => x.kw === kw);
       if (!e) { e = { kw, reading: '', ids: [] }; d.entries.push(e); }
       if (reading) { e.reading = reading; readings[kw] = reading; }
-      for (const id of ids || []) if (validId(id) && !e.ids.includes(id)) e.ids.push(id);
+      for (const id of ids || []) if (validId(L.splitAnchor(id).id) && !e.ids.includes(id)) e.ids.push(id);   // 3a(1) のように (番号) もつけられる
       docs.set(PIDX, d); fs.writeFileSync(abs(PIDX + '.json'), JSON.stringify(d, null, 1));
       rebuild(); return this.state();
     },
@@ -593,7 +594,7 @@ function openVault(vault) {
     removePaperIndex({ kw, id }) {
       const d = docs.get(PIDX), e = d && d.entries.find(x => x.kw === kw);
       if (e && e.ids.includes(id)) { e.ids = e.ids.filter(x => x !== id); d.entries = d.entries.filter(x => x.ids.length); fs.writeFileSync(abs(PIDX + '.json'), JSON.stringify(d, null, 1)); }
-      const n = get('p', id); if (n) n.keywords = n.keywords.filter(k => k !== kw);
+      const n = get('p', L.splitAnchor(id).id); if (n) n.keywords = n.keywords.filter(k => k !== kw);
       rebuild(); return this.state();
     },
     deleteTopic(name) { topics.delete(name); removeFile(topicFile(name)); rebuild(); return true; }

@@ -35,6 +35,8 @@ function parentIn(id, has) {
   return null;
 }
 const root = id => tok(id)[0] || id;
+// '1a(1)' → { id: '1a', n: '1' }（(番号) が無ければ n は undefined）
+const splitAnchor = raw => { const m = String(raw).match(/^(.*?)(?:[(（](\d+)[)）])?$/); return { id: m[1], n: m[2] }; };
 
 // ===== 本文のリンク =====
 // :1a（続き） 1a:（全体） 1a(1) :1a(1) 1a(1):（別ノートの (1)） (1) :(1) (1):（同じノートの (1)）
@@ -159,11 +161,12 @@ function topicLine(line) {
     }
     return { star: s[2], from: s[1].length, to: s[1].length + s[2].length, ids: [] };
   }
+  // ID は 1a のほか、1a(1) のように (番号) をつけて、ノートの中のその場所を指せる
   const parts = [...line.matchAll(/[^\s,、，]+/g)], ids = [], bare = x => x.replace(/^[*＊]/, '');
-  let i = parts.length - 1;
-  while (i >= 0 && isId(bare(parts[i][0]))) {
+  let i = parts.length - 1, m;
+  while (i >= 0 && (m = bare(parts[i][0]).match(new RegExp('^(' + ID + ')(?:[(（](\\d+)[)）])?$')))) {
     const t = parts[i][0], dot = bare(t) !== t;
-    ids.unshift({ id: bare(t), dot, from: parts[i].index + (dot ? 1 : 0), to: parts[i].index + t.length }); i--;
+    ids.unshift({ id: m[1], n: m[2], raw: bare(t), dot, from: parts[i].index + (dot ? 1 : 0), to: parts[i].index + t.length }); i--;
   }
   const kw = i >= 0 ? line.slice(0, parts[i].index + parts[i][0].length).trim() : '';
   return { kw, ids };
@@ -178,7 +181,7 @@ function mergeTopic(t) {
     if (!r.kw && !r.ids.length) continue;
     const k = r.kw || '';
     if (!m.has(k)) m.set(k, { kw: k, d: [], p: [] });
-    for (const x of r.ids) { if (!m.get(k)[s].includes(x.id)) m.get(k)[s].push(x.id); if (x.dot && !m.get(k).dot) m.get(k).dot = { s, id: x.id }; }
+    for (const x of r.ids) { if (!m.get(k)[s].includes(x.raw)) m.get(k)[s].push(x.raw); if (x.dot && !m.get(k).dot) m.get(k).dot = { s, id: x.id }; }   // 並びには (番号) つきのまま入れる
   }
   return { rows: [...m.values()], stars, refs };
 }
@@ -189,7 +192,7 @@ function addToTopic(text, kw, id) {
   for (let i = 0; i < lines.length; i++) {
     const r = topicLine(lines[i]);
     if (r.star !== undefined || r.kw !== kw) continue;
-    if (!r.ids.some(x => x.id === id)) lines[i] = lines[i].replace(/\s+$/, '') + ' ' + id;
+    if (!r.ids.some(x => x.raw === id)) lines[i] = lines[i].replace(/\s+$/, '') + ' ' + id;
     return lines.join('\n');
   }
   while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
@@ -216,7 +219,7 @@ function removeFromTopic(text, ids) {
     const r = topicLine(line);
     if (r.star !== undefined || !r.ids.some(x => set.has(x.id))) return [line];
     const keep = r.ids.filter(x => !set.has(x.id));
-    return keep.length ? [r.kw + ' ' + keep.map(x => x.id).join(' ')] : [];
+    return keep.length ? [r.kw + ' ' + keep.map(x => x.raw).join(' ')] : [];
   }).join('\n');
 }
 
@@ -315,7 +318,7 @@ const now = (d = new Date()) => {
 const parseTime = c => { const m = (c || '').match(/^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2})(?::(\d{2}))?)?/); return m ? new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)) : null; };
 
 module.exports = {
-  MDLINK, ID, isId, tok, cmpId, sibling, child, parentIn, root,
+  MDLINK, ID, isId, splitAnchor, tok, cmpId, sibling, child, parentIn, root,
   tokens, anchorPos, selfTarget, bodyToMd, mdToBody,
   fzRange, fzSubtree, exportMd, isNoid, noidStem, isStem, STEM, fmParse, fmDump, parseTime, KINDS, deriveBody, DAY_START, todayStr, dayOf, weekday, isDate, addToSection, diaryTree, topicLine, mergeTopic, addToTopic, removeFromTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
 };

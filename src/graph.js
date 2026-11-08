@@ -46,7 +46,7 @@ export function build(notes, titleOf, topics, mergeTopic, topicLabel) {
   for (const t of topics || []) {
     const key = tkey.get(t.name), { rows, stars, refs } = mergeTopic(t);
     for (const r of refs || []) if (has.has(r.s + ':' + r.id)) edges.push({ a: key, b: r.s + ':' + r.id, t: 'link' });
-    for (const r of rows) { if (!r.kw) continue; add(r.kw); edges.push({ a: key, b: 'K:' + r.kw, t: 'kw' }); for (const sp of ['d', 'p']) for (const id of r[sp]) add(r.kw, sp + ':' + id); }
+    for (const r of rows) { if (!r.kw) continue; add(r.kw); edges.push({ a: key, b: 'K:' + r.kw, t: 'kw' }); for (const sp of ['d', 'p']) for (const id of r[sp]) add(r.kw, sp + ':' + L.splitAnchor(id).id); }
     for (const st of stars) if (tkey.has(st)) edges.push({ a: key, b: tkey.get(st), t: 'link' });
   }
   for (const [k, v] of kw) { nodes.push({ key: 'K:' + k, kw: k, label: k }); for (const x of v) if (has.has(x)) edges.push({ a: 'K:' + k, b: x, t: 'kw' }); }

@@ -67,7 +67,7 @@ function jump(kw) {
 async function add() {
   const kw = $('#pi-kw').value.trim(), ids = $('#pi-ids').value.split(/[\s,、，]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
   if (!kw) return $('#pi-kw').focus();
-  const bad = ids.filter(i => !L.isId(i)); if (bad.length) return alert(`IDの形が違います: ${bad.join(' ')}\n（例: 12 や 3a）`);
+  const bad = ids.filter(i => !L.isId(L.splitAnchor(i).id)); if (bad.length) return alert(`IDの形が違います: ${bad.join(' ')}\n（例: 12 や 3a や 3a(1)）`);
   let rd = L.toHira($('#pi-rd').value.trim()); if (!rd) rd = await ctx.api.suggest(kw);
   await ctx.flush();
   const st = await ctx.api.addPaperIndex({ kw, reading: rd, ids });

@@ -338,3 +338,14 @@ test('取り込んだファイル: 一覧にタイトル・説明を付けられ
   assert.strictEqual(openVault(dir).filesInfo().filter(x => !x.title).length, 1);            // タイトルなしだけ数えられる
   fs.rmSync(dir, { recursive: true });
 });
+
+test('トピックIndex・紙のIndex: 1a(1) のように (番号) もつけられる', () => {
+  const dir = tmp(), v = openVault(dir), r = f => fs.readFileSync(path.join(dir, f), 'utf8');
+  v.saveNote({ s: 'd', id: '1', keywords: [], body: 'x' }); v.saveNote({ s: 'd', id: '2', keywords: [], body: 'y' });
+  v.saveTopic({ name: 'T', entry: { s: 'd', id: '1' }, d: 'PKM 1(2) 2', p: '' });
+  const st = openVault(dir).state(), s1 = st.notes.find(n => n.id === '1').stem;
+  assert.ok(r('T_T.md').includes(`[1(2)](${s1}.md#c2)`));         // md では (番号) の場所へのリンク
+  assert.deepStrictEqual(require('../lib').mergeTopic(st.topics[0]).rows[0].d, ['1(2)', '2']);
+  const s = v.addPaperIndex({ kw: 'GUI', ids: ['3a(1)', 'x'] });
+  assert.deepStrictEqual(s.docs.K_paperindex.entries[0].ids, ['3a(1)']);     // 形の違うものは入らない
+});
