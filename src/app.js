@@ -5,6 +5,7 @@ import L from '../lib.js';
 import { mdExtensions, tableTemplate, searchExt, setSearch } from './md.js';
 import { ctx } from './shared.js';
 import * as Chat from './chat.js';
+import * as IDExplorer from './id-explorer.js';
 import * as RP from './roleplay.js';
 import * as PI from './pindex.js';
 import * as GR from './graph.js';
@@ -650,7 +651,7 @@ function openNote(s, id, n, keep, mid) {
       <div class="idline">
         ${noid ? '' : `<button class="cpid" data-act="copyid" title="IDをコピー">${cp}</button>`}
         <input class="idin" id="f-id" value="${noid ? '' : esc(id)}" placeholder="IDなし" title="${noid ? 'IDを入れると、整理されます' : 'IDを空にすると、IDなしにできます。確認後、再指定もできます'}">
-        ${noid ? '<button class="gid" data-act="giveid">IDを付ける</button>' : s === 'd' ? '<button class="gid" data-act="clearid" title="IDを外して、あとから付け直す">IDを消す</button>' : ''}
+        ${s === 'd' ? (noid ? '<button class="gid" data-act="giveid">IDを付ける</button>' : '<button class="gid" data-act="clearid" title="IDを外して、あとから付け直す">IDを消す</button><button class="gid" data-act="giveid" title="索引と本文から探してIDを変更する">索引からIDを探す</button>') : ''}
         ${s === 'p' ? '<span class="dt">紙</span>' : ''}${L.KINDS[kind] ? `<span class="dt">${L.KINDS[kind]}</span>` : ''}
         ${s === 'd' ? `<span class="dt">${esc(note.created)}</span>` : ''}
         <span class="grow"></span>${noid ? (s === 'd' && text ? '<button class="nb" data-act="sib" title="IDなしのまま、並列のノートを作る（親にIDが付くと、IDも決まる）">＋ 並列</button><button class="nb" data-act="chi" title="IDなしのまま、分岐のノートを作る（このノートにIDが付くと、IDも決まる）">＋ 分岐</button>' : '') : `<button class="nb" data-act="sib" title="並列のノートを作る（同じ階層の次: ${esc(free(s, L.sibling(id)))}）">＋ 並列 <small>${esc(free(s, L.sibling(id)))}</small></button><button class="nb" data-act="chi" title="分岐のノートを作る（一つ下: ${esc(free(s, L.child(id)))}）">＋ 分岐 <small>${esc(free(s, L.child(id)))}</small></button>`}<button class="ic nm" data-act="mgn" title="右の欄を隠す・出す (Ctrl+\\)"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button><button class="ic nm" data-act="nmenu" title="このノートのメニュー">${'<svg class="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>'}</button>
@@ -714,28 +715,14 @@ async function changeId(note, v) {
   }
   await refreshDiaries(); openNote(note.s, v, null, true); return true;
 }
-// IDを付けるダイアログ: IDを直接 / 親のノートにぶら下げる（分岐として）
+// 通常ノート・ノート化されたメモで共通のID探索。
+// グローバルIndex→トピックIndex→本文・関係をたどり、候補確定後に保存する。
+function openIdExplorer({ subject = null, onChoose }) {
+  return IDExplorer.open({ notes, topics, readings, subject, onChoose });
+}
 function giveIdDialog(note) {
-  const roots = notes.filter(x => x.s === 'd' && /^\d+$/.test(x.id)).map(x => +x.id);
-  dialog(`<h3>IDを付ける</h3><div class="sub">IDを付けると、キーワードやトピックIndexが付けられ、Index や 日記に ID で載ります。</div>
-    <label class="rad"><input type="radio" name="gi" value="id" checked> ID <input id="gi-id" style="width:100px" value="${esc(free('d', String((roots.length ? Math.max(...roots) : 0) + 1)))}"></label>
-    <label class="rad"><input type="radio" name="gi" value="parent"> 親のノートのID（分岐として付ける） <input id="gi-parent" style="width:100px" placeholder="例: 1a"></label>
-    <label class="rad"><input type="radio" name="gi" value="sib"> となりのノートのID（並列として付ける） <input id="gi-sib" style="width:100px" placeholder="例: 1a"></label>
-    <div class="row"><button class="p" id="gi-ok">付ける</button><button id="gi-no">やめる</button></div>`, close => {
-    for (const k of ['id', 'parent', 'sib']) $('#gi-' + k).onfocus = () => { document.querySelector(`input[value=${k}]`).checked = true; };
-    $('#gi-no').onclick = close; $('#gi-id').select();
-    $('#gi-ok').onclick = async () => {
-      const mode2 = document.querySelector('input[name=gi]:checked').value; let v;
-      if (mode2 === 'id') v = $('#gi-id').value.trim().toLowerCase();
-      else {
-        const base = $('#gi-' + mode2).value.trim().toLowerCase();
-        if (!get('d', base)) return alert(`デジタルのノート ${base || '（空）'} がありません`);
-        v = free('d', mode2 === 'parent' ? L.child(base) : L.sibling(base));
-      }
-      if (!L.isId(v) || get('d', v)) return alert('そのIDは使えません（形が違うか、既にあります）');
-      close(); await changeId(note, v);
-    };
-  });
+  if (!note || note.s !== 'd') return;
+  openIdExplorer({ subject: note, onChoose: id => changeId(note, id) });
 }
 // キーワードとトピックIndex（ボタンで足す）
 const refContexts = (body, id, own = 'd', target = own) => { // id（target の側）を指している所の、周辺の文章（ハイライトなし）。own は、この本文のある側。リンクだけの行は出さない
@@ -862,7 +849,7 @@ function noteMenu(btn, note) {
   popMenu({ clientX: r.right - 190, clientY: r.bottom + 4 }, [
     ...(!note.noid ? [[`並列のノートを作る（${free(s, L.sibling(id))}）`, () => create(s, free(s, L.sibling(id)))], [`分岐のノートを作る（${free(s, L.child(id))}）`, () => create(s, free(s, L.child(id)))]] : []),
     ...(text ? [['表を入れる', () => insertTable()], ['ファイルを添付', () => pick(true, f => attach(note, f), '*')]] : []),
-    ...(note.noid ? [['IDを付ける', () => giveIdDialog(note)]] : s === 'd' ? [['IDを消す（IDなしにする）', () => clearIdFlow(note)]] : []),
+    ...(s === 'd' ? [['索引・本文からIDを探す', () => giveIdDialog(note)], ...(!note.noid ? [['IDを消す（IDなしにする）', () => clearIdFlow(note)]] : [])] : []),
     ['削除', () => deleteNotes([{ s, id }]), true]
   ]);
 }
@@ -1850,6 +1837,7 @@ function applyState(st) { ({ notes, topics } = st); diaries = st.diaries || diar
 Object.assign(ctx, {
   api, later, flush, place, renderTabs, openLink, applyState, readings: () => readings, lastNote: () => lastNote,
  renderList, pick, get, free, refreshDiaries, records: () => records, openNote, openDiary, getDiary,
+  exploreId: callback => openIdExplorer({ onChoose: id => { callback(id); return true; } }),
   setCur: c => { cur = c; }, setMode: m => { mode = m; }, cur: () => cur, notes: () => notes, vault: () => vault,
   touchNote: n => saveNote(n),
   touchDiary: d => later('dy' + (d.kind || '日記') + d.date, () => api.saveDiary({ date: d.date, kind: d.kind || '日記', body: d.body })),
