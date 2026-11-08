@@ -1310,10 +1310,12 @@ document.addEventListener('click', e => {
   }
 }, true);
 function openGraph(keep) {
+  GR.unmount($('#pane'));
   cur = place({ k: 'graph' }, keep); mode = 'notes';
-  cur.gs = cur.gs || {};   // 絞り込み・ハイライト・ローカルなどの状態（タブに覚える）
-  GR.mount($('#pane'), { notes, titleOf, topics, mergeTopic: L.mergeTopic, topicLabel, get, renderMd, state: cur.gs,
-    onOpen: (s, id, e, topic) => topic ? openTopic(topic) : openNote(s, id), onChat: name => { mode = 'chat'; Chat.open(name); } });
+  cur.gs = cur.gs || {};   // Link map / Tree map・線の長さ・固定（タブに覚える）
+  const rootKey = lastNote ? lastNote.s + ':' + lastNote.id : null;
+  GR.mount($('#pane'), { notes, titleOf, rootKey, state: cur.gs, onOpen: (s, id) => openNote(s, id),
+    onMenu: (node, e) => popMenu(e, [['開く', () => openNote(node.s, node.nid)], ['新しいタブで開く', () => { bgOpen = true; try { openNote(node.s, node.nid); } finally { bgOpen = false; } }]]) });
   renderTabs(); renderList();
 }
 function openTopic(name, tmode = 'view', keep) {
