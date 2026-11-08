@@ -414,6 +414,7 @@ function menuFor(e, bub) {
     const m = msg(bub.dataset.m);
     popMenu(e, [
       ['選択', () => { sel = new Set([m.id]); lastSel = m.id; paint(); selbar(); }],
+      ['ノート化', () => toNoteDialog([m])],
       ['編集', () => editMsg(bub, m)],
       ['トピックを変える', () => moveDialog(m)],
       ['コピー', () => navigator.clipboard.writeText(m.text)],
@@ -507,8 +508,8 @@ const range = ms => { const f = ms[0], l = ms[ms.length - 1], d1 = dayOfMsg_(f),
 const source = m => `[${dayOfMsg_(m)} ${hm(m.t)}](${dayFile(dayOfMsg_(m))}#m-${m.id})`;
 // ノート化: チャットメモ1件でも複数件でも、実体は一つのノートとしてID・索引で管理。
 // 元のメモ本文をノートにコピーせず、メモの内部IDだけを記録する。
-function toNoteDialog() {
-  const ms = chosen(); if (!ms.length) return;
+function toNoteDialog(explicitMemos) {
+  const ms = explicitMemos || chosen(); if (!ms.length) return;
   const rootFree = () => { const r = ctx.notes().filter(n => n.s === 'd' && /^\d+$/.test(n.id)).map(n => +n.id); return ctx.free('d', String((r.length ? Math.max(...r) : 0) + 1)); };
   dialog(`<h3>${ms.length} 件のメモをノート化</h3>
     <div class="sub">元のチャットメモは残り、専用のノート画面にそのまま表示されます。内容のコピーは作りません。</div>
