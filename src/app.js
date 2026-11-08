@@ -371,6 +371,7 @@ function onOpenClick(e) {
   const cct = e.target.closest('[data-cchat]'); if (cct) { mode = 'chat'; return Chat.open(cct.dataset.cchat, e.ctrlKey || e.metaKey); }
   const cm = e.target.closest('[data-cmemo]'); if (cm) { mode = 'chat'; return Chat.gotoMemo(cm.dataset.cmemo); }
   const dd = e.target.closest('[data-diary]'); if (dd && !e.target.closest('.cm-editor')) return openDiary(dd.dataset.diary, undefined, dd.dataset.kind || '日記');
+  const ctw = e.target.closest('[data-ctw]'); if (ctw && ctw.textContent.trim()) return Chat.toggleGroup(ctw.dataset.ctw);
   const cc = e.target.closest('[data-chat]'); if (cc) return Chat.open(cc.dataset.chat);
   if (e.target.id === 'c-new') return Chat.newTopicDialog();
   const row = e.target.closest('#list .item');
@@ -1359,7 +1360,7 @@ function openGraph(keep) {
   cur = place({ k: 'graph' }, keep); mode = 'notes';
   cur.gs = cur.gs || {};   // Link map / Tree map・線の長さ・固定（タブに覚える）
   const rootKey = lastNote ? lastNote.s + ':' + lastNote.id : null;
-  GR.mount($('#pane'), { notes, titleOf, rootKey, mountNote: mountNoteIn, chat: Chat.graphData(), files: filesCache, fileUrl: n => 'file://' + kImg(n), onChat: name => { mode = 'chat'; Chat.open(name); }, onMemo: id => { mode = 'chat'; Chat.gotoMemo(id); }, onFile: name => api.openPath(encodeURIComponent(name)), topics, mergeTopic: L.mergeTopic, get, renderMd, state: cur.gs, onOpen: (s, id, e, topic) => topic ? openTopic(topic) : openNote(s, id),
+  GR.mount($('#pane'), { notes, titleOf, rootKey, mountNote: mountNoteIn, childNotes: (s, id) => { const nn = get(s, id); return nn ? childNotes(nn).map(c => ({ s: c.s, id: c.id, title: titleOf(c) || '（無題）' })) : []; }, chat: Chat.graphData(), files: filesCache, fileUrl: n => 'file://' + kImg(n), onChat: name => { mode = 'chat'; Chat.open(name); }, onMemo: id => { mode = 'chat'; Chat.gotoMemo(id); }, onFile: name => api.openPath(encodeURIComponent(name)), topics, mergeTopic: L.mergeTopic, get, renderMd, state: cur.gs, onOpen: (s, id, e, topic) => topic ? openTopic(topic) : openNote(s, id),
     onMenu: (node, e) => popMenu(e, [['開く', () => openNote(node.s, node.nid)], ['新しいタブで開く', () => { bgOpen = true; try { openNote(node.s, node.nid); } finally { bgOpen = false; } }]]) });
   renderTabs(); renderList();
 }

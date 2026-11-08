@@ -91,7 +91,7 @@ export function loadNotesAndRelations(notes, titleOf, mapType, opt = {}) {
   let nodes = real.filter(n => opt.paper !== false || n.s !== 'p').map(n => { const k = n.s + ':' + n.id; return { id: k, s: n.s, nid: n.id, kind: 'note', name: (n.s === 'p' ? '紙 ' : n.noid ? '' : '') + (n.noid ? '' : n.id + ' ') + titleOf(n), glyph: n.kind === 'rp' ? '🎭' : n.kind === 'canvas' ? '🗺' : '', color: n.color || null, body: n.body || '', kws: n.keywords || [], tops: topicsOf.get(k) || [] }; });
   const keep = new Set(nodes.map(n => n.id)); let links = [];
   const addLink = (a, b) => { if (keep.has(a) && keep.has(b)) links.push({ id: a + '-' + b, source: a, target: b, name: '' }); };
-  if (mapType === 'tree') { for (const n of real) { const p = L.parentIn(n.id, x => has.has(n.s + ':' + x)); if (p) addLink(n.s + ':' + p, n.s + ':' + n.id); } }
+  if (mapType === 'tree') { for (const n of real) { const p = n.parentStem ? null : L.parentIn(n.id, x => has.has(n.s + ':' + x)); if (p) addLink(n.s + ':' + p, n.s + ':' + n.id); else if (n.parentStem && byStem.get(n.parentStem)) addLink(byStem.get(n.parentStem), n.s + ':' + n.id); } }
   else {
     const seen = new Set();
     for (const n of real) for (const t of L.tokens(n.body || '')) { const k = (t.sp || n.s) + ':' + t.id, me = n.s + ':' + n.id, key = me + '-' + k; if (t.k === 'ref' && k !== me && has.has(k) && !seen.has(key)) { seen.add(key); addLink(me, k); } }
@@ -241,7 +241,8 @@ export function mount(box, o) {
     else {
       const outs2 = outs, ins2 = ins, host = document.createElement('div'); host.className = 'nm-real'; noteEl.innerHTML = ''; noteEl.append(host);
       if (!(o.mountNote && o.mountNote(host, n.s, n.nid))) { const note = o.get(n.s, n.nid); host.innerHTML = `<div class="nm-ntitle"><b>${esc(n.name)}</b><button data-open class="nm-open" title="ノートを開く">↗</button></div><div class="nm-body md">${note ? o.renderMd(note.body || '') : ''}</div>`; host.querySelector('[data-open]')?.addEventListener('click', () => o.onOpen(n.s, n.nid, null)); }
-      const extra = document.createElement('div'); extra.className = 'nm-links'; extra.innerHTML = `${n.kws.length ? `<div class="nm-kws">${n.kws.map(esc).join(' ')}</div>` : ''}${outs2.length ? `<div class="nm-rel">リンク先</div>${outs2.map(pill).join('')}` : ''}${ins2.length ? `<div class="nm-rel">被リンク</div>${ins2.map(pill).join('')}` : ''}`; noteEl.append(extra);
+      const kids = (o.childNotes && o.childNotes(n.s, n.nid)) || [];
+      const extra = document.createElement('div'); extra.className = 'nm-links'; extra.innerHTML = `${kids.length ? `<div class="nm-rel">子ノート ${kids.length}</div>${kids.map(k => `<span class="nm-pill" data-id="${esc(k.s + ':' + k.id)}">${esc(k.title)}</span>`).join('')}` : ''}${n.kws.length ? `<div class="nm-kws">${n.kws.map(esc).join(' ')}</div>` : ''}${outs2.length ? `<div class="nm-rel">リンク先</div>${outs2.map(pill).join('')}` : ''}${ins2.length ? `<div class="nm-rel">被リンク</div>${ins2.map(pill).join('')}` : ''}`; noteEl.append(extra);
     }
     noteEl.querySelectorAll('.nm-pill').forEach(p => p.onclick = () => { st.sel = p.dataset.id; showNote(); keepPainting(); });
   }
