@@ -21,6 +21,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -202,6 +203,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
     var flash by remember { mutableStateOf<String?>(null) }
     var insertMenu by remember { mutableStateOf(false) }
     var moreMenu by remember { mutableStateOf(false) }
+    var pcDaysOpen by remember { mutableStateOf(false) }   // PC の日のノート（日記・時系列記録）を見る
     var scanOpen by remember { mutableStateOf(false) }             // 紙のスキャンの画面
     var bigInput by remember { mutableStateOf(false) }             // 入力欄を大きくしている
     var focusTick by remember { mutableStateOf(0) }                // 増やすと入力欄を選んでキーボードを出す
@@ -255,6 +257,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
         settings = settings.copy(lastTopic = t); store.saveSettings(settings)
     }
     LifecycleResumeEffect(Unit) {
+        run { val cur = entries.toList(); val merged = store.syncPc(cur); if (merged != cur) { entries.clear(); entries.addAll(merged); persist() } }   // PC のメモと共有
         imported = store.importedIds()
         // PC の時系列記録の名前は、スマホでも時系列記録として扱う（PC の取り込みは settings.json の topicModes を見る）
         pcRecords = store.loadRecords(); pcTopics = store.loadPcTopics()
@@ -417,6 +420,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
         // 消して空になった通常のトピックは、トピックの一覧からも消す（日記・時系列記録は残す）
         val cleaned = settingsAfterImportedRemoval(entries.toList(), settings, ids, (pcRecords + pcTopics).toSet())
         entries.filter { it.id in ids }.flatMap { it.images }.forEach { File(store.imageDir, it).delete() }
+        entries.filter { it.id in ids && it.pcId != null }.map { it.pcId!! }.let { gone -> if (gone.isNotEmpty()) store.savePcDeleted(store.loadPcDeleted() + gone) }   // PC のメモを消したら、次の USB で PC でも消える
         entries.removeAll { it.id in ids }
         if (cleaned != settings) { settings = cleaned; store.saveSettings(settings) }
         if (topic != ALL && topic != UNASSIGNED && topic !in settings.topics && entries.none { it.topic == topic } && topic !in pcRecords) setTopic(ALL)
@@ -532,6 +536,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
                                 leadingIcon = { Icon(if (settings.expandAll) Icons.Filled.UnfoldLess else Icons.Filled.UnfoldMore, null) }, onClick = {
                                 moreMenu = false; settings = settings.copy(expandAll = !settings.expandAll); store.saveSettings(settings); expanded.clear()
                             })
+                            if (store.loadPc().second.isNotEmpty()) DropdownMenuItem(text = { Text("PC の日のノート（日記・時系列記録）") }, leadingIcon = { Icon(Icons.Filled.Event, null) }, onClick = { moreMenu = false; pcDaysOpen = true })
                             DropdownMenuItem(text = { Text("紙のスキャン") }, leadingIcon = { Icon(Icons.Filled.CameraAlt, null) }, onClick = {
                                 moreMenu = false; scanOpen = true
                             })
@@ -971,6 +976,21 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
             confirmButton = { TextButton(onClick = { outlineFor = null }) { Text("やめる") } })
     }
 
+    if (pcDaysOpen) {
+        val days = remember { store.loadPc().second.sortedWith(compareByDescending<PcDay> { it.date }.thenBy { it.kind }) }
+        var shown by remember { mutableStateOf<PcDay?>(null) }
+        AlertDialog(onDismissRequest = { if (shown != null) shown = null else pcDaysOpen = false },
+            title = { Text(shown?.let { it.date + "  " + it.kind } ?: "PC の日のノート") },
+            text = {
+                val sh = shown
+                if (sh != null) androidx.compose.foundation.lazy.LazyColumn { item { SelectionContainer { androidx.compose.material3.Text(sh.body, fontSize = 14.sp) } } }
+                else androidx.compose.foundation.lazy.LazyColumn {
+                    items(days.size) { i -> val d = days[i]
+                        Text(d.date + "  " + d.kind, Modifier.fillMaxWidth().clickable { shown = d }.padding(vertical = 10.dp), fontSize = 15.sp) }
+                }
+            },
+            confirmButton = { TextButton(onClick = { if (shown != null) shown = null else pcDaysOpen = false }) { Text(if (shown != null) "一覧へ" else "閉じる") } })
+    }
     if (cleanImportedOpen) {
         val gone = entries.filter { it.id in imported }.map { it.id }.toSet()
         AlertDialog(onDismissRequest = { cleanImportedOpen = false }, title = { Text("取り込み済みのメモを消す") },

@@ -87,7 +87,7 @@ object I18n {
         "未取り込み" to "Not imported", "未所属" to "Unassigned", "名前を変える" to "Rename",
         "鳴ったら通知を押すと「今まで何してた？」が日記で開きます。" to "When it rings, tap the notification to open \"What have you been doing?\" in your diary.",
         "鳴らす長さ（秒・0 で 1 回だけ）" to "Ring length (seconds; 0 = once)", "鳴らす長さのあいだ音を繰り返します（通知を押す・アプリを開くと止まります）。最長 600 秒。" to "The sound repeats for the ring length (stops when you tap the notification or open the app). Max 600 seconds.",
-        "戻る" to "Back", "例: アイデア" to "e.g. Idea", "（" to " (", "）" to ")", "「" to "\"", "」" to "\"",
+        "PC の日のノート（日記・時系列記録）" to "Day notes on the PC (diary & timeline records)", "PC の日のノート" to "Day notes on the PC", "戻る" to "Back", "例: アイデア" to "e.g. Idea", "（" to " (", "）" to ")", "「" to "\"", "」" to "\"",
         "件" to " item(s)", "つなぐ" to "Connect", "（取り込み後に）" to " (after import)", "未選択" to "Unselected"
     )
     fun dayPat(withDow: Boolean) = if (lang == "ja") (if (withDow) "M月d日（E）" else "M月d日") else (if (withDow) "MMM d (E)" else "MMM d")

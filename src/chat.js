@@ -183,7 +183,7 @@ function editBox(bub, text, onSave) {
   b.querySelector('[data-ok]').onclick = () => onSave(ta.value.trim());
   b.querySelector('[data-no]').onclick = () => paint();
 }
-function editMsg(bub, m) { editBox(bub, m.text, v => { if (v) { m.text = v; save(); } paint(); }); }
+function editMsg(bub, m) { editBox(bub, m.text, v => { if (v) { m.text = v; m.edited = Date.now(); save(); } paint(); }); }   // edited: スマホと共有するとき、新しい方が勝つ
 function editLine(bub, i) {
   const be = backend(), list = parts(be.get()), e = entries()[i];
   editBox(bub, e.text, v => { if (v) list[i] = (e.time ? e.time + ' ' : '') + v.replace(/\n{2,}/g, '\n'); else list.splice(i, 1); be.set(list.join('\n\n')); paint(); });
@@ -197,7 +197,7 @@ function removeMsg(m) {
 function moveDialog(m) {
   const names = ['', DIARY, ...recKinds(), ...doc.topics.filter(t => t.type === 'bubble' && !isRec(t.name)).map(t => t.name)];
   dialog(`<h3>トピックを変える</h3>${names.map(n => `<button class="m-add" data-t="${esc(n)}">${n === '' ? 'トピック未選択' : esc(n)}</button>`).join('')}<div class="row"><button id="mv-no">やめる</button></div>`, close => {
-    $('#modal .box').onclick = e => { const b = e.target.closest('[data-t]'); if (b) { m.topic = b.dataset.t; save(); close(); paint(); ctx.renderList(); } };
+    $('#modal .box').onclick = e => { const b = e.target.closest('[data-t]'); if (b) { m.topic = b.dataset.t; m.edited = Date.now(); save(); close(); paint(); ctx.renderList(); } };
     $('#mv-no').onclick = close;
   });
 }

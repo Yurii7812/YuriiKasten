@@ -87,12 +87,12 @@ const parseJson = (buf, fallback) => { try { return JSON.parse(buf.toString('utf
 // スマホのメモ・写真・スキャンを読む。1 つでも読めなければ中止（取り込み済みにしない）
 async function pull() {
   const r = await ready(); if (r.error) return { ok: false, message: r.error };
-  const all = { entries: [], images: {}, scans: { index: [], files: {} }, topicModes: {} };
+  const all = { entries: [], images: {}, scans: { index: [], files: {} }, topicModes: {}, pcDeleted: [] };
   for (const pkg of r.pkgs) {
     const one = await pullOne(r, pkg); if (!one.ok) return one;
     const d = one.data;
     all.entries.push(...d.entries.filter(e => !all.entries.some(x => x.id === e.id))); Object.assign(all.images, d.images);
-    all.scans.index.push(...d.scans.index.filter(x => !all.scans.index.some(y => y.name === x.name))); Object.assign(all.scans.files, d.scans.files); Object.assign(all.topicModes, d.topicModes);
+    all.scans.index.push(...d.scans.index.filter(x => !all.scans.index.some(y => y.name === x.name))); Object.assign(all.scans.files, d.scans.files); Object.assign(all.topicModes, d.topicModes); all.pcDeleted.push(...(d.pcDeleted || []));
   }
   return { ok: true, data: all };
 }
@@ -115,7 +115,8 @@ async function pullOne(r, pkg) {
     scans.files[sc.name] = g.out;
   }
   const st = await cat(r, 'files/settings.json', pkg), topicModes = (st.code === 0 && parseJson(st.out, {}).topicModes) || {};
-  return { ok: true, data: { entries, images, scans, topicModes } };
+  const pd = await cat(r, 'files/pc_deleted.json', pkg), pcDeleted = (pd.code === 0 && parseJson(pd.out, {}).ids) || [];   // スマホで消した、PC から来たメモ
+  return { ok: true, data: { entries, images, scans, topicModes, pcDeleted } };
 }
 // 取り込んだメモ（原本のまま）と、取り込んだスキャンの名前を、スマホへ返す → スマホに「取り込み済み」と出て、そのメモだけ消せるようになる
 async function mark(importedEntries, scansDone) {
@@ -132,4 +133,10 @@ async function sendRecords(names, topics = []) {
   let ok = true; for (const pkg of r.pkgs) ok = (await putFile(r, 'files/records.json', JSON.stringify({ version: 2, records: names.filter(n => n && n !== '日記'), topics: [...new Set(topics)].filter(n => n && n !== '日記' && !names.includes(n)) }), pkg)) && ok;
   return { ok };
 }
-module.exports = { install, findAdb, apkPath, parseDevices, PKG, pull, mark, sendRecords };
+// PC のチャットメモ（スマホで書いたもの以外）と日のノートを、スマホへ全部渡す（メモは共有）
+async function sendPcMemos(data) {
+  const r = await ready(); if (r.error) return { ok: false, message: r.error };
+  let ok = true; for (const pkg of r.pkgs) ok = (await putFile(r, 'files/pc_memos.json', JSON.stringify(data), pkg)) && ok;
+  return { ok };
+}
+module.exports = { sendPcMemos, install, findAdb, apkPath, parseDevices, PKG, pull, mark, sendRecords };

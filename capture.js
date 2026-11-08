@@ -17,7 +17,7 @@ const saveState = (v, st) => fs.writeFileSync(stateFile(v), JSON.stringify(st, n
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 function importCapture(v, data) {
-  const st = loadState(v), sum = { notes: 0, chats: 0, days: 0, appended: 0, scans: 0, blankScans: 0, already: 0 };
+  const st = loadState(v), sum = { notes: 0, chats: 0, days: 0, appended: 0, scans: 0, blankScans: 0, already: 0, updated: 0, removed: 0 };
   const names = new Map();   // スマホの写真の名前 → vault に入れた名前
   const saveImages = list => (list || []).filter(n => data.images[n]).map(n => {
     if (!names.has(n)) names.set(n, v.addFiles([{ name: n, bytes: [...data.images[n]] }])[0]);
@@ -28,8 +28,23 @@ function importCapture(v, data) {
   const noteByStem = stem => v.state().notes.find(n => n.stem === stem);
   const entries = [...data.entries].sort((a, b) => a.created - b.created), modes = data.topicModes || {};
   let chatTouched = false;
+  const chatMsg = id => chat.messages.find(x => x.id === id);
+  // スマホで消した PC のメモ → PC でも（ごみ箱へ）
+  for (const pid of data.pcDeleted || []) { const m = chatMsg(pid); if (m) { chat.messages = chat.messages.filter(x => x !== m); chat.trash.push({ ...m, deleted: Date.now() }); chatTouched = true; sum.removed++; } }
   for (const e of entries) {
-    if (st.ids[e.id]) { sum.already++; continue; }
+    if (e.pcId) {   // PC から来たメモ: スマホで直したもの（新しい方が勝つ）だけ PC に反映
+      const m = chatMsg(e.pcId); if (m && (e.edited || 0) > (m.edited || 0)) { m.text = e.text; m.topic = e.topic === 'メモ' ? '' : (e.topic || ''); m.edited = e.edited; chatTouched = true; sum.updated++; }
+      continue;
+    }
+    if (st.ids[e.id]) {   // 取り込み済みのメモを、スマホで直した（新しい方が勝つ）→ チャットメモの本文も。日の・まとめのノートには、手を入れない
+      const rec = st.ids[e.id], snapEdited = (rec.snap && rec.snap.edited) || 0, m = chatMsg(rec.memo);
+      if (m && (e.edited || 0) > snapEdited && (e.text || '') !== ((rec.snap && rec.snap.text) || '')) {
+        const keep = (m.text.match(/^(\[@[^\]]*\]\(memo:[^)]+\)\s*)+/) || [''])[0], imgs = m.text.match(/\n?!\[\]\([^)]*\)/g) || [];
+        m.text = (keep + (e.text || '').replace(MEMO_LINK, (_a, label) => label).trim() + imgs.join('')).trim(); m.edited = e.edited; chatTouched = true; sum.updated++;
+        rec.snap = e;
+      }
+      sum.already++; continue;
+    }
     const topic = e.topic === 'メモ' ? '' : (e.topic || ''), at = L.now(new Date(e.created)), date = L.dayOf(at), mode = modes[topic] || {};
     const imgs = saveImages(e.images).map(n => `![](${n})`);
     const mention = id => { const m = memoOf(id); const o = m && chat.messages.find(x => x.id === m); return o ? `[@${(o.text || '').split('\n')[0].replace(/[\[\]()]/g, '').slice(0, 14)}](memo:${o.id})` : ''; };
@@ -80,9 +95,18 @@ function importedEntries(v) {
 function summaryText(sum) {
   const parts = [];
   if (sum.chats) parts.push(`チャットメモに ${sum.chats} 件`); if (sum.days) parts.push(`日記・記録にも ${sum.days} 件`); if (sum.appended) parts.push(`まとめのノートにも ${sum.appended} 件`);
-  if (sum.scans) parts.push(`紙のスキャン ${sum.scans} 枚`);
+  if (sum.scans) parts.push(`紙のスキャン ${sum.scans} 枚`); if (sum.updated) parts.push(`直したメモ ${sum.updated} 件`); if (sum.removed) parts.push(`消したメモ ${sum.removed} 件`);
   let t = parts.length ? '取り込みました: ' + parts.join('、') + '。' : '新しく取り込むものはありませんでした。';
   if (sum.blankScans) t += `\n番号の無いスキャン ${sum.blankScans} 枚は、スマホで番号を付けてから取り込めます。`;
   return t;
 }
-module.exports = { importCapture, importedEntries, summaryText, loadState };
+// スマホへ渡す、PC のメモ全部と日のノート（スマホで見られる・直せる。スマホからこの PC のメモに戻った分は、取り込むときに反映）
+function pcMemos(v) {
+  const s = v.state(), chat = (s.docs || {})['C_チャット'] || {};
+  return {
+    version: 1,
+    memos: (chat.messages || []).filter(m => !String(m.src || '').startsWith('phone:')).map(m => ({ id: m.id, topic: m.topic || '', t: m.t, text: m.text || '', edited: m.edited || 0 })),
+    days: (s.diaries || []).map(d => ({ kind: d.kind || '日記', date: d.date, body: d.body || '' })),
+  };
+}
+module.exports = { pcMemos, importCapture, importedEntries, summaryText, loadState };

@@ -162,4 +162,17 @@ class CaptureTest {
         assertEquals(ALL, ns.lastTopic)
         assertNull(deleteTopic(es, s, DIARY))
     }
+
+    @Test fun pcMemosAreShared() {
+        val mine = Entry("m1", 1, "夢", "スマホで書いた")
+        val shared = Entry("pc-a1", 100, "夢", "古い", pcId = "a1", edited = 5)
+        val gone = Entry("pc-a2", 200, "夢", "PCで消えた", pcId = "a2")
+        val memos = listOf(PcMemo("a1", "夢", 100, "PCで直した", 50), PcMemo("a3", "", 300, "新しい", 0), PcMemo("a4", "夢", 400, "スマホで消した", 0))
+        val out = mergePcMemos(listOf(mine, shared, gone), memos, setOf("a4"))
+        assertEquals(listOf("m1", "pc-a1", "pc-a3"), out.map { it.id })
+        assertEquals("PCで直した", out[1].text)                         // PC の方が新しい
+        assertEquals(UNASSIGNED, out[2].topic)
+        val keep = mergePcMemos(listOf(shared.copy(text = "スマホで直した", edited = 99)), listOf(PcMemo("a1", "夢", 100, "PC", 50)), emptySet())
+        assertEquals("スマホで直した", keep[0].text)                     // スマホの方が新しい
+    }
 }

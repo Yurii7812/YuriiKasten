@@ -21,6 +21,7 @@ data class Entry(
     val exported: Boolean = false,
     val edited: Long = 0,
     val noTime: Boolean = false, // 日付を指定して「時刻を入れない」で書いた（PC では時刻を付けずに入る）
+    val pcId: String? = null,    // PC のチャットメモから来たメモの、PC での id（共有。直したり消したりすると、次の USB で PC にも反映される）
 )
 
 data class Settings(
@@ -178,6 +179,29 @@ fun matchesQuery(text: String, query: String): Boolean {
     return terms.all { it in t }
 }
 
+/** PC のチャットメモ 1 件（PC が USB で pc_memos.json に書く）。 */
+data class PcMemo(val id: String, val topic: String, val t: Long, val text: String, val edited: Long)
+/** PC の日・時系列記録の日のノート（読むだけ）。 */
+data class PcDay(val kind: String, val date: String, val body: String)
+
+/**
+ * PC のメモをスマホのメモに合わせる（メモは PC とスマホで共有）。
+ * PC に無いもの（PC で消した）は、スマホからも消す。PC にあって無いものは足す（取り込み済みの扱い）。
+ * 両方にあるものは、あとから直した方が勝つ（edited の新しい方）。スマホで消したもの（deleted）は足し直さない。
+ */
+fun mergePcMemos(entries: List<Entry>, memos: List<PcMemo>, deleted: Set<String>): List<Entry> {
+    val ids = memos.map { it.id }.toSet()
+    val out = entries.filter { it.pcId == null || it.pcId in ids }.toMutableList()
+    val byPc = out.filter { it.pcId != null }.associateBy { it.pcId!! }
+    for (m in memos) {
+        if (m.id in deleted) continue
+        val ex = byPc[m.id]
+        if (ex == null) out.add(Entry(id = "pc-" + m.id, created = m.t, topic = normalizedTopic(m.topic.ifEmpty { UNASSIGNED }), text = m.text, edited = m.edited, pcId = m.id))
+        else if (m.edited > ex.edited) out[out.indexOf(ex)] = ex.copy(topic = normalizedTopic(m.topic.ifEmpty { UNASSIGNED }), text = m.text, edited = m.edited)
+    }
+    return out
+}
+
 /**
  * データはアプリの中だけ（entries.json と images/）。共有フォルダには置かない。
  * PC の Gnosis が USB（adb の run-as）で直接読み、取り込んだ id を imported.json に書き戻す。
@@ -204,11 +228,12 @@ class Store(private val ctx: Context) {
     /** PC の Gnosis が取り込んだ id（PC が書き戻す）。 */
     fun importedIds(entries: List<Entry>? = null): Set<String> {
         val f = File(ctx.filesDir, "imported.json")
-        if (!f.exists()) return emptySet()
+        if (!f.exists()) return (entries ?: load()).filter { it.pcId != null }.map { it.id }.toSet()
         return try {
-            val imported = JSONObject(f.readText()).optJSONArray("entries") ?: return emptySet()
+            val imported = JSONObject(f.readText()).optJSONArray("entries") ?: JSONArray()
             val current = (entries ?: load()).associateBy { it.id }
-            (0 until imported.length()).mapNotNull { i ->
+            val pcOnes = current.values.filter { it.pcId != null }.map { it.id }.toSet()   // PC と共有しているメモは、取り込み済みの扱い
+            pcOnes + (0 until imported.length()).mapNotNull { i ->
                 val old = fromJson(imported.getJSONObject(i))
                 val now = current[old.id]
                 if (now != null && old.copy(edited = 0, exported = false) == now.copy(edited = 0, exported = false)) old.id else null
@@ -259,6 +284,31 @@ class Store(private val ctx: Context) {
         } catch (e: Exception) { emptyList() }
     }
 
+    /** PC のチャットメモ・日のノート（USB で取り込むたびに、PC が files/pc_memos.json に全部書く）。 */
+    fun loadPc(): Pair<List<PcMemo>, List<PcDay>> {
+        val f = File(ctx.filesDir, "pc_memos.json")
+        if (!f.exists()) return Pair(emptyList(), emptyList())
+        return try {
+            val o = JSONObject(f.readText())
+            val a = o.optJSONArray("memos") ?: JSONArray(); val d = o.optJSONArray("days") ?: JSONArray()
+            Pair((0 until a.length()).map { val m = a.getJSONObject(it); PcMemo(m.getString("id"), m.optString("topic", ""), m.optLong("t"), m.optString("text", ""), m.optLong("edited", 0)) },
+                (0 until d.length()).map { val x = d.getJSONObject(it); PcDay(x.optString("kind", DIARY), x.optString("date", ""), x.optString("body", "")) })
+        } catch (e: Exception) { Pair(emptyList(), emptyList()) }
+    }
+    private val pcDeletedFile get() = File(ctx.filesDir, "pc_deleted.json")
+    fun loadPcDeleted(): Set<String> = try {
+        val a = JSONObject(pcDeletedFile.readText()).optJSONArray("ids") ?: JSONArray(); (0 until a.length()).map { a.getString(it) }.toSet()
+    } catch (e: Exception) { emptySet() }
+    /** スマホで消した PC のメモ。次の USB で PC にも反映する（PC がメモを消したら、ここからも外す）。 */
+    fun savePcDeleted(ids: Set<String>) { pcDeletedFile.writeText(JSONObject().put("ids", JSONArray(ids.toList())).toString()) }
+    /** PC のメモに合わせた一覧（変わらなければ同じ）。 */
+    fun syncPc(entries: List<Entry>): List<Entry> {
+        val (memos, _) = loadPc(); if (memos.isEmpty() && entries.none { it.pcId != null }) return entries
+        val deleted = loadPcDeleted(); val live = memos.map { it.id }.toSet()
+        if (deleted.any { it !in live }) savePcDeleted(deleted.filter { it in live }.toSet())
+        return mergePcMemos(entries, memos, deleted)
+    }
+
     fun saveSettings(s: Settings) {
         val o = JSONObject()
         o.put("alarmOn", s.alarmOn); o.put("alarmMinutes", s.alarmMinutes)
@@ -290,6 +340,7 @@ class Store(private val ctx: Context) {
             put("images", JSONArray(e.images)); put("parent", e.parent ?: JSONObject.NULL)
             put("contexts", JSONArray(e.contexts)); put("exported", e.exported); put("edited", e.edited)
             if (e.noTime) put("notime", true)
+            if (e.pcId != null) put("pcId", e.pcId)
         }
 
         fun fromJson(o: JSONObject): Entry {
@@ -299,7 +350,7 @@ class Store(private val ctx: Context) {
                 text = o.optString("text", ""), images = strs("images"),
                 parent = if (o.isNull("parent")) null else o.optString("parent").ifEmpty { null },
                 contexts = strs("contexts"), exported = o.optBoolean("exported", false), edited = o.optLong("edited", 0),
-                noTime = o.optBoolean("notime", false),
+                noTime = o.optBoolean("notime", false), pcId = o.optString("pcId", "").ifEmpty { null },
             )
         }
     }
