@@ -64,7 +64,7 @@ const EN = {
 'トピック未選択': 'No topic', '未選択': 'Unselected', '未選択 / 日記 / トピック名': 'Unselected / Diary / topic name',
 '＋ トピック': '+ Topic', '＋ トピックIndexに入れる': '+ Add to topic Index', 'をトピックIndexに追加': ' added to topic Index',
 'このトピックIndexを削除': 'Delete this topic Index', 'このトピックを消す': 'Delete this topic',
-'このノートのトピックIndex': 'Topic Index of this note', '索引されているトピックIndex': 'Indexed in topic Index', '索引': 'Index',
+'このノートのトピックIndex': 'Topic Index of this note', '索引されているトピックIndex': 'Indexed in topic Index', '自トピック': 'Own topic', 'トピック': 'Topic', '索引': 'Index',
 '新しいトピックIndexを作る（このノートが入口）': 'Create a new topic Index (this note is the entry)',
 '入口': 'Entry', '入口・名前': 'Entry / name', 'を入口にします': ' becomes the entry', 'を作ります': ' will be created',
 '入口のノート（赤い点を付けるID）。無いIDなら、新しいノートを作ります。キーワードのIDの中から選べます': 'Entry note (ID that gets the red dot). If it does not exist, a new note is created. You can choose from the keyword IDs.',
