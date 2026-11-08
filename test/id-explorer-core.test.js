@@ -56,3 +56,18 @@ test('IndexのIDチップはトピックIndexがあるならそちらを先に�
   assert.deepEqual(X.followIndexReference(notes,topics,'d','99'),{kind:'missing',key:'d:99'});
   assert.deepEqual(X.followIndexReference(notes,topics,'d','2'),{kind:'topic',key:'2-学習'});
 });
+
+test('探索結果のグループ順を変更しても全グループを保持する',()=>{
+  assert.deepEqual(X.normalizeOrder(['notes','notes','keywords']),['notes','keywords','topics']);
+  assert.deepEqual(X.moveSection(['keywords','topics','notes'],'notes',-1),['keywords','notes','topics']);
+  assert.deepEqual(X.moveSection(['notes','keywords','topics'],'notes',-1),['notes','keywords','topics']);
+});
+test('Index、トピックIndex、ノートの内部順をそれぞれ変更する',()=>{
+  const idx = X.keywords(notes,read);
+  assert.equal(X.sortResults(idx,'keywords','name')[0].name,'哲学');
+  assert.equal(X.sortResults(idx,'keywords','count')[0].name,'政治哲学');
+  assert.equal(X.sortResults(topics,'topics','name')[0].name,'1-哲学');
+  assert.equal(X.sortResults(topics,'topics','entry')[0].entry.id,'1');
+  assert.equal(X.sortResults(notes.filter(n=>n.s==='d'&&!n.noid),'notes','id')[0].id,'1');
+  assert.equal(X.sortResults(notes.filter(n=>n.s==='d'&&!n.noid),'notes','title')[0].title,'ノート化したメモ');
+});
