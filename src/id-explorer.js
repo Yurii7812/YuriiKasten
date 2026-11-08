@@ -112,9 +112,12 @@ export function open({ notes, topics, readings = {}, paperEntries = [], subject 
       const rows = entries.rows.map(r => '<tr><td>' + esc(r.keyword) + '</td><td>' +
         r.notes.map(x => indexChip(x.s, x.id + (x.anchor ? '(' + x.anchor + ')' : ''), t.name)).join('') +
         '</td></tr>').join('');
-      const parentIndexes = topics.filter(o => o.name !== t.name &&
-        (L.mergeTopic(o).stars.includes(t.name) || (t.entry && L.mergeTopic(o).rows.some(r =>
-          r[t.entry.s].some(raw => L.splitAnchor(raw).id === t.entry.id))));
+      const parentIndexes = topics.filter(o => {
+        if (o.name === t.name) return false;
+        const other = L.mergeTopic(o);
+        return other.stars.includes(t.name) ||
+          !!(t.entry && other.rows.some(r => r[t.entry.s].some(raw => L.splitAnchor(raw).id === t.entry.id)));
+      });
       return (parentIndexes.length ? '<div class="backidx">↑ ' + parentIndexes.map(topicLink).join('') + '</div>' : '') +
         '<div class="row idex-topic-head"><h2>' + esc(t.name.replace(/^[0-9][0-9a-z]*-/, '')) + '</h2>' +
         '<span class="sub">入口</span>' + (t.entry ? indexChip(t.entry.s, t.entry.id, t.name) : '<span class="sub">なし</span>') + '</div>' +
