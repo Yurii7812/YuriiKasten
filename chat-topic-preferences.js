@@ -41,8 +41,13 @@ function remove(data, name) {
   init(data);
   delete data.upperByTopic[name];
   for (const [k, list] of Object.entries(data.upperByTopic)) data.upperByTopic[k] = clean(list.filter(x => x !== name), k);
-  if (data.target.topic === name) data.target.topic = '';
-  data.target.ups = clean(data.target.ups.filter(x => x !== name), data.target.topic);
+  if (data.target.topic === name) {
+    // 消したトピックの選択設定を未選択トピックへ引き継がない。
+    data.target.topic = '';
+    data.target.ups = clean(data.upperByTopic[''], '');
+  } else {
+    data.target.ups = clean(data.target.ups.filter(x => x !== name), data.target.topic);
+  }
   data.upperByTopic[data.target.topic] = [...data.target.ups];
 }
 module.exports = { clean, init, open, selectUpper, rename, remove };
