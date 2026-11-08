@@ -444,3 +444,12 @@ test('紙のトピックIndex: 入口の紙のノートが、まだ無くても�
   const old = v.saveTopic({ name: '古い', entry: { s: 'd', id: '1' }, keyword: '', d: 'PKM 1', p: 'PKM 3' });
   assert.strictEqual(openVault(dir).state().topics.find(x => x.name === '古い').text, 'PKM 1\nPKM 3(p)');
 });
+
+test('日のノート: 同じ時刻のメモは、空行なしでつなぐ。時刻が違うときだけ空行＋時刻', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pkm-day-')), v = openVault(dir);
+  v.appendToDay('日記', '2026-11-08', '10:00 一つ目');
+  v.appendToDay('日記', '2026-11-08', '10:00 二つ目');
+  v.appendToDay('日記', '2026-11-08', '10:05 三つ目');
+  v.appendToDay('日記', '2026-11-08', '10:05 四つ目');
+  assert.strictEqual(v.openDiary('2026-11-08').body.trim(), '10:00 一つ目\n二つ目\n\n10:05 三つ目\n四つ目');
+});

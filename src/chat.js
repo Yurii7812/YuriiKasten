@@ -30,6 +30,7 @@ export function dayEdited(kind, date, body) {
   if (!added.length && !removed.length) return;
   const t0 = Date.now(); let touched = false;
   added.forEach((b, i) => {
+    if (mr.map.some(x => x.part && b.includes(x.part))) return;   // チャットメモから入れた行を含む塊は、同期済み（同じ時刻の行をつないだ塊など）
     const ent = removed[i] && mr.map.find(x => x.blk === removed[i]), memo = ent && msg(ent.memo);
     if (memo) { const stamped = /^\d{2}:\d{2}\s/.test(ent.blk); memo.text = stamped ? b.replace(/^\d{2}:\d{2}\s+/, '') : b; memo.edited = t0; ent.blk = b; }
     else { const m = { id: uid(), topic: kind, t: t0 + i, text: b, src: 'day' }; doc.messages.push(m); mr.map.push({ blk: b, memo: m.id }); }
@@ -149,13 +150,14 @@ function paint() {
   const box = $('#c-msgs'); if (!box) return;
   const list = entries(), showTopic = view === '*'; let lastDay = '';
   box.innerHTML = list.length ? list.map(e => {
-    if (e.kind === 'line') return `<div class="bub" data-i="${e.i}"><div class="b-meta">${e.time}</div><div class="b-body md">${body(e.text)}</div></div>`;
+    if (e.kind === 'line') return `<div class="bub" data-i="${e.i}"><div class="b-body md">${body(e.text)}</div><div class="b-foot"><span class="b-left"></span><span class="b-time">${e.time}</span></div></div>`;
     const m = e.m, d = dayOfMsg_(m), head = viewMode === 'all' && d !== lastDay ? `<div class="dsep">${wk(d)}</div>` : ''; lastDay = d;
     const tags = (doc.noted[m.id] || []).map(st => noteLabel(st)).filter(Boolean).map((l, i) => `<span class="ntag" data-stem="${esc(doc.noted[m.id][i])}" title="このメモから作ったノート">📝 ${esc(l)}</span>`).join('');
     const picked = sel && sel.has(m.id);
+    const dayLink = isRec(m.topic) ? `<span class="gday" data-gday="${esc(m.topic)}|${dayOfMsg_(m)}" title="その日のノートを開く">📔 ${esc(m.topic === DIARY ? '日記' : m.topic)}</span>` : '';
     return `${head}<div class="bub${sel ? ' pick' : ''}${picked ? ' picked' : ''}" data-m="${m.id}">
-      <div class="b-meta">${sel ? `<input type="checkbox" class="bck" ${picked ? 'checked' : ''}> ` : ''}${hm(m.t)}${showTopic && m.topic ? ` · ${esc(m.topic)}` : ''}${tags ? ' ' + tags : ''}</div>
-      <div class="b-body md">${body(m.text)}</div></div>`;
+      <div class="b-body md">${body(m.text)}</div>
+      <div class="b-foot"><span class="b-left">${sel ? `<input type="checkbox" class="bck" ${picked ? 'checked' : ''}> ` : ''}${showTopic && m.topic && !dayLink ? esc(m.topic) + ' ' : ''}${dayLink}${tags ? ' ' + tags : ''}</span><span class="b-time">${hm(m.t)}</span></div></div>`;
   }).join('') : '<div class="none">まだありません。下の欄に書くと、ここに並びます</div>';
   box.scrollTop = box.scrollHeight;
 }
@@ -176,7 +178,7 @@ function send() {
     doc.messages.push(m); save();
     if (isRec(m.topic)) {   // 日記・時系列記録の、その日のノートにも（時刻つきの行）。同じ内容が両方に残る
       const date = L.dayOf(L.now(new Date(now))), line = `${hm(now)} ${text.replace(/\n{2,}/g, '\n')}`;
-      ctx.api.appendToDay(m.topic, date, line).then(d => { const k = m.topic + '|' + date, mr = doc.mirror[k] || (doc.mirror[k] = { blocks: [], map: [] }); mr.blocks = blocks(d && d.body != null ? d.body : line); mr.map.push({ blk: line, memo: m.id }); save(); ctx.refreshDiaries(); });
+      ctx.api.appendToDay(m.topic, date, line).then(d => { const k = m.topic + '|' + date, mr = doc.mirror[k] || (doc.mirror[k] = { blocks: [], map: [] }); mr.blocks = blocks(d && d.body != null ? d.body : line); mr.map.push({ blk: line, part: text.replace(/\n{2,}/g, '\n'), memo: m.id }); save(); ctx.refreshDiaries(); });
     }   // 日記の行にも（片方向。あとで日記を直しても、メモは変わらない）
   }
   inp.value = ''; draft = ''; fit(inp); mentionOff(); paint(); ctx.renderList();
@@ -390,6 +392,7 @@ document.addEventListener('click', e => {
     if (a === 'toquote') quoteDialog(chosen());
     return;
   }
+  const gd = e.target.closest('[data-gday]'); if (gd) { const [kind, date] = gd.dataset.gday.split('|'); ctx.setMode('diary'); ctx.openDiary(date, false, kind); return; }
   const nt = e.target.closest('.ntag'); if (nt) { const n = ctx.notes().find(x => x.stem === nt.dataset.stem); if (n) ctx.openNote(n.s, n.id); return; }
   const ment = e.target.closest('a[data-file^="memo:"]'); if (ment) { e.preventDefault(); const el = document.querySelector(`[data-m="${ment.dataset.file.slice(5)}"]`); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1800); } else toast('そのメモは、いまの表示にありません（「全部表示」で探せます）'); return; }
   if (mdClick(e)) return;
