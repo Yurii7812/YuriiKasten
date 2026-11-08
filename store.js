@@ -573,14 +573,27 @@ function openVault(vault) {
     // from を into にまとめる（表記揺れの統合）。同じ日は段落を時刻（行頭の 時:分）の順にまぜる。無い日は移す
     mergeRecords(from, into) {
       if (from === DIARY || from === into || !kindNames().includes(from) || !kindNames().includes(into)) return false;
-      const paras = t => (t || '').split(/\n{2,}/).map(x => x.trim()).filter(Boolean), tm = x => (x.match(/^(\d{1,2}):(\d{2})/) || [])[0] || '';
+      // 空行がなくても「時刻 本文」を1件ずつ取り出し、時刻順に並べる
+      const paras = t => {
+        const out = []; let lines = [];
+        const flush = () => { const s = lines.join('\n').trim(); if (s) out.push(s); lines = []; };
+        for (const line of (t || '').split('\n')) {
+          if (!line.trim()) { flush(); continue; }
+          if (/^\d{1,2}:\d{2}\s+/.test(line)) flush();
+          lines.push(line);
+        }
+        flush(); return out;
+      };
+      const tm = x => (x.match(/^(\d{1,2}):(\d{2})/) || [])[0] || '';
       for (const d of [...diaries.values()].filter(x => x.kind === from)) {
         const o = diaries.get(dk(into, d.date));
         if (!o) { diaries.delete(dk(from, d.date)); d.kind = into; diaries.set(dk(into, d.date), d); }
         else {
           const all = [...paras(o.body).map((x, i) => [tm(x), 0, i, x]), ...paras(d.body).map((x, i) => [tm(x), 1, i, x])];
           const timed = all.filter(x => x[0]).sort((a, b) => a[0].padStart(5, '0') < b[0].padStart(5, '0') ? -1 : a[0].padStart(5, '0') > b[0].padStart(5, '0') ? 1 : a[1] - b[1] || a[2] - b[2]), plain = all.filter(x => !x[0]);
-          o.body = [...plain, ...timed].map(x => x[3]).join('\n\n'); o.updated = L.now();
+          const prose = plain.map(x => x[3]).join('\n\n'), timeline = timed.map(x => x[3]).join('\n');
+          o.body = prose && timeline ? prose + '\n\n' + timeline : prose || timeline;
+          o.updated = L.now();
           removeFile(diaryFile(d)); diaries.delete(dk(from, d.date));
         }
       }
