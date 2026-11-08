@@ -33,7 +33,8 @@ data class Settings(
     val topics: List<String> = listOf(DIARY),
     val lastTopic: String = ALL,
     val writeTopic: String = UNASSIGNED,                 // 全部表示から書くときの書き込み先（前に使ったトピックを引き継ぐ）
-    val writeUps: List<String> = emptyList(),           // 次に書くメモの「上」（変えない限り引き継ぐ）
+    val writeUps: List<String> = emptyList(),           // 現在開いている所属トピックの上位設定
+    val writeUpsByTopic: Map<String, List<String>> = emptyMap(), // 所属トピックごとの前回選択
     val topicModes: Map<String, TopicMode> = emptyMap(),
     val ringSeconds: Int = 0,        // アラームを鳴らし続ける長さ（秒）。0 は 1 回だけ鳴らす
     val expandAll: Boolean = false,  // 長いメモを「続きを見る」を押さずに全部見せる
@@ -116,7 +117,13 @@ fun renameTopic(entries: List<Entry>, settings: Settings, from: String, to: Stri
     val es = entries.map { if (it.topic == from) it.copy(topic = t, edited = now, exported = false) else it }
     val modes = settings.topicModes.mapKeys { (k, _) -> if (k == from) t else k }
     val topics = settings.topics.map { if (it == from) t else it }.let { if (from !in settings.topics) it + t else it }
-    return es to settings.copy(topics = topics, topicModes = modes, lastTopic = if (settings.lastTopic == from) t else settings.lastTopic)
+    val prefs = settings.writeUpsByTopic.mapKeys { (k, _) -> if (k == from) t else k }
+        .mapValues { (k, v) -> v.map { if (it == from) t else it }.distinct().filter { it != k } }
+    return es to settings.copy(topics = topics, topicModes = modes,
+        lastTopic = if (settings.lastTopic == from) t else settings.lastTopic,
+        writeTopic = if (settings.writeTopic == from) t else settings.writeTopic,
+        writeUps = settings.writeUps.map { if (it == from) t else it }.distinct().filter { it != (if (settings.writeTopic == from) t else settings.writeTopic) },
+        writeUpsByTopic = prefs)
 }
 
 /**
@@ -141,7 +148,10 @@ fun deleteTopic(entries: List<Entry>, settings: Settings, name: String): Pair<Li
     val now = System.currentTimeMillis()
     val es = entries.map { if (it.topic == name) it.copy(topic = UNASSIGNED, edited = now, exported = false) else it }
     return es to settings.copy(topics = settings.topics.filter { it != name }, topicModes = settings.topicModes - name,
-        lastTopic = if (settings.lastTopic == name) ALL else settings.lastTopic)
+        lastTopic = if (settings.lastTopic == name) ALL else settings.lastTopic,
+        writeTopic = if (settings.writeTopic == name) UNASSIGNED else settings.writeTopic,
+        writeUps = settings.writeUps.filter { it != name },
+        writeUpsByTopic = (settings.writeUpsByTopic - name).mapValues { (_, v) -> v.filter { it != name } })
 }
 
 /** 取り込み済みメモを消すとき、その削除で空になる通常トピックだけを片付ける。 */
@@ -151,7 +161,10 @@ fun settingsAfterImportedRemoval(entries: List<Entry>, settings: Settings, remov
         it !in occupied && it !in records && it !in setOf(DIARY, ALL, UNASSIGNED) && settings.topicModes[it]?.record != true
     }.toSet()
     return settings.copy(topics = settings.topics.filter { it !in gone }, topicModes = settings.topicModes - gone,
-        lastTopic = if (settings.lastTopic in gone) ALL else settings.lastTopic)
+        lastTopic = if (settings.lastTopic in gone) ALL else settings.lastTopic,
+        writeTopic = if (settings.writeTopic in gone) UNASSIGNED else settings.writeTopic,
+        writeUps = settings.writeUps.filter { it !in gone },
+        writeUpsByTopic = settings.writeUpsByTopic.filterKeys { it !in gone }.mapValues { (_, v) -> v.filter { it !in gone } })
 }
 
 /** 並び list の中で a から b まで（どちら向きでも）の id。範囲選択に使う。 */
@@ -248,15 +261,27 @@ class Store(private val ctx: Context) {
         if (!settingsFile.exists()) return Settings()
         val o = JSONObject(settingsFile.readText())
         val topics = o.optJSONArray("topics")?.let { a -> (0 until a.length()).map { a.getString(it) } }
+        val last = o.optString("lastTopic", ALL).let { if (it == ALL) ALL else normalizedTopic(it) }
+        val oldTopic = normalizedTopic(o.optString("writeTopic", UNASSIGNED))
+        val oldUps = o.optJSONArray("writeUps")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList()
+        val rawPrefs = o.optJSONObject("writeUpsByTopic")?.let { prefs ->
+            prefs.keys().asSequence().associateWith { key ->
+                prefs.optJSONArray(key)?.let { a -> (0 until a.length()).map { a.getString(it) }.distinct().filter { it.isNotEmpty() && it != key } } ?: emptyList()
+            }
+        } ?: emptyMap()
+        // 旧版の共有設定は最後のトピックだけに移行し、他トピックへは引き継がない。
+        val byTopic = if (rawPrefs.isEmpty() && oldUps.isNotEmpty()) mapOf(oldTopic to oldUps.filter { it != oldTopic }.distinct()) else rawPrefs
+        val current = if (last == ALL) UNASSIGNED else last
         return Settings(
             alarmOn = o.optBoolean("alarmOn", false),
             alarmMinutes = o.optInt("alarmMinutes", 60).coerceAtLeast(1),
             fromHour = o.optInt("fromHour", 9),
             toHour = o.optInt("toHour", 23),
             topics = (listOf(DIARY) + (topics ?: emptyList()).map(::normalizedTopic)).filter { it.isNotEmpty() && it != ALL }.distinct(),
-            lastTopic = o.optString("lastTopic", ALL).let { if (it == ALL) ALL else normalizedTopic(it) },
-            writeTopic = normalizedTopic(o.optString("writeTopic", UNASSIGNED)),
-            writeUps = o.optJSONArray("writeUps")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
+            lastTopic = last,
+            writeTopic = if (last == ALL) UNASSIGNED else last,
+            writeUps = byTopic[current].orEmpty(),
+            writeUpsByTopic = byTopic,
             topicModes = o.optJSONObject("topicModes")?.let { m ->
                 m.keys().asSequence().filter { it.isNotEmpty() && it != DIARY }.associateWith { k ->
                     val t = m.getJSONObject(k); TopicMode(t.optBoolean("single", false), t.optBoolean("stamp", true), t.optBoolean("record", false))
@@ -325,6 +350,9 @@ class Store(private val ctx: Context) {
         o.put("alarmOn", s.alarmOn); o.put("alarmMinutes", s.alarmMinutes)
         o.put("fromHour", s.fromHour); o.put("toHour", s.toHour)
         o.put("topics", JSONArray(s.topics)); o.put("lastTopic", s.lastTopic); o.put("writeTopic", s.writeTopic); o.put("writeUps", JSONArray(s.writeUps))
+        val upperPrefs = JSONObject()
+        s.writeUpsByTopic.forEach { (topic, uppers) -> upperPrefs.put(topic, JSONArray(uppers)) }
+        o.put("writeUpsByTopic", upperPrefs)
         o.put("ringSeconds", s.ringSeconds); o.put("expandAll", s.expandAll)
         o.put("folgeView", s.folgeView); o.put("writtenStamp", s.writtenStamp)
         // PC の取り込み（\M）もこのファイルを読む（topicModes）
