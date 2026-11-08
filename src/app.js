@@ -718,7 +718,7 @@ async function changeId(note, v) {
 // 通常ノート・ノート化されたメモで共通のID探索。
 // グローバルIndex→トピックIndex→本文・関係をたどり、候補確定後に保存する。
 function openIdExplorer({ subject = null, onChoose }) {
-  return IDExplorer.open({ notes, topics, readings, subject, onChoose });
+  return IDExplorer.open({ notes, topics, readings, paperEntries: PI.pendingEntries(), subject, onChoose });
 }
 function giveIdDialog(note) {
   if (!note || note.s !== 'd') return;
