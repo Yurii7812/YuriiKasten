@@ -817,7 +817,17 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
                 if (moveSelectedOpen) { selected.clear(); selecting = false }
                 closeMove()
             },
-            onNew = { moveToNewTopic = ids; closeMove(); addTopicOpen = true })
+            onNew = { moveToNewTopic = ids; closeMove(); addTopicOpen = true },
+            onCreateInline = { proposed ->
+                val name = normalizedTopic(proposed.trim())
+                if (name.isBlank() || name in topics || name in pcRecords || name in pcTopics ||
+                    name in setOf(ALL, DIARY, "全部", "全部表示", "未所属", "トピック未選択", "その他")) false
+                else {
+                    settings = settings.copy(topics = settings.topics + name)
+                    store.saveSettings(settings)
+                    true
+                }
+            })
     }
 
     if (topicListOpen) {
@@ -1176,14 +1186,14 @@ private fun MemoSwipe(enabled: Boolean, onContext: () -> Unit, onBranch: () -> U
 
 @Composable
 private fun TopicDestinationDialog(topics: List<String>, modes: Map<String, TopicMode>, records: List<String>,
-    onDismiss: () -> Unit, onSelect: (String) -> Unit, onNew: () -> Unit) {
+    onDismiss: () -> Unit, onSelect: (String) -> Unit, onNew: () -> Unit, onCreateInline: (String) -> Boolean) {
     var query by remember { mutableStateOf("") }
     val matched = remember(topics, query) { topics.filter { matchesQuery(topicLabel(it), query) } }
     val sec = matched.partition { it != DIARY && modes[it]?.record != true && it !in records }
     TopicPicker("移動先を選ぶ", if (matchesQuery(topicLabel(UNASSIGNED), query)) listOf(UNASSIGNED) else emptyList(),
         listOf(TopicSection("トピック", sec.first), TopicSection("日記・時系列記録", sec.second)), null, emptyMap(),
         onPick = onSelect, onEdit = null, newLabel = "＋ 新しいトピックを作って移動", onNew = onNew, closeLabel = "やめる",
-        onDismiss = onDismiss, query = query, onQuery = { query = it })
+        onDismiss = onDismiss, query = query, onQuery = { query = it }, onCreateInline = onCreateInline)
 }
 
 /** 長押しのシートの 1 行分。 */
