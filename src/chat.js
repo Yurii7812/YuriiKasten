@@ -292,8 +292,8 @@ function openPicker(anchor, { multi, selected, near, exclude = [], extra = [], o
     box.querySelector('.tgcancel').onclick = () => { form.style.display = 'none'; };
     const make = () => {
       const name = nameIn.value.trim();
-      if (!name || topic(name) || isRec(name) || ['*', '全部', '全部表示', 'トピック未選択'].includes(name)) return alert('その名前は使えません');
-      doc.topics.push({ name, type: 'bubble', stamp: true, entry: null });
+      if (!name || topic(name) || pendingTopics.some(t => t.name === name) || isRec(name) || ['*', '全部', '全部表示', 'トピック未選択'].includes(name)) return alert('その名前は使えません');
+      pendingTopics.push({ name, type: 'bubble', stamp: true, entry: null });
       names.unshift(name); sel.add(name); save(); ctx.renderList();
       nameIn.value = ''; form.style.display = 'none'; box.querySelector('.tgs').value = ''; draw('');
     };
@@ -464,6 +464,7 @@ function setTopicsDialog(ms) {
   const one = ms.length === 1 ? ms[0] : null;
   let topicSel = one ? one.topic : null, upsSel = new Set(one ? upsOf(one) : []), upsTouched = !!one;
   const names = recentNames(one ? one.topic : undefined);
+  const pendingTopics = [];
   dialog(`<h3>${ms.length > 1 ? ms.length + ' 件の' : ''}所属・上位トピックを変える</h3><input id="sd-q" placeholder="トピックを探す" style="width:100%;margin-bottom:6px"><div class="sd-cols"><div><div class="sub">所属トピック</div><div id="sd-t" class="sd-list"></div><div class="row" style="gap:4px;margin-top:6px"><input id="sd-new-t" style="min-width:0;flex:1" placeholder="新しい所属トピック"><button id="sd-create-t" type="button">＋ 作る</button></div></div><div><div class="sub">上位トピック（いくつでも）</div><div id="sd-u" class="sd-list"></div><div class="row" style="gap:4px;margin-top:6px"><input id="sd-new-u" style="min-width:0;flex:1" placeholder="新しい上位トピック"><button id="sd-create-u" type="button">＋ 作る</button></div></div></div><div class="row"><button class="p" id="sd-ok">決定</button><button id="sd-no">やめる</button></div>`, close => {
     const draw = () => {
       const q = $('#sd-q').value.trim().toLowerCase(), f = n => !q || topicLabel(n).toLowerCase().includes(q);
@@ -479,7 +480,7 @@ function setTopicsDialog(ms) {
       names.unshift(name);
       if (kind === 't') topicSel = name;
       else { upsSel.add(name); upsTouched = true; }
-      input.value = ''; $('#sd-q').value = ''; draw(); save(); ctx.renderList();
+      input.value = ''; $('#sd-q').value = ''; draw();
     };
     for (const kind of ['t', 'u']) {
       $('#sd-create-' + kind).onclick = () => create(kind);
@@ -489,7 +490,7 @@ function setTopicsDialog(ms) {
     }
     $('#modal .box').onclick = e => { const t = e.target.closest('[data-t]'), u = e.target.closest('[data-u]'); if (t) { topicSel = t.dataset.t; draw(); } if (u) { upsTouched = true; if (upsSel.has(u.dataset.u)) upsSel.delete(u.dataset.u); else upsSel.add(u.dataset.u); draw(); } };
     $('#sd-no').onclick = close;
-    $('#sd-ok').onclick = () => { const now = Date.now(); for (const m of ms) { if (topicSel !== null) m.topic = topicSel; if (upsTouched) { const list = [...upsSel].filter(x => x !== m.topic); if (list.length) m.ups = list; else delete m.ups; } m.edited = now; } save(); close(); paint(); showTarget(); ctx.renderList(); };
+    $('#sd-ok').onclick = () => { doc.topics.push(...pendingTopics); const now = Date.now(); for (const m of ms) { if (topicSel !== null) m.topic = topicSel; if (upsTouched) { const list = [...upsSel].filter(x => x !== m.topic); if (list.length) m.ups = list; else delete m.ups; } m.edited = now; } save(); close(); paint(); showTarget(); ctx.renderList(); };
   });
 }
 
