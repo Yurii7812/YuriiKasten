@@ -32,13 +32,16 @@ class TopicSection(val heading: String, val names: List<String>)
 @Composable
 fun TopicPicker(title: String, leading: List<String>, sections: List<TopicSection>, current: String?, counts: Map<String, Int>,
                 onPick: (String) -> Unit, onEdit: ((String) -> Unit)?, newLabel: String, onNew: () -> Unit, closeLabel: String,
-                onDismiss: () -> Unit, query: String, onQuery: (String) -> Unit) {
+                onDismiss: () -> Unit, query: String, onQuery: (String) -> Unit, onCreateInline: ((String) -> Boolean)? = null) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(shape = RoundedCornerShape(24.dp), tonalElevation = 6.dp, modifier = Modifier.fillMaxWidth(0.94f).fillMaxHeight(0.88f)) {
             Column(Modifier.padding(16.dp)) {
                 Text(title, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 6.dp))
                 // 探す欄の右に小さなボタンを 2 つ: 時系列記録だけを見せる／新しいトピック
                 var recordsOnly by remember { mutableStateOf(false) }
+                var creating by remember { mutableStateOf(false) }
+                var newName by remember { mutableStateOf("") }
+                var creationError by remember { mutableStateOf("") }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(query, onQuery, placeholder = { Text("探す") }, singleLine = true, modifier = Modifier.weight(1f),
                         leadingIcon = { Icon(Icons.Filled.Search, null) })
@@ -46,7 +49,23 @@ fun TopicPicker(title: String, leading: List<String>, sections: List<TopicSectio
                         Icon(Icons.Filled.History, "時系列記録だけを表示", Modifier.size(26.dp),
                             tint = if (recordsOnly) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
                     }
-                    IconButton(onClick = onNew) { Icon(Icons.Filled.Add, newLabel, Modifier.size(28.dp), tint = MaterialTheme.colorScheme.primary) }
+                    IconButton(onClick = { if (onCreateInline != null) { creating = !creating; creationError = "" } else onNew() }) {
+                        Icon(Icons.Filled.Add, newLabel, Modifier.size(28.dp), tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                if (creating && onCreateInline != null) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(newName, { newName = it; creationError = "" },
+                            placeholder = { Text("新しい所属トピック") }, singleLine = true, modifier = Modifier.weight(1f))
+                        TextButton(onClick = {
+                            val name = newName.trim()
+                            if (name.isNotBlank() && onCreateInline(name)) {
+                                newName = ""; creationError = ""; creating = false
+                                onPick(name) // 作成したトピックへそのまま所属させる
+                            } else creationError = "その名前は使えません"
+                        }) { Text("作って選択") }
+                    }
+                    if (creationError.isNotEmpty()) Text(creationError, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                 }
                 val shownSections = if (recordsOnly) sections.filter { it.heading.contains("時系列") } else sections
                 val shownLeading = if (recordsOnly) emptyList() else leading
