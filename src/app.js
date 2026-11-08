@@ -649,8 +649,8 @@ function openNote(s, id, n, keep, mid) {
     <div class="stage"><div class="col${s === 'p' || !text ? ' wide' : ''}">
       <div class="idline">
         ${noid ? '' : `<button class="cpid" data-act="copyid" title="IDをコピー">${cp}</button>`}
-        <input class="idin" id="f-id" value="${noid ? '' : esc(id)}" placeholder="IDなし" title="${noid ? 'IDを入れると、整理されます' : 'ID（変えると名前も変わります）'}">
-        ${noid ? '<button class="gid" data-act="giveid">IDを付ける</button>' : ''}
+        <input class="idin" id="f-id" value="${noid ? '' : esc(id)}" placeholder="IDなし" title="${noid ? 'IDを入れると、整理されます' : 'IDを空にすると、IDなしにできます。確認後、再指定もできます'}">
+        ${noid ? '<button class="gid" data-act="giveid">IDを付ける</button>' : s === 'd' ? '<button class="gid" data-act="clearid" title="IDを外して、あとから付け直す">IDを消す</button>' : ''}
         ${s === 'p' ? '<span class="dt">紙</span>' : ''}${L.KINDS[kind] ? `<span class="dt">${L.KINDS[kind]}</span>` : ''}
         ${s === 'd' ? `<span class="dt">${esc(note.created)}</span>` : ''}
         <span class="grow"></span>${noid ? (s === 'd' && text ? '<button class="nb" data-act="sib" title="IDなしのまま、並列のノートを作る（親にIDが付くと、IDも決まる）">＋ 並列</button><button class="nb" data-act="chi" title="IDなしのまま、分岐のノートを作る（このノートにIDが付くと、IDも決まる）">＋ 分岐</button>' : '') : `<button class="nb" data-act="sib" title="並列のノートを作る（同じ階層の次: ${esc(free(s, L.sibling(id)))}）">＋ 並列 <small>${esc(free(s, L.sibling(id)))}</small></button><button class="nb" data-act="chi" title="分岐のノートを作る（一つ下: ${esc(free(s, L.child(id)))}）">＋ 分岐 <small>${esc(free(s, L.child(id)))}</small></button>`}<button class="ic nm" data-act="mgn" title="右の欄を隠す・出す (Ctrl+\\)"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button><button class="ic nm" data-act="nmenu" title="このノートのメニュー">${'<svg class="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>'}</button>
@@ -669,7 +669,7 @@ function openNote(s, id, n, keep, mid) {
   $('#f-id').onchange = async e => {
     const v = e.target.value.trim().toLowerCase();
     if (v === (noid ? '' : id)) return;
-    if (!v) { e.target.value = noid ? '' : id; return; }
+    if (!v) { if (noid) return; e.target.value = id; if (note.s === 'd') await clearIdFlow(note); else alert('紙のノートはIDを外せません'); return; }
     const ok = await changeId(note, v);
     if (!ok) { alert('そのIDは使えません（形が違うか、既にあります）'); e.target.value = noid ? '' : id; }
   };
@@ -835,6 +835,7 @@ $('#pane').addEventListener('click', async e => {
   if (act === 'sib') create(s, free(s, L.sibling(id)));
   if (act === 'chi') create(s, free(s, L.child(id)));
   if (act === 'giveid') return giveIdDialog(note);
+  if (act === 'clearid' && note && note.s === 'd' && !note.noid) return clearIdFlow(note);
   if (act === 'copyid') { navigator.clipboard.writeText(note.id); return toast(`IDをコピーしました: ${note.id}`); }
   if (act === 'mgn') return toggleMgn();
   if (act === 'nmenu') return noteMenu(a, note);
