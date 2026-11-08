@@ -407,7 +407,7 @@ test('記録の種類（日記・夢・ビジネス）: 足す・上位・DailyN
   v.addRecord('ゆめ'); v.saveDiary({ date: '2026-11-08', kind: 'ゆめ', body: '09:00 あとの夢\n\n07:00 先の夢' });
   v.saveDiary({ date: '2026-11-08', kind: '夢日記', body: '08:00 まんなか' });
   assert.ok(v.mergeRecords('ゆめ', '夢日記')); const m = v.state().diaries.find(d => d.kind === '夢日記' && d.date === '2026-11-08');
-  assert.strictEqual(m.body, '07:00 先の夢\n\n08:00 まんなか\n\n09:00 あとの夢'); assert.ok(!v.records().some(k => k.name === 'ゆめ'));
+  assert.strictEqual(m.body, '07:00 先の夢\n08:00 まんなか\n09:00 あとの夢'); assert.ok(!v.records().some(k => k.name === 'ゆめ'));
   assert.ok(v.deleteRecord('夢日記')); assert.ok(!v.state().diaries.some(d => d.kind === '夢日記'));
   assert.ok(!v.renameRecord('日記', 'x') && !v.deleteRecord('日記'));
   // 読み直し
@@ -446,13 +446,18 @@ test('紙のトピックIndex: 入口の紙のノートが、まだ無くても�
   assert.strictEqual(openVault(dir).state().topics.find(x => x.name === '古い').text, 'PKM 1\nPKM 3(p)');
 });
 
-test('日のノート: 同じ時刻のメモは、空行なしでつなぐ。時刻が違うときだけ空行＋時刻', () => {
+test('日のノート: 同じ時刻でも別々の行。時刻が違っても空行は入れない', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pkm-day-')), v = openVault(dir);
   v.appendToDay('日記', '2026-11-08', '10:00 一つ目');
   v.appendToDay('日記', '2026-11-08', '10:00 二つ目');
   v.appendToDay('日記', '2026-11-08', '10:05 三つ目');
   v.appendToDay('日記', '2026-11-08', '10:05 四つ目');
-  assert.strictEqual(v.openDiary('2026-11-08').body.trim(), '10:00 一つ目\n二つ目\n\n10:05 三つ目\n四つ目');
+  assert.strictEqual(v.openDiary('2026-11-08').body.trim(), '10:00 一つ目\n10:00 二つ目\n10:05 三つ目\n10:05 四つ目');
+  // 今日のノートのリンク欄の前に1行ずつ追加する（空行は本文と節の間だけ）
+  v.saveDiary({ date: '2026-11-08', body: '09:00 朝の記録\n\n## 今日のノート\n\n- :1' });
+  v.appendToDay('日記', '2026-11-08', '10:30 午前の記録');
+  v.appendToDay('日記', '2026-11-08', '10:30 午前の追加');
+  assert.strictEqual(v.openDiary('2026-11-08').body.trim(), '09:00 朝の記録\n10:30 午前の記録\n10:30 午前の追加\n\n## 今日のノート\n\n- :1');
 });
 
 test('IDなしの分岐: 親にIDが付いた時に、子（と孫）のIDも順に決まる', () => {
