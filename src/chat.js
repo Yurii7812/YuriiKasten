@@ -377,6 +377,7 @@ function toNoteDialog() {
     <label class="rad"><input type="radio" name="as" value="noid" checked> IDなしのノート（あとで整理する）</label>
     <label class="rad"><input type="radio" name="as" value="id"> このノートのID <input id="as-id" style="width:100px" value="${esc(rootFree())}"></label>
     <label class="rad"><input type="radio" name="as" value="parent"> 親のノートのID（分岐として付ける） <input id="as-parent" style="width:100px" placeholder="例: 1a"></label>
+    <label class="rad"><input type="checkbox" id="as-time" ${ms.length > 1 ? 'checked' : ''}> ノート本文に各メモの時刻を付ける（オフなら文章だけ）</label>
     <div class="row"><button class="p" id="as-ok">ノートにする</button><button id="as-no">やめる</button></div>`, close => {
     $('#as-id').onfocus = () => { document.querySelector('input[value=id]').checked = true; };
     $('#as-parent').onfocus = () => { document.querySelector('input[value=parent]').checked = true; };
@@ -385,16 +386,17 @@ function toNoteDialog() {
       const kind = document.querySelector('input[name=as]:checked').value; let id = null;
       if (kind === 'parent') { const p = $('#as-parent').value.trim().toLowerCase(); if (!ctx.get('d', p)) return alert(`デジタルのノート ${p || '（空）'} がありません`); id = ctx.free('d', L.child(p)); }
       else if (kind === 'id') { id = $('#as-id').value.trim().toLowerCase(); if (!L.isId(id)) return alert('IDの形が違います（例: 12 や 3a）'); if (ctx.get('d', id)) return alert(`ノート ${id} は既にあります`); }
-      close(); await makeNote(ms, id);
+      const withTime = $('#as-time').checked;
+      close(); await makeNote(ms, id, withTime);
     };
   });
 }
-async function makeNote(ms, id) {
+async function makeNote(ms, id, withTime = false) {
   // 本文: 先頭に、元のチャットメモ（日付と時刻の範囲）へのリンク。そのあとに、メモの文章（コピー。あとは別物）
   // 複数選択は全IDをリンクに記録する（間の未選択メモは含めない）
   const anchor = ms.length === 1 ? `m-${ms[0].id}` : `ms-${ms.map(m => m.id).join(',')}`;
   const head = `元のチャットメモ: [${range(ms)}](${dayFile(dayOfMsg_(ms[0]))}#${anchor})`;
-  const bodyText = head + '\n\n' + ms.map(m => (ms.length > 1 ? `${hm(m.t)} ` : '') + m.text.replace(/\[@([^\]]*)\]\(memo:[^)\s]+\)/g, '@$1')).join('\n');   // メンションは、ノートでは ふつうの文字に。メモ同士に空行は挟まない
+  const bodyText = head + '\n\n' + ms.map(m => (withTime ? `${hm(m.t)} ` : '') + m.text.replace(/\[@([^\]]*)\]\(memo:[^)\s]+\)/g, '@$1')).join('\n');   // メンションは、ノートでは ふつうの文字に。メモ同士に空行は挟まない
   const note = id ? await ctx.api.saveNote({ s: 'd', id, created: L.now(new Date(ms[0].t)), keywords: [], body: bodyText }) : await ctx.api.createNote({ kind: 'text', created: L.now(new Date(ms[0].t)), body: bodyText });
   if (!ctx.get('d', note.id)) ctx.notes().push(note);
   for (const m of ms) doc.noted[m.id] = [...new Set([...(doc.noted[m.id] || []), note.stem])];
