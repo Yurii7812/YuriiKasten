@@ -28,8 +28,8 @@ object Alarm {
     fun ensureChannel(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
         if (nm.getNotificationChannel(CHANNEL) == null) {
-            val ch = NotificationChannel(CHANNEL, "定期のメモ", NotificationManager.IMPORTANCE_HIGH)
-            ch.description = "今まで何をしていたかを書くための通知"
+            val ch = NotificationChannel(CHANNEL, I18n.tr("定期のメモ"), NotificationManager.IMPORTANCE_HIGH)
+            ch.description = I18n.tr("今まで何をしていたかを書くための通知")
             ch.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
                 AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
             ch.enableVibration(true)
@@ -102,8 +102,8 @@ object Alarm {
         val pi = PendingIntent.getActivity(ctx, REQ + 1, open, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val n = NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(R.drawable.ic_note)
-            .setContentTitle("今まで何してた？")
-            .setContentText("押すと日記に書けます")
+            .setContentTitle(I18n.tr("今まで何してた？"))
+            .setContentText(I18n.tr("押すと日記に書けます"))
             .setContentIntent(pi)
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_ALARM)

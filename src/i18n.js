@@ -113,7 +113,7 @@ const EN = {
 'ノートや、ほかの会話を引用する': 'Quote notes or other conversations',
 '選んだメモを、1 つのノートにまとめます。メモは、チャットに残ります（「ノート …」の印が付きます）。': 'The selected memos are combined into one note. The memos stay in the chat (marked "Note …").',
 'このメモから作ったノート': 'Notes made from this memo', 'いま開いているノートのカーソルに、リンクを書き込む': 'Write a link at the cursor of the open note',
-'いま開いているノートへ飛ぶ (c)': 'Jump to the open note (c)', '先にノートを開いてください': 'Open a note first',
+'いま開いているノートへ飛ぶ (o)': 'Jump to the open note (o)', '先にノートを開いてください': 'Open a note first',
 '件を、ノートにする': ' item(s) → make note', '件を、ノートに引用': ' item(s) → quote in note', '件を選択': ' selected',
 '全部表示': 'Show all', 'そのメモは、いまの表示にありません（「全部表示」で探せます）': 'That memo is not in the current view (use "Show all")',
 'その日のメモはありません': 'No memos on that day', 'そのチャットメモは、もうありません': 'That chat memo no longer exists',

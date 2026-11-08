@@ -282,7 +282,7 @@ function fileDialog(name) {
     close(); view.dispatch({ changes: { from: h, insert: md }, selection: { anchor: h + md.length } }); view.focus();
   };
 }
-const sortBar = (diary) => `<div class="sortbar">${diary ? '<span class="sub">日付順</span>' : `<select id="sb-by" title="並べ替え"><option value="fz"${sortBy === 'fz' ? ' selected' : ''}>番号順</option><option value="created"${sortBy === 'created' ? ' selected' : ''}>作成順</option><option value="updated"${sortBy === 'updated' ? ' selected' : ''}>更新順</option></select>`}<button id="sb-dir" class="mini" title="${sortDir === 'asc' ? '昇順（押すと降順）' : '降順（押すと昇順）'}">${sortDir === 'asc' ? '↑' : '↓'}</button>${diary ? '' : '<button id="sb-loc" class="mini" title="いま開いているノートへ飛ぶ (c)">◎</button><button id="sb-sim" class="mini" title="似たノートを探す (s)">≈</button>'}</div>`;
+const sortBar = (diary) => `<div class="sortbar">${diary ? '<span class="sub">日付順</span>' : `<select id="sb-by" title="並べ替え"><option value="fz"${sortBy === 'fz' ? ' selected' : ''}>番号順</option><option value="created"${sortBy === 'created' ? ' selected' : ''}>作成順</option><option value="updated"${sortBy === 'updated' ? ' selected' : ''}>更新順</option></select>`}<button id="sb-dir" class="mini" title="${sortDir === 'asc' ? '昇順（押すと降順）' : '降順（押すと昇順）'}">${sortDir === 'asc' ? '↑' : '↓'}</button>${diary ? '' : '<button id="sb-loc" class="mini" title="いま開いているノートへ飛ぶ (o)">◎</button><button id="sb-sim" class="mini" title="似たノートを探す (s)">≈</button>'}</div>`;
 // 並べ替え。IDなし（未整理）は folgezettel が無いので、作成日順
 function sortNotes(list, tab) {
   const by = tab === 'u' && sortBy === 'fz' ? 'created' : sortBy, sg = sortDir === 'asc' ? 1 : -1;
@@ -473,7 +473,7 @@ document.addEventListener('keydown', e => {
   if (editing) { if (e.key === 'Escape' && ae.closest && ae.closest('.cm-editor')) { ae.blur(); e.preventDefault(); } return; }   // Esc で書く状態から抜けると、キー操作が使える
   const k = e.key;
   if (k === 'Backspace' && !$('#q').value) { e.preventDefault(); return go(-1); }   // 前に開いていたものへ（戻るボタンと同じ）
-  if (k === 'c' && cur && ['note', 'topic'].includes(cur.k)) { e.preventDefault(); return locateCur(); }
+  if (k === 'o' && !decided && cur && ['note', 'topic'].includes(cur.k)) { e.preventDefault(); return locateCur(); }   // 黄色（決めたもの）が無いときは、いま開いているものを一覧の真ん中に
   if (k === 's' && cur && cur.k === 'note') { e.preventDefault(); return startSimilar(); }
   if (k === 'i' && cur && cur.k === 'note') { e.preventDefault(); const t = $('#c-in'); return t ? t.focus() : lastView && lastView.dom.isConnected && lastView.focus(); }   // なりきり・チャットの入力欄、ふつうのノートの本文に入る
   if (mode !== 'notes') return;

@@ -118,7 +118,7 @@ private val GnosisColors = lightColorScheme(
 )
 
 private val timeFmt = SimpleDateFormat("HH:mm", Locale.JAPAN)
-private val dayFmt = SimpleDateFormat("M月d日（E）", Locale.JAPAN)
+private val dayFmt = SimpleDateFormat(I18n.dayPat(true), Locale.getDefault())
 private fun dayKey(t: Long) = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date(t))
 
 private fun short(s: String, n: Int = 24): String {
@@ -464,7 +464,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
                     } else Column {
                         Text(if (selecting) "${selected.size} 件選択" else topicLabel(topic), fontWeight = FontWeight.Bold,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        val bdSub = backdate?.let { "　日付: " + SimpleDateFormat("M月d日", Locale.JAPAN).format(Date(it)) } ?: ""
+                        val bdSub = backdate?.let { "　日付: " + SimpleDateFormat(I18n.dayPat(false), Locale.getDefault()).format(Date(it)) } ?: ""
                         val doneN = entries.count { it.id in imported }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text((if (n == 0) "すべて取り込み済み" else "未取り込み $n 件") + bdSub, fontSize = 12.sp,
@@ -511,7 +511,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
                         IconButton(onClick = { moreMenu = true }) { Icon(Icons.Filled.MoreVert, "そのほか") }
                         DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
                             if (topic == DIARY || settings.topicModes[topic]?.record == true) {
-                                DropdownMenuItem(text = { Text(backdate?.let { "日付: " + SimpleDateFormat("M月d日（E）", Locale.JAPAN).format(Date(it)) } ?: "日付を指定して書く（今日）") },
+                                DropdownMenuItem(text = { Text(backdate?.let { "日付: " + SimpleDateFormat(I18n.dayPat(true), Locale.getDefault()).format(Date(it)) } ?: "日付を指定して書く（今日）") },
                                     leadingIcon = { Icon(Icons.Filled.Event, null) }, onClick = { moreMenu = false; pickDate = true })
                                 if (backdate != null) {
                                     DropdownMenuItem(text = { Text(if (settings.writtenStamp) "今の時刻を入れる（オン）" else "今の時刻を入れる（オフ）") },
@@ -733,7 +733,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
                 }
             }
             if (shown.isEmpty()) item {
-                Text("この表示にはまだメモがありません。\nここに書いたものは、YuriiKasten の「未整理」に 1 件ずつ届きます（右上の設定で、サーバーのアドレスと合言葉を入れてください）。\n長押しで「分岐」「文脈」などができます。",
+                Text("この表示にはまだメモがありません。\nここに書いたものは、USB で PC に取り込むと、YuriiNote の「未整理」に 1 件ずつ届きます。\n長押しで「分岐」「文脈」などができます。",
                     Modifier.padding(24.dp), fontSize = 14.sp)
             }
         }
