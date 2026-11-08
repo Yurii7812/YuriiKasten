@@ -172,7 +172,8 @@ export function mount(box, o) {
   // ---- 力（Obsidian の Forces）----
   const ratio = data.nodes.length / Math.max(1, data.links.length), charge0 = Math.min(-3, -20 / Math.pow(ratio, 1.5));
   if (st.force.repel === null) st.force.repel = Math.round(-charge0 * 10) / 10;
-  const applyForces = () => { graph.d3Force('center')?.strength(st.force.center); graph.d3Force('charge')?.strength(-st.force.repel); graph.d3Force('charge')?.distanceMax(1000); if (st.force.link !== null) graph.d3Force('link')?.strength(st.force.link); graph.d3Force('link')?.distance(st.force.dist); };
+  const gravity = Object.assign(alpha => { for (const n of data.nodes) { if (n.x === undefined) continue; n.vx -= n.x * st.force.center * .35 * alpha; n.vy -= n.y * st.force.center * .35 * alpha; } }, { initialize() { } });   // 中心へ引く力: 原点に向けて、遠いほど強く引く
+  const applyForces = () => { graph.d3Force('gravity', gravity); graph.d3Force('center')?.strength(0); graph.d3Force('charge')?.strength(-st.force.repel); graph.d3Force('charge')?.distanceMax(1000); if (st.force.link !== null) graph.d3Force('link')?.strength(st.force.link); graph.d3Force('link')?.distance(st.force.dist); };
   applyForces();
   // ---- 枠合わせ（Trilium の setupFraming）----
   const idOf = e => typeof e === 'object' ? e.id : e, framedIds = mapRootId ? new Set(hop.keys()) : (() => { const q = new Set(); for (const l of data.links) { q.add(idOf(l.source)); q.add(idOf(l.target)); } return q; })();
@@ -201,7 +202,7 @@ export function mount(box, o) {
     const outs = data.links.filter(l => idOf(l.source) === n.id).map(l => idOf(l.target)), ins = data.links.filter(l => idOf(l.target) === n.id).map(l => idOf(l.source));
     const pill = id => `<span class="nm-pill" data-id="${esc(id)}">${esc((by.get(id) || {}).name || id)}</span>`;
     if (n.kind !== 'note') { noteEl.innerHTML = `<h3>${n.kind === 'topic' ? '📑 ' : '# '}${esc(n.name)}</h3><div class="sub">${n.kind === 'topic' ? 'トピックIndex' : 'キーワード'}</div><div class="nm-rel">つながっているノート</div>${[...new Set(nb(n.id))].map(pill).join('')}${n.kind === 'topic' ? '<div class="nm-btn"><button data-open-topic class="p">開く</button></div>' : ''}`; noteEl.querySelector('[data-open-topic]')?.addEventListener('click', () => o.onOpen(null, null, null, n.name)); }
-    else { const note = o.get(n.s, n.nid); noteEl.innerHTML = `<h3>${esc(n.name)}</h3><div class="sub">${n.s === 'p' ? '紙' : 'デジタル'}${n.kws.length ? ' ・ ' + n.kws.map(esc).join(' ') : ''}</div><div class="nm-btn"><button data-open class="p">ノートを開く</button></div><div class="nm-body md">${note ? o.renderMd(note.body || '') : ''}</div>${outs.length ? `<div class="nm-rel">リンク先</div>${outs.map(pill).join('')}` : ''}${ins.length ? `<div class="nm-rel">被リンク</div>${ins.map(pill).join('')}` : ''}`; noteEl.querySelector('[data-open]')?.addEventListener('click', () => o.onOpen(n.s, n.nid, null)); }
+    else { const note = o.get(n.s, n.nid), title = (note && note.title) || n.name.replace(/^紙 /, '').replace(/^\S+\s/, ''); noteEl.innerHTML = `<div class="nm-ntitle"><span class="nm-nid">${n.s === 'p' ? '紙 ' : ''}${esc(n.nid)}</span><b>${esc(title)}</b><button data-open class="nm-open" title="ノートを開く">↗</button></div><div class="nm-body md">${note ? o.renderMd(note.body || '') : ''}</div>${n.kws.length ? `<div class="nm-kws">${n.kws.map(esc).join(' ')}</div>` : ''}${outs.length || ins.length ? `<div class="nm-links">${outs.length ? `<div class="nm-rel">リンク先</div>${outs.map(pill).join('')}` : ''}${ins.length ? `<div class="nm-rel">被リンク</div>${ins.map(pill).join('')}` : ''}</div>` : ''}`; noteEl.querySelector('[data-open]')?.addEventListener('click', () => o.onOpen(n.s, n.nid, null)); }
     noteEl.querySelectorAll('.nm-pill').forEach(p => p.onclick = () => { st.sel = p.dataset.id; showNote(); keepPainting(); });
   }
   const esc = x => escapeHtml(x);
@@ -231,7 +232,7 @@ export function mount(box, o) {
     if (t.dataset.q !== undefined) { st.f.q = t.value; panel._t = setTimeout(() => remount('[data-q]'), 350); return; }
     if (t.dataset.gc !== undefined) { st.groups[+t.dataset.gc].color = t.value; groups[+t.dataset.gc].color = t.value; keepPainting(); return; }
     if (t.dataset.gq !== undefined) { st.groups[+t.dataset.gq].query = t.value; groups[+t.dataset.gq] = { ...st.groups[+t.dataset.gq], pq: parseQuery(t.value) }; keepPainting(); return; }
-    if (t.dataset.s) { setPath(t.dataset.s, +t.value); if (t.dataset.s.startsWith('force.')) { applyForces(); graph.d3ReheatSimulation(); framing = false; } keepPainting(); labelsById.clear(); }
+    if (t.dataset.s) { setPath(t.dataset.s, +t.value); if (t.dataset.s.startsWith('force.')) { applyForces(); graph.d3ReheatSimulation(); framing = false; clearTimeout(panel._f); panel._f = setTimeout(() => fit(500), 700); } keepPainting(); labelsById.clear(); }
   });
   panel.addEventListener('change', e => { const t = e.target; if (t.dataset.t) { setPath(t.dataset.t, t.checked); if (t.dataset.t.startsWith('f.')) remount(); else keepPainting(); } });
   panel.addEventListener('click', e => {
@@ -241,6 +242,6 @@ export function mount(box, o) {
   const ro = new ResizeObserver(fitSize); ro.observe(wrap);
   showNote(); setDock(); applyForces();
   function teardown() { clearTimeout(fadeTimer); clearTimeout(panel._t); ro.disconnect(); container.removeEventListener('wheel', release, lo); container.removeEventListener('pointerdown', release, lo); try { graph._destructor(); } catch { } container.replaceChildren(); }
-  box._gtear = teardown;
+  box._gtear = teardown; box._graph = graph;
 }
 export const unmount = box => { if (box && box._gtear) { box._gtear(); box._gtear = null; } };
