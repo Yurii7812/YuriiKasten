@@ -656,17 +656,21 @@ function openNote(s, id, n, keep, mid) {
         ${s === 'd' ? `<span class="dt">${esc(note.created)}</span>` : ''}
         <span class="grow"></span>${noid ? (s === 'd' && text ? '<button class="nb" data-act="sib" title="IDなしのまま、並列のノートを作る（親にIDが付くと、IDも決まる）">＋ 並列</button><button class="nb" data-act="chi" title="IDなしのまま、分岐のノートを作る（このノートにIDが付くと、IDも決まる）">＋ 分岐</button>' : '') : `<button class="nb" data-act="sib" title="並列のノートを作る（同じ階層の次: ${esc(free(s, L.sibling(id)))}）">＋ 並列 <small>${esc(free(s, L.sibling(id)))}</small></button><button class="nb" data-act="chi" title="分岐のノートを作る（一つ下: ${esc(free(s, L.child(id)))}）">＋ 分岐 <small>${esc(free(s, L.child(id)))}</small></button>`}<button class="ic nm" data-act="mgn" title="右の欄を隠す・出す (Ctrl+\\)"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button><button class="ic nm" data-act="nmenu" title="このノートのメニュー">${'<svg class="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>'}</button>
       </div>
-      <input class="ntitle" id="f-title" value="${esc(note.title || '')}" placeholder="タイトル">
+      <textarea class="ntitle" id="f-title" rows="1" placeholder="タイトル" spellcheck="false">${esc(note.title || '')}</textarea>
       ${!text ? '<div id="nbody"></div>' : s === 'p' ? `<div class="paper"><div class="pic">${note.image ? `<img src="${note.image}">` : '<button data-act="img">画像を入れる</button>'}</div><div class="ed" id="ed"></div></div>` : '<div class="ed" id="ed"></div>'}
     </div><aside class="mgn" id="margin"></aside></div>`;
   applyMgn();
   renderMeta(note);
-  $('#f-title').oninput = e => { // タイトル: 打ったらすぐ一覧とタブに反映し、少し待って保存
+  const titleField = $('#f-title');
+  const growTitle = () => { titleField.style.height = 'auto'; titleField.style.height = Math.max(1, titleField.scrollHeight) + 'px'; };
+  growTitle();
+  titleField.oninput = e => { // 長いタイトルは折り返し、全文が見える高さに自動調整
+    growTitle();
     note.title = e.target.value; if (note.data) note.data.title = memoGroup ? note.title : (note.title || note.data.title);
     if (!text && !memoGroup) note.body = L.deriveBody(kind, note.data);
     saveNote(note); renderList(); renderTabs();
   };
-  $('#f-title').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing && lastView) { e.preventDefault(); lastView.focus(); lastView.dispatch({ selection: { anchor: 0 } }); } };
+  titleField.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing && !e.shiftKey) { e.preventDefault(); if (lastView && lastView.dom.isConnected) { lastView.focus(); lastView.dispatch({ selection: { anchor: 0 } }); } } };
   $('#f-id').onchange = async e => {
     const v = e.target.value.trim().toLowerCase();
     if (v === (noid ? '' : id)) return;
