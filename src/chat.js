@@ -38,6 +38,23 @@ export function dayEdited(kind, date, body) {
   mr.blocks = now; save();
   if (touched) { if (view === kind || view === '*') paint(); ctx.renderList(); }
 }
+// チャットメモを直した・消したら、その日のノートの対応する塊も（日記・時系列記録）
+async function memoToDay(m, oldText, del) {
+  if (!isRec(m.topic) || !ctx.getDiary) return;
+  let found = null; for (const [k, mr] of Object.entries(doc.mirror)) { const ent = mr.map.find(x => x.memo === m.id); if (ent) { found = { k, mr, ent }; break; } }
+  const date = found ? found.k.split('|')[1] : L.dayOf(L.now(new Date(m.t))), d = ctx.getDiary(date, m.topic); if (!d) return;
+  const flat = t => (t || '').replace(/\n{2,}/g, '\n'), paras = (d.body || '').split(/(\n{2,})/);
+  const cands = found ? [found.ent.blk] : [`${hm(m.t)} ${flat(oldText)}`, (oldText || '').trim()];
+  const at = paras.findIndex((p, i) => i % 2 === 0 && cands.includes(p.trim())); if (at < 0) return;
+  const pre = (paras[at].trim().match(/^\d{2}:\d{2}\s+/) || [''])[0], blk = pre + flat(m.text).trim();
+  if (del) paras.splice(at, at + 1 < paras.length ? 2 : 1); else paras[at] = blk;
+  const body = paras.join('').replace(/^\n+|\n+$/g, '');
+  d.body = body; await ctx.api.saveDiary({ date, kind: m.topic, body });
+  const k = m.topic + '|' + date, mr = doc.mirror[k] || (doc.mirror[k] = { blocks: [], map: [] });
+  mr.blocks = blocks(body); if (found && del) mr.map = mr.map.filter(x => x !== found.ent); else if (found) found.ent.blk = blk;
+  save(); await ctx.refreshDiaries();
+  const c = ctx.cur(); if (c && c.k === 'diary' && c.date === date && c.kind === m.topic) ctx.openDiary(date, true, m.topic);
+}
 const isRec = n => n === DIARY || recKinds().includes(n);
 
 export function init(docs) {
@@ -211,7 +228,7 @@ function editBox(bub, text, onSave) {
   b.querySelector('[data-ok]').onclick = () => onSave(ta.value.trim());
   b.querySelector('[data-no]').onclick = () => paint();
 }
-function editMsg(bub, m) { editBox(bub, m.text, v => { if (v) { m.text = v; m.edited = Date.now(); save(); } paint(); }); }   // edited: スマホと共有するとき、新しい方が勝つ
+function editMsg(bub, m) { editBox(bub, m.text, v => { if (v) { const old = m.text; m.text = v; m.edited = Date.now(); save(); memoToDay(m, old, false); } paint(); }); }   // edited: スマホと共有するとき、新しい方が勝つ
 function editLine(bub, i) {
   const be = backend(), list = parts(be.get()), e = entries()[i];
   editBox(bub, e.text, v => { if (v) list[i] = (e.time ? e.time + ' ' : '') + v.replace(/\n{2,}/g, '\n'); else list.splice(i, 1); be.set(list.join('\n\n')); paint(); });
@@ -220,7 +237,7 @@ function removeLine(i) { const be = backend(), list = parts(be.get()); list.spli
 function removeMsg(m) {
   if (!confirm('このメモを消しますか？（復元用に残しておきます。ノートにしたものは、残ります）')) return;
   doc.messages = doc.messages.filter(x => x !== m); doc.trash.push({ ...m, deleted: Date.now() });
-  save(); paint(); ctx.renderList();
+  save(); memoToDay(m, m.text, true); paint(); ctx.renderList();
 }
 function moveDialog(m) {
   const names = ['', DIARY, ...recKinds(), ...doc.topics.filter(t => t.type === 'bubble' && !isRec(t.name)).map(t => t.name)];
