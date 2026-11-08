@@ -88,8 +88,43 @@ function suggest(notes, base, mode, space = 'd') {
   while (notes.some(n => n.s === space && n.id === id)) id = L.sibling(id);
   return id;
 }
+// ID探索画面: 結果カテゴリの順番と、各カテゴリ内部の並べ方。
+const SECTIONS = ['keywords', 'topics', 'notes'];
+const SORT_MODES = { keywords: ['reading', 'name', 'count'], topics: ['name', 'entry', 'count'], notes: ['updated', 'title', 'id'] };
+function normalizeOrder(value) {
+  const input = Array.isArray(value) ? value : [];
+  return [...input.filter((x, i) => SECTIONS.includes(x) && input.indexOf(x) === i),
+    ...SECTIONS.filter(x => !input.includes(x))];
+}
+function moveSection(order, section, delta) {
+  const list = normalizeOrder(order), i = list.indexOf(section), next = i + delta;
+  if (i < 0 || next < 0 || next >= list.length) return list;
+  [list[i], list[next]] = [list[next], list[i]];
+  return list;
+}
+function sortResults(items, section, mode, readings = {}) {
+  const list = [...(items || [])], modes = SORT_MODES[section] || [];
+  const selected = modes.includes(mode) ? mode : modes[0];
+  const jp = (a, b) => String(a || '').localeCompare(String(b || ''), 'ja');
+  if (section === 'keywords') list.sort((a,b) => {
+    if (selected === 'count') return ((b.notes.length + b.pending.length) - (a.notes.length + a.pending.length)) || jp(a.name,b.name);
+    if (selected === 'name') return jp(a.name,b.name);
+    return jp(readings[a.name] || a.reading || a.name, readings[b.name] || b.reading || b.name);
+  });
+  if (section === 'topics') list.sort((a,b) => {
+    if (selected === 'entry') return L.cmpId(a.entry?.id || '',b.entry?.id || '') || jp(a.name,b.name);
+    if (selected === 'count') return L.mergeTopic(b).rows.length - L.mergeTopic(a).rows.length || jp(a.name,b.name);
+    return jp(a.name,b.name);
+  });
+  if (section === 'notes') list.sort((a,b) => {
+    if (selected === 'title') return jp(a.title || '',b.title || '') || L.cmpId(a.id,b.id);
+    if (selected === 'id') return L.cmpId(a.id,b.id) || jp(a.title,b.title);
+    return jp(b.updated || b.created || '',a.updated || a.created || '') || L.cmpId(a.id,b.id);
+  });
+  return list;
+}
 function available(notes, id, current = null, space = 'd') {
   if (!L.isId(id) || /^\d{8,}$/.test(id)) return false;
   return !notes.some(n => n.s === space && n.id === id && (!current || key(n) !== key(current)));
 }
-module.exports = { key, isAssigned, textMatches, keywords, matchesTopic, search, topicEntries, followIndexReference, noteRelations, nextRoot, suggest, available };
+module.exports = { key, isAssigned, textMatches, keywords, matchesTopic, search, topicEntries, followIndexReference, noteRelations, nextRoot, suggest, available, SECTIONS, SORT_MODES, normalizeOrder, moveSection, sortResults };
