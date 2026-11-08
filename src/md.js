@@ -243,6 +243,17 @@ const clickBelow = EditorView.domEventHandlers({
 
 // カーソルが画面の端に着く前にスクロールする（端に張り付かない）
 const margins = EditorView.scrollMargins.of(() => ({ top: 90, bottom: 190 }));
+// 行の頭で \`\`\` を書いたら、下にも同じもの（閉じ）を入れる。カーソルは、1 行目の最後（言語名を書ける）。もう囲みの中にいるときは、入れない
+const fenceClose = EditorView.inputHandler.of((view, from, to, text) => {
+  if (text !== '`' || from !== to) return false;
+  const line = view.state.doc.lineAt(from), before = line.text.slice(0, from - line.from);
+  if (!/^\s*``$/.test(before) || line.text.slice(from - line.from).trim() !== '') return false;
+  let open = 0; for (let n = 1; n < line.number; n++) if (/^\s*(```|~~~)/.test(view.state.doc.line(n).text)) open++;
+  if (open % 2 === 1) return false;
+  const indent = before.match(/^\s*/)[0];
+  view.dispatch({ changes: { from, insert: '`\n' + indent + '\n' + indent + '```' }, selection: { anchor: from + 1 }, userEvent: 'input' });
+  return true;
+});
 const noMiddlePaste = EditorView.domEventHandlers({
   mousedown(e) { if (e.button === 1) { e.preventDefault(); return true; } },
   auxclick(e) { if (e.button === 1) { e.preventDefault(); return true; } },
@@ -251,7 +262,7 @@ const noMiddlePaste = EditorView.domEventHandlers({
 export const mdExtensions = [noMiddlePaste, margins, 
   linePlugin, tableField, codeFolding(),
   foldGutter({ markerDOM: open => { const s = document.createElement('span'); s.className = 'cm-fold-mark'; s.textContent = open ? '▾' : '▸'; return s; } }),
-  outlineFold, listKeys, clickBelow, keymap.of(foldKeymap)
+  outlineFold, listKeys, clickBelow, fenceClose, keymap.of(foldKeymap)
 ];
 // 表のひな形
 export const tableTemplate = '| 見出し1 | 見出し2 | 見出し3 |\n| --- | --- | --- |\n|  |  |  |\n';

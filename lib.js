@@ -57,20 +57,33 @@ function codeRanges(text) {
   return r;
 }
 const SEP = '[,，、]';
+// :1a(p)  :1a(p)(2)  :1a(2)(p)  — ID のあとの (p)（紙）・(d)（デジタル）と、(番号)（ノートの中の場所）。書かなければ、いまのノートと同じ側
+const SPN = /^[(（]([pdPD])[)）]/, NN = /^[(（](\d+)[)）]/;
 function tokens(text) {
   const re = new RegExp(RE, 'g'), out = [], skip = [...text.matchAll(MDLINK)].map(m => [m.index, m.index + m[0].length]).concat(codeRanges(text)); let m;
   const hit = (a, b) => skip.some(([x, y]) => a < y && b > x);
+  const extend = t => {
+    let end = t.to;
+    for (let g = 0; g < 2; g++) {
+      const rest = text.slice(end); let x;
+      if (t.sp === undefined && (x = rest.match(SPN))) { t.sp = x[1].toLowerCase(); end += x[0].length; continue; }
+      if (t.n === undefined && (x = rest.match(NN))) { t.n = x[1]; end += x[0].length; continue; }
+      break;
+    }
+    t.to = end; t.text = text.slice(t.from, end); return t;
+  };
   while ((m = re.exec(text))) {
     if (hit(m.index, m.index + m[0].length)) continue;
     const [all, c1, id1, n, c2, idB, idC] = m; let t;
     if (n !== undefined) t = id1 ? { k: 'ref', id: id1, n } : { k: 'self', n, bare: !c1 && !c2 };
     else t = { k: 'ref', id: idB || idC };
     t.from = m.index; t.to = m.index + all.length; t.text = all;
-    out.push(t);
-    if (idB && n === undefined) { // :1a,1b,1c のように、ひとつの : で複数のID
+    if (t.k === 'ref') extend(t);
+    out.push(t); re.lastIndex = Math.max(re.lastIndex, t.to);
+    if (idB && n === undefined && t.k === 'ref') { // :1a,1b,1c のように、ひとつの : で複数のID（それぞれに (p) (番号) もつけられる）
       const more = new RegExp(`^${SEP}(${ID})(?![0-9A-Za-z])`);
-      for (let p = t.to, x; (x = text.slice(p).match(more)) && !hit(p, p + x[0].length); p += x[0].length) {
-        out.push({ k: 'ref', id: x[1], from: p + 1, to: p + x[0].length, text: x[1] }); re.lastIndex = p + x[0].length;
+      for (let p = t.to, x; (x = text.slice(p).match(more)) && !hit(p, p + x[0].length);) {
+        const t2 = extend({ k: 'ref', id: x[1], from: p + 1, to: p + x[0].length, text: x[1] }); out.push(t2); p = t2.to; re.lastIndex = p;
       }
     }
   }
@@ -96,7 +109,7 @@ function bodyToMd(text, pathOf) {
   for (const t of toks) {
     out += text.slice(last, t.from);
     let pre = '', href = null;
-    if (t.k === 'ref') href = pathOf(t.id) + (t.n ? '#c' + t.n : '');
+    if (t.k === 'ref') href = pathOf(t.id, t.sp) + (t.n ? '#c' + t.n : '');
     else if (t.bare) { // 素の (1) はリンクにせず、赤くして目印だけ
       if (!seenA.has(t.n)) { seenA.add(t.n); pre = `<a id="c${t.n}"></a>`; }
       out += pre + `<span style="color:#c0392b">${t.text}</span>`; last = t.to; continue;
@@ -150,53 +163,72 @@ function exportMd(items) {
 // 1行 = 「キーワード ID ID …」。
 //   + で始まる行（★ も同じ）は、別のトピックIndexへの案内（星マーク）
 //   ID の前の * は、そのIDの上に赤い点を付ける印（例: PKM *1 1a）。グローバルな Index でも同じ印
+// 行の ID: 1a  1a(2)  1a(p)  1a(p)(2)  1a(2)(p)  — (p)（紙）(d)（デジタル）は、書かなければ、そのトピックIndex の入口と同じ側
+const IDTOK = new RegExp('^(' + ID + ')((?:[(（](?:\\d+|[pdPD])[)）]){0,2})$');
+function parseIdTok(tok) {
+  const m = tok.match(IDTOK); if (!m) return null;
+  let sp, n; for (const g of m[2].matchAll(/[(（](\d+|[pdPD])[)）]/g)) { if (/^\d+$/.test(g[1])) { if (n === undefined) n = g[1]; } else if (sp === undefined) sp = g[1].toLowerCase(); }
+  return { id: m[1], n, sp, raw: m[1] + (n ? `(${n})` : ''), tok };
+}
+const defOf = t => t && t.entry && t.entry.s === 'p' ? 'p' : 'd';   // トピックIndex の、印なしの側（入口が紙なら紙）
 function topicLine(line) {
   const s = line.match(/^(\s*[★☆+＋]\s*)(.*?)\s*$/);
   if (s) {
     // +hoge 1 → 「★ hoge 1」（1 がリンク。そのIDのトピックIndex があってもなくても）。+GUI だけなら、トピックIndex への案内
-    const ps = [...s[2].matchAll(/\S+/g)], last = ps[ps.length - 1];
-    if (ps.length >= 2 && isId(last[0])) {
+    const ps = [...s[2].matchAll(/\S+/g)], last = ps[ps.length - 1], pt = last && parseIdTok(last[0]);
+    if (ps.length >= 2 && pt) {
       const at = s[1].length + last.index;
-      return { star: '', ref: { label: s[2].slice(0, last.index).trim(), id: last[0], from: at, to: at + last[0].length }, from: s[1].length, to: s[1].length + s[2].length, ids: [] };
+      return { star: '', ref: { label: s[2].slice(0, last.index).trim(), id: pt.id, sp: pt.sp, from: at, to: at + last[0].length }, from: s[1].length, to: s[1].length + s[2].length, ids: [] };
     }
     return { star: s[2], from: s[1].length, to: s[1].length + s[2].length, ids: [] };
   }
-  // ID は 1a のほか、1a(1) のように (番号) をつけて、ノートの中のその場所を指せる
   const parts = [...line.matchAll(/[^\s,、，]+/g)], ids = [], bare = x => x.replace(/^[*＊]/, '');
-  let i = parts.length - 1, m;
-  while (i >= 0 && (m = bare(parts[i][0]).match(new RegExp('^(' + ID + ')(?:[(（](\\d+)[)）])?$')))) {
+  let i = parts.length - 1, pt;
+  while (i >= 0 && (pt = parseIdTok(bare(parts[i][0])))) {
     const t = parts[i][0], dot = bare(t) !== t;
-    ids.unshift({ id: m[1], n: m[2], raw: bare(t), dot, from: parts[i].index + (dot ? 1 : 0), to: parts[i].index + t.length }); i--;
+    ids.unshift({ ...pt, dot, from: parts[i].index + (dot ? 1 : 0), to: parts[i].index + t.length }); i--;
   }
   const kw = i >= 0 ? line.slice(0, parts[i].index + parts[i][0].length).trim() : '';
   return { kw, ids };
 }
-// デジタル欄と紙欄をまとめて表示用に: [{kw, d:[ids], p:[ids]}], stars
-function mergeTopic(t) {
-  const m = new Map(), stars = [], refs = [];
-  for (const s of ['d', 'p']) for (const line of (t[s] || '').split('\n')) {
+// 昔の「デジタル欄・紙欄」の 2 つの文字を、1 つの文字に（印なしの側と違う ID に、(p) か (d) を付ける）
+function legacyTopicText(t) {
+  const def = defOf(t), out = [];
+  for (const sp of ['d', 'p']) for (const line of (t[sp] || '').split('\n')) {
     const r = topicLine(line);
-    if (r.ref) { if (!refs.some(x => x.s === s && x.id === r.ref.id && x.label === r.ref.label)) refs.push({ s, label: r.ref.label, id: r.ref.id }); continue; }
+    if (r.ref && sp !== def && r.ref.sp === undefined) { out.push(line.slice(0, r.ref.to) + `(${sp})` + line.slice(r.ref.to)); continue; }   // 「+名前 ID」の星も、側を付ける
+    if (r.star !== undefined || !r.ids.length) { if (line.trim()) out.push(line); continue; }
+    out.push(r.kw + ' ' + r.ids.map(x => (x.dot ? '*' : '') + x.raw + (sp !== def ? `(${sp})` : '')).join(' '));
+  }
+  return out.join('\n');
+}
+const topicText = t => t.text !== undefined ? t.text : legacyTopicText(t);
+// 表示用に: [{kw, d:[ids], p:[ids]}], stars, refs。(p) (d) の印で、紙とデジタルに分ける
+function mergeTopic(t) {
+  const m = new Map(), stars = [], refs = [], def = defOf(t);
+  for (const line of topicText(t).split('\n')) {
+    const r = topicLine(line);
+    if (r.ref) { const s = r.ref.sp || def; if (!refs.some(x => x.s === s && x.id === r.ref.id && x.label === r.ref.label)) refs.push({ s, label: r.ref.label, id: r.ref.id }); continue; }
     if (r.star !== undefined) { if (r.star && !stars.includes(r.star)) stars.push(r.star); continue; }
     if (!r.kw && !r.ids.length) continue;
     const k = r.kw || '';
     if (!m.has(k)) m.set(k, { kw: k, d: [], p: [] });
-    for (const x of r.ids) { if (!m.get(k)[s].includes(x.raw)) m.get(k)[s].push(x.raw); if (x.dot && !m.get(k).dot) m.get(k).dot = { s, id: x.id }; }   // 並びには (番号) つきのまま入れる
+    for (const x of r.ids) { const s = x.sp || def; if (!m.get(k)[s].includes(x.raw)) m.get(k)[s].push(x.raw); if (x.dot && !m.get(k).dot) m.get(k).dot = { s, id: x.id }; }   // 並びには (番号) つきのまま入れる
   }
   return { rows: [...m.values()], stars, refs };
 }
 
-// トピックIndex の欄に「キーワード ID」を足す（同じキーワードの行があればその行の後ろに）
-function addToTopic(text, kw, id) {
+// トピックIndex の文字に「キーワード ID」を足す（同じキーワードの行があればその行の後ろに）。ID は 1a や 1a(p) のように、印つきで
+function addToTopic(text, kw, tok) {
   const lines = text ? text.split('\n') : [];
   for (let i = 0; i < lines.length; i++) {
     const r = topicLine(lines[i]);
     if (r.star !== undefined || r.kw !== kw) continue;
-    if (!r.ids.some(x => x.raw === id)) lines[i] = lines[i].replace(/\s+$/, '') + ' ' + id;
+    if (!r.ids.some(x => x.tok === tok || x.tok === '*' + tok)) lines[i] = lines[i].replace(/\s+$/, '') + ' ' + tok;
     return lines.join('\n');
   }
   while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
-  lines.push(kw + ' ' + id);
+  lines.push(kw + ' ' + tok);
   return lines.join('\n');
 }
 
@@ -212,14 +244,14 @@ function kanaRow(reading) {
 const rowIdx = r => { const i = ROWS.indexOf(kanaRow(r)); return i < 0 ? 99 : i; }; // 英数・他は最後
 const byReading = rd => (a, b) => { const x = rd(a) || a, y = rd(b) || b; return rowIdx(x) - rowIdx(y) || x.localeCompare(y, 'ja'); };
 
-// トピックIndex の欄から ID を外す（ID が無くなった行は消す）
-function removeFromTopic(text, ids) {
-  const set = new Set(ids);
+// トピックIndex の文字から ID を外す（ID が無くなった行は消す）。items: [{s, id}]（紙かデジタルかも見る）。def は、印なしの側
+function removeFromTopic(text, items, def = 'd') {
+  const gone = x => items.some(it => it.id === x.id && it.s === (x.sp || def));
   return (text || '').split('\n').flatMap(line => {
     const r = topicLine(line);
-    if (r.star !== undefined || !r.ids.some(x => set.has(x.id))) return [line];
-    const keep = r.ids.filter(x => !set.has(x.id));
-    return keep.length ? [r.kw + ' ' + keep.map(x => x.raw).join(' ')] : [];
+    if (r.star !== undefined || !r.ids.some(gone)) return [line];
+    const keep = r.ids.filter(x => !gone(x));
+    return keep.length ? [r.kw + ' ' + keep.map(x => (x.dot ? '*' : '') + x.tok).join(' ')] : [];
   }).join('\n');
 }
 
@@ -320,5 +352,5 @@ const parseTime = c => { const m = (c || '').match(/^(\d{4})-(\d{2})-(\d{2})(?: 
 module.exports = {
   MDLINK, ID, isId, splitAnchor, tok, cmpId, sibling, child, parentIn, root,
   tokens, anchorPos, selfTarget, bodyToMd, mdToBody,
-  fzRange, fzSubtree, exportMd, isNoid, noidStem, isStem, STEM, fmParse, fmDump, parseTime, KINDS, deriveBody, DAY_START, todayStr, dayOf, weekday, isDate, addToSection, diaryTree, topicLine, mergeTopic, addToTopic, removeFromTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
+  fzRange, fzSubtree, exportMd, defOf, topicText, legacyTopicText, parseIdTok, isNoid, noidStem, isStem, STEM, fmParse, fmDump, parseTime, KINDS, deriveBody, DAY_START, todayStr, dayOf, weekday, isDate, addToSection, diaryTree, topicLine, mergeTopic, addToTopic, removeFromTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
 };

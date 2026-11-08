@@ -234,7 +234,7 @@ function openVault(vault) {
     } else if (/^T_.+\.md$/.test(f)) {
       const text = fs.readFileSync(abs(f), 'utf8'); cache.set(f, text);
       const t = meta(text, 'pkm-topic');
-      if (t && t.name) topics.set(t.name, { name: t.name, entry: t.entry || (t.anchors || [])[0] || null, keyword: t.keyword || '', d: t.d || '', p: t.p || '' });
+      if (t && t.name) topics.set(t.name, { name: t.name, entry: t.entry || (t.anchors || [])[0] || null, keyword: t.keyword || '', text: t.text !== undefined ? t.text : L.legacyTopicText(t) });
     }
   }
   for (const r of [...recs.values()].sort((x, y) => x.stem < y.stem ? -1 : 1)) {
@@ -274,7 +274,7 @@ function openVault(vault) {
   const lk = (s_, id) => { const m = get(s_, id); return ml(noteHref(s_, id), `${label(s_, id)}${m && m.title ? ' ' + m.title : ''}`); };
   function noteMd(n) {
     const head = `# ${n.title ? esc(n.title) : L.isNoid(n.id) ? '未整理 ' + n.created : (n.s === 'p' ? '紙 ' : '') + n.id}`;
-    const body = BODY + L.bodyToMd(n.body, x => noteHref(n.s, x)) + '\n' + NAV;
+    const body = BODY + L.bodyToMd(n.body, (x, sp) => noteHref(sp || n.s, x)) + '\n' + NAV;
     if (L.isNoid(n.id)) return [fmOf(n).replace(/\n$/, ''), n.data ? `<!-- pkm-data ${J(n.data)} -->` : null, head, '', body, ''].filter(x => x !== null).join('\n');
     const has = x => !!get(n.s, x), parent = L.parentIn(n.id, has), kids = ids(n.s).filter(x => L.parentIn(x, has) === n.id), t = topicOf(n.s, n.id);
     const listed = [...topics.values()].filter(o => L.mergeTopic(o).rows.some(r => r[n.s].some(x => L.splitAnchor(x).id === n.id)));
@@ -299,7 +299,7 @@ function openVault(vault) {
     const low = lowerOf(d), head = `${d.date}${d.kind !== DIARY ? '（' + esc(d.kind) + '）' : ''}${d.title ? '-' + esc(d.title) : ''}`;
     return [L.fmDump({ record: d.kind, date: d.date, parent_record: d.parent || undefined, title: d.title || undefined, created: d.created || undefined, updated: d.updated || d.created || undefined }).replace(/\n$/, ''), `# ${head}`, '',
       low.length ? `DailyNotes: ${low.map(o => `[${esc(o.kind)}](${diaryHref(o)})`).join('　')}\n` : null,
-      BODY + L.bodyToMd(d.body, x => noteHref('d', x)) + '\n' + NAV, ''].filter(x => x !== null).join('\n');
+      BODY + L.bodyToMd(d.body, (x, sp) => noteHref(sp || 'd', x)) + '\n' + NAV, ''].filter(x => x !== null).join('\n');
   }
   // 日記の一覧: 種類ごとに。月はいつも、年は2つ以上の年にまたがってから（Gnosis 同様）
   function diaryListMd() {
@@ -481,7 +481,7 @@ function openVault(vault) {
       if (!d.body.includes(`](${noteHref('d', n.id)})`)) d.body = L.addToSection(d.body, '今日のノート', `- [未整理 ${n.created.slice(11)}](${noteHref('d', n.id)})`);
       return;
     }
-    const has = L.tokens(d.body).some(t => t.k === 'ref' && t.id === n.id && !t.n);
+    const has = L.tokens(d.body).some(t => t.k === 'ref' && t.id === n.id && !t.n && (!t.sp || t.sp === 'd'));
     if (!has) d.body = L.addToSection(d.body, '今日のノート', `- :${n.id}`);
   };
   rebuild();
@@ -604,15 +604,15 @@ function openVault(vault) {
       notes.delete(key('d', id)); n.id = stem; notes.set(key('d', stem), n); n.updated = L.now();
       for (const t of topics.values()) { // 入口と、索引の行から外す
         if (t.entry && t.entry.s === 'd' && t.entry.id === id) t.entry = null;
-        t.d = L.removeFromTopic(t.d, [id]);
+        t.text = L.removeFromTopic(t.text, [{ s: 'd', id }], L.defOf(t));
       }
       const label = (n.title || (n.body.split('\n').find(x => x.trim()) || '').replace(/^#+\s*/, '').slice(0, 24) || 'ノート').replace(/[\[\]]/g, '');
-      const fix = body => { // :1a  1a:  1a(1)  などを、リンクに置き換える
+      const fix = (body, own = 'd') => { // :1a  1a:  1a(1)  などを、リンクに置き換える（紙の 1a を指すものは、そのまま）
         let out = '', last = 0;
-        for (const t of L.tokens(body)) { if (t.k !== 'ref' || t.id !== id) continue; out += body.slice(last, t.from) + `[${label}](${href})`; last = t.to; }
+        for (const t of L.tokens(body)) { if (t.k !== 'ref' || t.id !== id || (t.sp || own) !== 'd') continue; out += body.slice(last, t.from) + `[${label}](${href})`; last = t.to; }
         return out + body.slice(last);
       };
-      for (const m of notes.values()) if (m !== n && (!m.kind || m.kind === 'text')) m.body = fix(m.body);
+      for (const m of notes.values()) if (m !== n && (!m.kind || m.kind === 'text')) m.body = fix(m.body, m.s);
       for (const d of diaries.values()) d.body = fix(d.body);
       for (const m of notes.values()) if (m.kind && m.kind !== 'text' && m.data) { const j = JSON.stringify(m.data); if (j.includes(`"nid":"${id}"`)) { for (const c of m.data.nodes || []) if (c.type === 'note' && c.s === 'd' && c.nid === id) c.nid = stem; m.body = L.deriveBody(m.kind, m.data); } }
       rebuild(); return this.state();
@@ -681,7 +681,7 @@ function openVault(vault) {
         topics.delete(oldName);
         if (topicFile(oldName) !== topicFile(t.name)) { if (fs.existsSync(abs(topicFile(oldName)))) fs.unlinkSync(abs(topicFile(oldName))); cache.delete(topicFile(oldName)); }
       }
-      topics.set(t.name, { name: t.name, entry: t.entry || null, keyword: t.keyword || '', d: t.d || '', p: t.p || '' });
+      topics.set(t.name, { name: t.name, entry: t.entry || null, keyword: t.keyword || '', text: t.text !== undefined ? t.text : L.legacyTopicText(t) });
       const en = t.keyword && t.entry && get(t.entry.s, t.entry.id); // 点を付けるIDは、そのキーワードの並びに入る
       if (en && !en.keywords.includes(t.keyword)) en.keywords.push(t.keyword);
       rebuild(); return true;
@@ -696,7 +696,7 @@ function openVault(vault) {
       }
       for (const t of topics.values()) {
         if (t.entry && items.some(x => x.s === t.entry.s && x.id === t.entry.id)) t.entry = null;
-        for (const sp of ['d', 'p']) t[sp] = L.removeFromTopic(t[sp], items.filter(x => x.s === sp).map(x => x.id));
+        t.text = L.removeFromTopic(t.text, items, L.defOf(t));
       }
       rebuild(); return this.state();
     },

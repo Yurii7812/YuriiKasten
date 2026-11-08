@@ -32,7 +32,7 @@ export function build(notes, titleOf, topics, mergeTopic, topicLabel) {
   for (const n of real) {
     const p = L.parentIn(n.id, x => has.has(n.s + ':' + x)); if (p) edges.push({ a: n.s + ':' + p, b: n.s + ':' + n.id, t: 'tree' });
     const seen = new Set();
-    for (const t of L.tokens(n.body || '')) if (t.k === 'ref' && t.id !== n.id && has.has(n.s + ':' + t.id) && !seen.has(t.id)) { seen.add(t.id); edges.push({ a: n.s + ':' + n.id, b: n.s + ':' + t.id, t: 'link' }); }
+    for (const t of L.tokens(n.body || '')) { const k = (t.sp || n.s) + ':' + t.id; if (t.k === 'ref' && k !== n.s + ':' + n.id && has.has(k) && !seen.has(k)) { seen.add(k); edges.push({ a: n.s + ':' + n.id, b: k, t: 'link' }); } }   // 紙とデジタルの間のリンクも
   }
   // キーワード: ノートに付いたもの＋トピックIndexの行にあるもの（1つのノートだけでも描く）
   const kw = new Map(), add = (k, key) => { if (!kw.has(k)) kw.set(k, new Set()); if (key) kw.get(k).add(key); };

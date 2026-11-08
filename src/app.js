@@ -26,7 +26,7 @@ let searchQ = ''; // いま検索している語（一覧と、開いたノー�
 const get = (s, id) => notes.find(n => n.s === s && n.id === id);
 const free = (s, id) => { while (get(s, id)) id = L.sibling(id); return id; };
 const topicOf = (s, id) => topics.find(t => t.entry && t.entry.s === s && t.entry.id === id); // 入口は1つ
-const topicsWith = n => topics.map(t => ({ t, kws: L.mergeTopic(t).rows.filter(r => r[n.s].includes(n.id)).map(r => r.kw) })).filter(x => x.kws.length);
+const topicsWith = n => topics.map(t => ({ t, kws: L.mergeTopic(t).rows.filter(r => r[n.s].some(x => L.splitAnchor(x).id === n.id)).map(r => r.kw) })).filter(x => x.kws.length);
 const allKeywords = () => [...new Set(notes.flatMap(n => n.keywords))].sort(L.byReading(k => readings[k]));
 const yomi = k => readings[k] && readings[k] !== k ? `<small class="yomi">${esc(readings[k])}</small>` : '';
 const kwTopic = k => topics.find(t => t.keyword === k);
@@ -37,10 +37,12 @@ let sortBy = prefs.by || 'fz', sortDir = prefs.dir || 'asc', listView = prefs.vi
 const savePrefs = () => { try { localStorage.setItem('pkm-list-prefs', JSON.stringify({ by: sortBy, dir: sortDir, view: listView })); } catch { } };
 let ixEdit = false;   // グローバルIndexの編集モード（赤い点を付けるIDを選ぶ）
 const pickChips = (k, v, t) => { const dd = t && dotOf(t, k); return [['d', v.d], ['p', v.p]].map(([s, l]) => l.map(id => { const on = dd && dd.s === s && dd.id === id; return `<span class="chip ${s} pick${on ? ' on' : ''}" data-pk="${esc(k)}" data-ps="${s}" data-pid="${esc(id)}" title="${on ? '点を外す' : 'ここに赤い点を付ける'}">${on ? '<i class="dotabove">●</i>' : ''}${s === 'p' ? '紙' : ''}${esc(id)}</span>`; }).join('')).join(''); };
+// 「キーワード ID ID(p) …」の 1 行。入口の側と違う ID には、(p) か (d) を付ける
+const idsText = (k, v, def) => { const toks = [...v.d.map(x => def === 'd' ? x : x + '(d)'), ...v.p.map(x => def === 'p' ? x : x + '(p)')]; return toks.length ? k + ' ' + toks.join(' ') : ''; };
 // 赤い点を k の ID（s, id）に付ける。そのIDにトピックIndexがあればそれを、無ければ新しく作る
 async function pickDot(k, s, id) {
   const cur0 = kwTopic(k), dd = cur0 && dotOf(cur0, k);
-  const strip = t => { for (const sp of ['d', 'p']) t[sp] = (t[sp] || '').split('\n').map(l => { const r = L.topicLine(l); return r.star === undefined && r.kw === k ? l.replace(/(^|\s)[*＊](?=\S)/g, '$1') : l; }).join('\n'); };
+  const strip = t => { t.text = L.topicText(t).split('\n').map(l => { const r = L.topicLine(l); return r.star === undefined && r.kw === k ? l.replace(/(^|\s)[*＊](?=\S)/g, '$1') : l; }).join('\n'); };
   if (cur0 && dd && dd.s === s && dd.id === id) { cur0.keyword = ''; strip(cur0); saveTopic(cur0); return renderList(); }       // 点を外す
   let t = topicOf(s, id);
   if (!t) {
@@ -48,7 +50,7 @@ async function pickDot(k, s, id) {
     if (!confirm(`「${k}」の赤い点を ${SP[s]} ${id} に付けるため、トピックIndex「${id}-${k}」を新しく作ります。よろしいですか？`)) return;
     const v = globalIndex().find(x => x[0] === k)[1];
     let name = `${id}-${k}`; while (topics.some(x => x.name === name)) name += '_';
-    t = { name, entry: { s, id }, keyword: '', d: v.d.length ? k + ' ' + v.d.join(' ') : '', p: v.p.length ? k + ' ' + v.p.join(' ') : '' };
+    t = { name, entry: { s, id }, keyword: '', text: idsText(k, v, s) };
     topics.push(t);
   } else if (t.keyword && t.keyword !== k && !confirm(`${SP[s]} ${id} のトピックIndex「${stripId(t.name)}」は、いま「${t.keyword}」の点です。「${k}」に変えますか？`)) return;
   if (cur0 && cur0 !== t) { cur0.keyword = ''; strip(cur0); saveTopic(cur0); }
@@ -88,7 +90,7 @@ function links(mode, space) {
     if (mode === 'note') {
       const items = [];
       for (const t of L.tokens(text)) {
-        if (t.k === 'ref') items.push([t.from, t.to, { t: 'ref', s: space, id: t.id, n: t.n }, !!get(space, t.id)]);
+        if (t.k === 'ref') items.push([t.from, t.to, { t: 'ref', s: t.sp || space, id: t.id, n: t.n }, !!get(t.sp || space, t.id)]);   // (p) 紙・(d) デジタル。書かなければ、いまのノートと同じ側
         else if (t.bare) items.push([t.from, t.to, 'mk']); // 素の (1) は赤いだけ
         else items.push([t.from, t.to, { t: 'self', n: t.n, bare: t.bare }, L.selfTarget(text, t.n, t.bare) >= 0]);
       }
@@ -114,8 +116,8 @@ function links(mode, space) {
       let off = 0;
       for (const line of text.split('\n')) {
         const r = L.topicLine(line);
-        if (r.star !== undefined) { if (r.star) add(off + r.from, off + r.to, { t: 'topic', name: r.star }, !!topics.find(x => x.name === r.star)); else if (r.ref) add(off + r.ref.from, off + r.ref.to, { t: 'ref', s: space, id: r.ref.id }, !!get(space, r.ref.id)); }
-        else for (const x of r.ids) add(off + x.from, off + x.to, { t: 'ref', s: space, id: x.id }, !!get(space, x.id));
+        if (r.star !== undefined) { if (r.star) add(off + r.from, off + r.to, { t: 'topic', name: r.star }, !!topics.find(x => x.name === r.star)); else if (r.ref) add(off + r.ref.from, off + r.ref.to, { t: 'ref', s: r.ref.sp || space, id: r.ref.id }, !!get(r.ref.sp || space, r.ref.id)); }
+        else for (const x of r.ids) add(off + x.from, off + x.to, { t: 'ref', s: x.sp || space, id: x.id, n: x.n }, !!get(x.sp || space, x.id));
         off += line.length + 1;
       }
     }
@@ -342,7 +344,7 @@ function renderList() {
     const list = sortNotes(tab === 'u' ? notes.filter(n => n.noid) : notes.filter(n => n.s === tab && !n.noid), tab);
     out.push(sortBar(false));
     const byFz = sortBy === 'fz' && tab !== 'u';
-    if (byFz && tab === 'd') for (const t of topics.filter(x => !x.entry || !get(x.entry.s, x.entry.id)).sort((a, b) => a.name.localeCompare(b.name, 'ja'))) out.push(topicRow(t)); // 入口がないものは、デジタルの先頭
+    if (byFz && (tab === 'd' || tab === 'p')) for (const t of topics.filter(x => (!x.entry || !get(x.entry.s, x.entry.id)) && (x.entry ? x.entry.s : 'd') === tab).sort((a, b) => a.name.localeCompare(b.name, 'ja'))) out.push(topicRow(t)); // 入口のノートがまだないもの（取り込み前の紙の番号など）は、その側の先頭
     for (const n of list) {
       const t = byFz && topicOf(n.s, n.id); if (t) out.push(topicRow(t)); // 「1-PKM」は、ノート 1 の手前
       out.push(listView === 'card' ? cardRow(n) : noteRow(n));
@@ -493,7 +495,10 @@ document.addEventListener('keydown', e => {
 // ===== 書きながらノートを作る: Ctrl+n（IDなし）/ Ctrl+h（並列）/ Ctrl+b（分岐）/ Ctrl+i（カーソルに :ID を書く）=====
 document.addEventListener('keydown', e => {
   if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || $('#modal').style.display === 'flex' || $('#idpop')) return;
-  const k = e.key.toLowerCase(); if (!'nhbi'.includes(k) || k.length !== 1) return;
+  const k = e.key.toLowerCase(); if (!'nhbip'.includes(k) || k.length !== 1) return;
+  if (k === 'p') { // Ctrl+P: カーソルに (p)（紙）を書く。:1a のあとで押せば、紙の 1a
+    const v = lastView; if (!v || !v.dom.isConnected || !v.hasFocus) return; e.preventDefault(); v.dispatch(v.state.replaceSelection('(p)')); return;
+  }
   const ae = document.activeElement, inField = /^(INPUT|TEXTAREA|SELECT)$/.test(ae && ae.tagName) && !(ae.closest && ae.closest('#pane'));   // 作った直後のタイトル欄からも続けて使える
   if (k === 'n') { e.preventDefault(); return createNoid('text'); }
   if (inField || !cur || cur.k !== 'note') return;
@@ -703,10 +708,10 @@ function giveIdDialog(note) {
   });
 }
 // キーワードとトピックIndex（ボタンで足す）
-const refContexts = (body, id) => { // id を指している所の、周辺の文章（ハイライトなし）。リンクだけの行は出さない
+const refContexts = (body, id, own = 'd', target = own) => { // id（target の側）を指している所の、周辺の文章（ハイライトなし）。own は、この本文のある側。リンクだけの行は出さない
   const out = [];
   for (const t of L.tokens(body)) {
-    if (t.k !== 'ref' || t.id !== id) continue;
+    if (t.k !== 'ref' || t.id !== id || (t.sp || own) !== target) continue;
     const ls = body.lastIndexOf('\n', t.from - 1) + 1, e0 = body.indexOf('\n', t.to), le = e0 < 0 ? body.length : e0;
     const a = Math.max(ls, t.from - 28), b = Math.min(le, t.to + 40);
     const before = body.slice(a, t.from).replace(/^[-*]\s+/, ''), after = body.slice(t.to, b);
@@ -718,8 +723,8 @@ const refContexts = (body, id) => { // id を指している所の、周辺の�
 function backlinks(note) { // このノートを指しているノート・日記
   const out = [];
   if (note.noid) return out;
-  for (const m of notes) if (m !== note && m.s === note.s && !m.noid) { const c = refContexts(m.body, note.id); if (c.length) out.push({ m, c: c[0], more: c.length - 1 }); }
-  if (note.s === 'd') for (const d of diaries) { const c = refContexts(d.body, note.id); if (c.length) out.push({ d, c: c[0], more: 0 }); }
+  for (const m of notes) if (m !== note && !m.noid) { const c = refContexts(m.body, note.id, m.s, note.s); if (c.length) out.push({ m, c: c[0], more: c.length - 1 }); }   // 紙とデジタルの、どちらからのリンクも
+  for (const d of diaries) { const c = refContexts(d.body, note.id, 'd', note.s); if (c.length) out.push({ d, c: c[0], more: 0 }); }
   return out;
 }
 const ownTopic = n => !n.noid && topicOf(n.s, n.id);   // このノートが入口のトピックIndex
@@ -923,7 +928,7 @@ function topicAddDialog(note) {
     if (!sel) return alert('トピックIndexを選んでください');
     if (!kw) return $('#ta-kw').focus();
     await flush();
-    sel[note.s] = L.addToTopic(sel[note.s], kw, note.id);
+    sel.text = L.addToTopic(L.topicText(sel), kw, note.s === L.defOf(sel) ? note.id : `${note.id}(${note.s})`);
     rememberTopic(sel.name);
     await api.saveTopic(sel); close(); renderMeta(note);
   };
@@ -932,7 +937,7 @@ function topicAddDialog(note) {
     const nm = $('#ta-name').value.trim();
     if (!nm) return;
     if (topics.find(t => t.name === nm)) return alert('その名前は既にあります');
-    const t = { name: nm, entry: { s: note.s, id: note.id }, d: '', p: '' };
+    const t = { name: nm, entry: { s: note.s, id: note.id }, keyword: '', text: '' };
     topics.push(t); await api.saveTopic(t); close(); renderMeta(note);
     newTab = true; openTopic(nm, 'edit');
   };
@@ -950,6 +955,7 @@ function topicNewDialog(kw = '') {
     <input id="tn-kw" list="tn-kws" value="${esc(kw)}" placeholder="例: GUI"><datalist id="tn-kws">${globalIndex().filter(([, v]) => v.d.length + v.p.length >= 2).map(([k]) => `<option value="${esc(k)}">`).join('')}</datalist>
     <div class="sub">入口のノート（赤い点を付けるID）。無いIDなら、新しいノートを作ります。キーワードのIDの中から選べます</div>
     <div class="row"><select id="tn-s"><option value="d">デジタル</option><option value="p">紙</option></select><input id="tn-id" style="width:100px"><span id="tn-note" class="sub"></span></div>
+    <label class="rad" id="tn-laterw" style="display:none"><input type="checkbox" id="tn-later" checked> 紙のノートは、まだ作らない（取り込む前の番号。取り込んだら、つながります）</label>
     <div class="sub">名前</div>
     <input id="tn-name">
     <div id="tn-pre" class="sub"></div>
@@ -960,14 +966,15 @@ function topicNewDialog(kw = '') {
   const refresh = () => {
     const k = $('#tn-kw').value.trim(), sp = $('#tn-s').value, id = $('#tn-id').value.trim().toLowerCase();
     const exists = !!get(sp, id);
-    $('#tn-note').textContent = !id ? '' : exists ? `既存のノート ${id} を入口にします` : `新しいノート ${id} を作ります`;
+    $('#tn-laterw').style.display = sp === 'p' && id && !exists ? 'flex' : 'none';
+    $('#tn-note').textContent = !id ? '' : exists ? `既存のノート ${id} を入口にします` : sp === 'p' && $('#tn-later').checked ? `紙 ${id} はまだ取り込んでいません（ノートが無くても作れます）` : `新しいノート ${id} を作ります`;
     if (!nameTouched) $('#tn-name').value = k || '';
     const v = k ? idsOf(k) : null;
     $('#tn-pre').textContent = v ? (v.d.length + v.p.length >= 2 ? `${k} ${[...v.d, ...v.p.map(x => '紙' + x)].join(' ')}` + (exists && !(sp === 'd' ? v.d : v.p).includes(id) || !exists ? ` ${sp === 'p' ? '紙' : ''}${id}` : '') + `　→ ${sp === 'p' ? '紙' : ''}${id} の上に赤い点が付きます` : 'このキーワードのIDは2つ未満です') : '';
   };
   $('#tn-s').value = 'd'; $('#tn-id').value = rootFree('d');
   $('#tn-s').onchange = () => { $('#tn-id').value = rootFree($('#tn-s').value); refresh(); };
-  $('#tn-kw').oninput = refresh; $('#tn-id').oninput = refresh;
+  $('#tn-kw').oninput = refresh; $('#tn-id').oninput = refresh; $('#tn-later').onchange = refresh;
   $('#tn-name').oninput = () => { nameTouched = true; };
   $('#tn-ok').onclick = async () => {
     const k = $('#tn-kw').value.trim(), sp = $('#tn-s').value, id = $('#tn-id').value.trim().toLowerCase(), name = $('#tn-name').value.trim();
@@ -982,9 +989,9 @@ function topicNewDialog(kw = '') {
       if (v.d.length + v.p.length < 2) return alert('キーワードは、IDが2つ以上あるものだけです');
       if (kwTopic(k)) return alert(`「${k}」のトピックIndexは、もう「${kwTopic(k).name}」があります`);
     }
-    if (!get(sp, id)) notes.push(await api.saveNote({ s: sp, id, created: L.now(), keywords: k ? [k] : [], body: '' }));
-    else await ensureKeyword(sp, id, k);
-    const t = { name, entry: { s: sp, id }, keyword: k, d: v && v.d.length ? k + ' ' + v.d.join(' ') : '', p: v && v.p.length ? k + ' ' + v.p.join(' ') : '' };
+    if (!get(sp, id) && !(sp === 'p' && $('#tn-later').checked)) notes.push(await api.saveNote({ s: sp, id, created: L.now(), keywords: k ? [k] : [], body: '' }));
+    else if (get(sp, id)) await ensureKeyword(sp, id, k);
+    const t = { name, entry: { s: sp, id }, keyword: k, text: v ? idsText(k, v, sp) : '' };
     if (!(await api.saveTopic(t))) return alert('保存できませんでした');
     topics.push(t); close(); renderList(); newTab = true; openTopic(name, 'edit');
   };
@@ -1003,10 +1010,10 @@ function exportDialog(start) {
     const add = new Set();
     for (const n of ordered()) {
       if (n.noid) continue;
-      if (kinds.includes('out')) for (const t of L.tokens(n.body || '')) if (t.k === 'ref' && get(n.s, t.id)) add.add(n.s + ':' + t.id);
-      if (kinds.includes('in')) for (const m of notes) if (m.s === n.s && !m.noid && refContexts(m.body || '', n.id).length) add.add(keyOf(m));
+      if (kinds.includes('out')) for (const t of L.tokens(n.body || '')) if (t.k === 'ref' && get(t.sp || n.s, t.id)) add.add((t.sp || n.s) + ':' + t.id);
+      if (kinds.includes('in')) for (const m of notes) if (!m.noid && refContexts(m.body || '', n.id, m.s, n.s).length) add.add(keyOf(m));
       if (kinds.includes('kw')) for (const m of notes) if (!m.noid && m.keywords.some(k => n.keywords.includes(k))) add.add(keyOf(m));
-      if (kinds.includes('topic')) for (const t of topics) { const rows = L.mergeTopic(t).rows; if (rows.some(r => r[n.s].includes(n.id))) for (const r of rows) for (const sp of ['d', 'p']) for (const id of r[sp]) if (get(sp, id)) add.add(sp + ':' + id); }
+      if (kinds.includes('topic')) for (const t of topics) { const rows = L.mergeTopic(t).rows; if (rows.some(r => r[n.s].some(x => L.splitAnchor(x).id === n.id))) for (const r of rows) for (const sp of ['d', 'p']) for (const raw of r[sp]) { const id = L.splitAnchor(raw).id; if (get(sp, id)) add.add(sp + ':' + id); } }
     }
     return add;
   };
@@ -1310,8 +1317,8 @@ function openTopic(name, tmode = 'view', keep) {
   if (!inPreview && !$('#q').value && t.entry) tab = t.entry.s === 'p' ? 'p' : 'd';   // 一覧を、そのトピックIndex のあるタブに
   const { rows, stars, refs } = L.mergeTopic(t), e = t.entry;
   let body;
-  if (tmode === 'edit') body = `<div class="sub">1行に「キーワード ID ID …」。ID の前に * を付けるとそのIDの上に赤い点（例: PKM *1 1a）。+ で始めると別のトピックIndexへの案内（例: +GUI）。「+名前 ID」なら、その ID へのリンク付きの星（例: +hoge 1）。デジタルと紙は別々に書き、表示はまとめます。</div>
-      <div class="two"><div><h4>デジタル</h4><div class="ed" id="ed-d"></div></div><div><h4>紙</h4><div class="ed" id="ed-p"></div></div></div>`;
+  if (tmode === 'edit') body = `<div class="sub">1行に「キーワード ID ID …」。ID のあとに (p) で紙、(d) でデジタル（書かなければ、入口のノートと同じ側）。(番号) でノートの中の場所（例: PKM 1a 3(p) 1g(2)）。ID の前に * を付けるとそのIDの上に赤い点（例: PKM *1 1a）。+ で始めると別のトピックIndexへの案内（例: +GUI）。「+名前 ID」なら、その ID へのリンク付きの星（例: +hoge 1）。</div>
+      <div class="ed" id="ed-t"></div>`;
   else if (tmode === 'conf') body = `<div class="conf">
       <label>名前 <input id="t-name" value="${esc(t.name)}"></label>
       <label>入口 <select id="t-s"><option value="d"${e && e.s === 'd' ? ' selected' : ''}>デジタル</option><option value="p"${e && e.s === 'p' ? ' selected' : ''}>紙</option></select>
@@ -1333,9 +1340,9 @@ function openTopic(name, tmode = 'view', keep) {
       ${tmode === 'conf' ? '' : `<button data-act="tconf">入口・名前</button>
       <button data-act="tedit" class="${tmode === 'edit' ? 'p' : ''}">${tmode === 'edit' ? '完了' : '編集'}</button>`}
     </div>${body}`;
-  if (tmode === 'edit') for (const s of ['d', 'p']) {
-    const v = editor($('#ed-' + s), t[s], 'topic', s, x => { t[s] = x; saveTopic(t); }, s === 'd' ? 'PKM 1a 3' : 'PKM 2');
-    if (s === 'd') v.focus();
+  if (tmode === 'edit') { // 1 つの欄。紙は ID(p)、デジタルは ID（入口が紙のトピックIndex なら、紙が ID、デジタルが ID(d)）
+    const def = L.defOf(t), v = editor($('#ed-t'), L.topicText(t), 'topic', def, x => { t.text = x; saveTopic(t); }, `PKM 1a 3(p)`);
+    v.focus();
   }
   if (tmode === 'conf') $('#t-id').focus();
   renderTabs(); renderList(); if (!$('#q').value) centerOn();   // 開いたトピックIndex の行が、一覧の真ん中に（青い枠）

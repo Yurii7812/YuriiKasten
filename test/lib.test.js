@@ -65,7 +65,7 @@ test('読み', () => {
 });
 
 test('トピックIndex から ID を外す', () => {
-  assert.strictEqual(L.removeFromTopic('英雄伝 1 2\n漢字 1\n★ 3-x', ['1']), '英雄伝 2\n★ 3-x');
+  assert.strictEqual(L.removeFromTopic('英雄伝 1 2\n漢字 1\n★ 3-x', [{ s: 'd', id: '1' }]), '英雄伝 2\n★ 3-x');
 });
 
 test('日記の日付・節・階層', () => {
@@ -129,8 +129,24 @@ test('リンク: :1a,1b で複数。: 1a（空白）や コードの中はリン
 });
 test('トピックIndex: +hoge 1 は 1 がリンクの星。+GUI だけなら案内', () => {
   const r = L.topicLine('+hoge 1');
-  assert.deepStrictEqual(r.ref, { label: 'hoge', id: '1', from: 6, to: 7 }); assert.strictEqual(r.star, '');
+  assert.deepStrictEqual(r.ref, { label: 'hoge', id: '1', sp: undefined, from: 6, to: 7 }); assert.strictEqual(r.star, '');
   const m = L.mergeTopic({ d: '+hoge 1\n+GUI\nPKM 1', p: '★ 紙 2a' });
   assert.deepStrictEqual(m.refs, [{ s: 'd', label: 'hoge', id: '1' }, { s: 'p', label: '紙', id: '2a' }]);
   assert.deepStrictEqual(m.stars, ['GUI']); assert.strictEqual(m.rows.length, 1);
+});
+
+test('紙とデジタルの書き分け: :ID(p)・(d)・(番号) の順は自由。印なしは、いまの側', () => {
+  const t = x => L.tokens(x).filter(y => y.k === 'ref').map(y => [y.id, y.sp, y.n]);
+  assert.deepStrictEqual(t(':1a(p)(2) と :1a(2)(p) と :3 と :4(d)'), [['1a', 'p', '2'], ['1a', 'p', '2'], ['3', undefined, undefined], ['4', 'd', undefined]]);
+  assert.deepStrictEqual(t(':1a,2(p),3'), [['1a', undefined, undefined], ['2', 'p', undefined], ['3', undefined, undefined]]);
+  assert.strictEqual(L.mdToBody(L.bodyToMd(':1a(p)(2)', (id, sp) => `${sp || 'd'}_${id}.md`)), ':1a(p)(2)');   // md にして、戻しても同じ
+  assert.ok(L.bodyToMd(':1a(p)', (id, sp) => `${sp || 'd'}_${id}.md`).includes('(p_1a.md)'));
+});
+test('トピックIndex: 1 つの文字に、印つきで。入口が紙なら、印なしは紙', () => {
+  const m = L.mergeTopic({ entry: { s: 'd', id: '1' }, text: 'デジタルと紙の書き分け 1g(1) 2(p) *3(2)(p)\n+hoge 5(p)' });
+  assert.deepStrictEqual([m.rows[0].d, m.rows[0].p, m.rows[0].dot], [['1g(1)'], ['2', '3(2)'], { s: 'p', id: '3' }]); assert.deepStrictEqual(m.refs, [{ s: 'p', label: 'hoge', id: '5' }]);
+  const p = L.mergeTopic({ entry: { s: 'p', id: '9' }, text: 'x 1 2(d)' });   // 紙のトピックIndex
+  assert.deepStrictEqual([p.rows[0].p, p.rows[0].d], [['1'], ['2']]);
+  assert.strictEqual(L.removeFromTopic('x 1 2(p)', [{ s: 'p', id: '2' }], 'd'), 'x 1'); assert.strictEqual(L.addToTopic('x 1', 'x', '2(p)'), 'x 1 2(p)');
+  assert.strictEqual(L.legacyTopicText({ entry: { s: 'd', id: '1' }, d: 'PKM 1', p: 'PKM *2' }), 'PKM 1\nPKM *2(p)');
 });

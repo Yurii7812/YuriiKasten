@@ -20,8 +20,8 @@ export function entries(notes, c, mode) {
   const parent = L.parentIn(me.id, has), pn = parent && by.get(c.s + ':' + parent);
   const kids = real.filter(n => n.s === c.s && L.parentIn(n.id, has) === me.id).sort((a, b) => L.cmpId(a.id, b.id));
   const sibs = real.filter(n => n.s === c.s && n !== me && L.parentIn(n.id, has) === parent).sort((a, b) => L.cmpId(a.id, b.id));
-  const refs = [...new Set(L.tokens(me.body || '').filter(t => t.k === 'ref' && t.id !== me.id).map(t => t.id))].map(id => by.get(c.s + ':' + id)).filter(Boolean);
-  const backs = real.filter(n => n !== me && n.s === c.s && L.tokens(n.body || '').some(t => t.k === 'ref' && t.id === me.id));
+  const refs = [...new Set(L.tokens(me.body || '').filter(t => t.k === 'ref' && !((t.sp || me.s) === me.s && t.id === me.id)).map(t => (t.sp || me.s) + ':' + t.id))].map(k => by.get(k)).filter(Boolean);
+  const backs = real.filter(n => n !== me && L.tokens(n.body || '').some(t => t.k === 'ref' && t.id === me.id && (t.sp || n.s) === me.s));   // 紙とデジタルの間のリンクも
   const kw = real.filter(n => n !== me && (n.keywords || []).some(k => (me.keywords || []).includes(k)));
   const group = real.filter(n => n !== me && n.s === c.s && L.root(n.id) === L.root(me.id)).sort((a, b) => Math.abs(L.tok(a.id).length - L.tok(me.id).length) - Math.abs(L.tok(b.id).length - L.tok(me.id).length) || L.cmpId(a.id, b.id));
   const subtree = real.filter(n => n.s === c.s && n !== me && L.fzSubtree([n.id], me.id).length).sort((a, b) => L.cmpId(a.id, b.id));

@@ -20,7 +20,7 @@ export function prepare(notes, topics, mergeTopic) {
   const N = Math.max(1, real.length), idf = w => Math.log(1 + N / (1 + (df.get(w) || 0)));
   const norm = new Map(); for (const [k, tf] of vec) { let s = 0; for (const [w, c] of tf) s += (c * idf(w)) ** 2; norm.set(k, Math.sqrt(s) || 1); }
   const links = new Map(), has = new Set(real.map(key));
-  for (const n of real) { const set = new Set(); if (!n.noid) for (const t of L.tokens(n.body || '')) if (t.k === 'ref' && has.has(n.s + ':' + t.id) && t.id !== n.id) set.add(n.s + ':' + t.id); links.set(key(n), set); }
+  for (const n of real) { const set = new Set(); if (!n.noid) for (const t of L.tokens(n.body || '')) { const k = (t.sp || n.s) + ':' + t.id; if (t.k === 'ref' && has.has(k) && k !== key(n)) set.add(k); } links.set(key(n), set); }
   const tp = new Map();   // ノート → 載っているトピックIndex の名前
   for (const t of topics || []) {
     const m = mergeTopic(t), ids = new Set(); if (t.entry) ids.add(t.entry.s + ':' + t.entry.id);

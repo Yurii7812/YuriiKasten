@@ -17,7 +17,7 @@ export function renderMd(text) {
   let src = text || '', out = '', last = 0;
   for (const t of L.tokens(src)) {
     if (t.k !== 'ref') continue;
-    out += src.slice(last, t.from) + `[${t.text}](pkm:${t.id})`; last = t.to;
+    out += src.slice(last, t.from) + `[${t.text}](pkm:${t.sp || 'd'}:${t.id})`; last = t.to;
   }
   const el = document.createElement('div');
   el.innerHTML = md.render(out + src.slice(last));
@@ -27,7 +27,7 @@ export function renderMd(text) {
   }
   for (const a of el.querySelectorAll('a')) {
     const h = a.getAttribute('href') || '';
-    if (h.startsWith('pkm:')) a.dataset.ref = h.slice(4); else a.dataset.file = h;
+    if (h.startsWith('pkm:')) a.dataset.ref = h.slice(4); else a.dataset.file = h;   // pkm:紙デジタル:ID
   }
   return el.innerHTML;
 }
@@ -35,7 +35,7 @@ export function renderMd(text) {
 export function mdClick(e) {
   const a = e.target.closest('a'); if (!a) return false;
   e.preventDefault();
-  if (a.dataset.ref) { if (ctx.get('d', a.dataset.ref)) ctx.openNote('d', a.dataset.ref); }
+  if (a.dataset.ref) { const [sp, ...r] = a.dataset.ref.split(':'), id = r.join(':'); if (ctx.get(sp, id)) ctx.openNote(sp, id); }
   else if (a.dataset.file) ctx.openLink(a.dataset.file);
   return true;
 }

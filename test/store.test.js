@@ -87,7 +87,7 @@ test('全部が1つのフォルダに平らに置かれ、リンクは同じフ�
   assert.ok(!fs.existsSync(path.join(dir, D1)) && !fs.existsSync(path.join(dir, P1 + '.jpg')) && fs.existsSync(path.join(dir, f1)));
   assert.ok(!st2.notes.some(x => x.id === '1'));
   assert.strictEqual(st2.topics.find(t => t.name === 'A').entry, null);
-  assert.strictEqual(st2.topics.find(t => t.name === 'A').d, 'x 5');
+  assert.strictEqual(st2.topics.find(t => t.name === 'A').text, 'x 5');
   // ID を変える（ファイル名は日時のまま。YAML の folgezettel が変わる）
   assert.ok(v.rename('d', '1a', '1b'));
   assert.ok(fs.existsSync(path.join(dir, D1a)) && /folgezettel: "1b"/.test(r(D1a)));
@@ -243,7 +243,7 @@ test('IDを消してIDなしに。このノートを指すリンクは、ファ�
   const b2 = st.notes.find(x => x.id === '2').body;
   assert.strictEqual(b2, `参照 [PKMとは](${n.id}.md) と [PKMとは](${n.id}.md) と、:1a`); // :1a は別のノートなのでそのまま
   assert.ok(st.notes.find(x => x.id === '1a'));                                                   // 子はそのまま
-  assert.strictEqual(st.topics[0].entry, null); assert.strictEqual(st.topics[0].d, '基本 1a');      // 入口なし・索引の行から外れる
+  assert.strictEqual(st.topics[0].entry, null); assert.strictEqual(st.topics[0].text, '基本 1a');      // 入口なし・索引の行から外れる
   assert.ok(st.diaries[0].body.includes(`[PKMとは](${n.id}.md)`) && st.diaries[0].body.includes('- :1a')); // 日記のリンクも直る
   assert.ok(!v.clearId('d', n.id));                                                                // すでにIDなしなら何もしない
   fs.rmSync(dir, { recursive: true });
@@ -425,4 +425,22 @@ test('チャットメモ: 日ごとの md（## 日付・時刻つきの段落・
   assert.match(md, /<a id="m-b2"><\/a>14:13 \[@最初のメモ\]\(C_2026-11-08\.md#m-a1\) の続き　［読書］/);
   v.saveDoc('C_チャット', { topics: [], messages: [], noted: {} });
   assert.ok(!fs.existsSync(path.join(dir, 'C_2026-11-08.md')));   // メモが無くなった日のファイルは消える
+});
+
+test('紙のトピックIndex: 入口の紙のノートが、まだ無くても作れる。1 つの欄に、紙とデジタルを (p) で書き分ける', () => {
+  const dir = tmp(), v = openVault(dir), r = f => fs.readFileSync(path.join(dir, f), 'utf8');
+  v.saveNote({ s: 'd', id: '1', keywords: [], body: 'デジタル' }); v.saveNote({ s: 'p', id: '3', keywords: [], body: '紙の文字 :1(d) と :1' });
+  assert.ok(v.saveTopic({ name: '12-紙の索引', entry: { s: 'p', id: '12' }, keyword: '', text: '書き分け 3 1(d)\n+hoge 3' }));   // 紙の 12 は、まだ取り込んでいない
+  const st = openVault(dir).state(), t = st.topics.find(x => x.name === '12-紙の索引');
+  assert.deepStrictEqual(t.entry, { s: 'p', id: '12' }); const m = require('../lib').mergeTopic(t);
+  assert.deepStrictEqual([m.rows[0].p, m.rows[0].d, m.refs], [['3'], ['1'], [{ s: 'p', label: 'hoge', id: '3' }]]);   // 入口が紙なので、印なしは紙。(d) はデジタル
+  const md = r('T_12-紙の索引.md');
+  assert.match(md, /\| 書き分け \| \[1\]\([^)]*\.md\) \[紙3\]\([^)]*\.md\) \|/);
+  // 紙のノートの md: 印なしの :1 は紙の 1（まだ無いので # のリンク）、:1(d) はデジタルの 1
+  const p3 = st.notes.find(n => n.s === 'p' && n.id === '3'), d1 = st.notes.find(n => n.s === 'd' && n.id === '1');
+  assert.ok(r(p3.stem + '.md').includes(`[:1(d)](${d1.stem}.md)`));
+  assert.match(r(p3.stem + '.md'), /Topic: \[12-紙の索引\]/);   // 紙の 3 が載っているトピックIndex
+  // 昔の 2 つの欄（d・p）のトピックIndex は、1 つの欄に直る
+  const old = v.saveTopic({ name: '古い', entry: { s: 'd', id: '1' }, keyword: '', d: 'PKM 1', p: 'PKM 3' });
+  assert.strictEqual(openVault(dir).state().topics.find(x => x.name === '古い').text, 'PKM 1\nPKM 3(p)');
 });
