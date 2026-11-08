@@ -89,7 +89,7 @@ fun UpsDialog(ordered: List<String>, initial: Set<String>, exclude: String?, onD
     var query by remember { mutableStateOf("") }
     val chosen = remember { mutableStateListOf<String>().also { it.addAll(initial) } }
     val shown = remember(ordered, query) { ordered.filter { it != exclude && matchesQuery(topicLabel(it), query) } }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("上のトピック（いくつでも）") },
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("上位トピック（いくつでも）") },
         text = { Column {
             OutlinedTextField(query, { query = it }, placeholder = { Text("探す") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             LazyColumn(Modifier.heightIn(max = 360.dp)) {
