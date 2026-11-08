@@ -764,13 +764,13 @@ function renderMeta(note) {
   const tops = topics.map(t => ({ t, kws: L.mergeTopic(t).rows.filter(r => r[note.s].some(x => L.splitAnchor(x).id === note.id)).map(r => r.kw) })).filter(x => x.kws.length); // 自分のキーワードがあるものだけ
   const bl = backlinks(note);
   el.innerHTML =
-    (note.keywords.length ? `<div class="sec"><div class="l">キーワード</div>${note.keywords.map(k => `<div class="mk" title="${esc(readings[k] || '')}"><span>${esc(k)}</span><b data-kwdel="${esc(k)}" title="外す">×</b></div>`).join('')}</div>` : '') +
     (ownTopic(note) ? `<div class="sec">${metaLabel('📑', '自トピック')}<div class="mt topic-index-entry"><a class="tl" data-topic="${esc(ownTopic(note).name)}">${esc(topicLabel(ownTopic(note)))}</a></div></div>` : '') +
     (tops.length ? `<div class="sec">${metaLabel('🗂️', 'トピック')}${tops.map(x => `<div class="mt topic-index-entry"><a class="tl" data-topic="${esc(x.t.name)}">${esc(topicLabel(x.t))}</a><div class="topic-index-keys">${x.kws.map(kw => `<span>${esc(kw)}</span>`).join('、')}</div></div>`).join('')}</div>` : '') +
     childrenHtml(note) +
     (bl.length ? `<div class="sec"><div class="l">バックリンク ${bl.length}</div>${bl.map(x => x.m
       ? `<div class="bl" data-s="${x.m.s}" data-id="${esc(x.m.id)}"><div class="bh"><b>${esc(titleOf(x.m))}</b><em>${esc(x.m.id)}</em></div><p>${x.c}</p></div>`
       : `<div class="bl" data-diary="${x.d.date}"><div class="bh"><b>${x.d.date.slice(5)}（${L.weekday(x.d.date)}）</b><em>日記</em></div><p>${x.c}</p></div>`).join('')}</div>` : '') +
+    (note.keywords.length ? `<div class="sec"><div class="l">キーワード</div>${note.keywords.map(k => `<div class="mk" title="${esc(readings[k] || '')}"><span>${esc(k)}</span><b data-kwdel="${esc(k)}" title="外す">×</b></div>`).join('')}</div>` : '') +
     `<div class="madd"><a data-act="kwadd">＋ キーワード</a><span id="kw-wrap"></span><a data-act="tadd">＋ トピックIndexに入れる</a></div>`;
 }
 // キーワードと読みを入れる。読みは候補が自動で入り、違っていれば直す
