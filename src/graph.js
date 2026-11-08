@@ -110,12 +110,12 @@ export function loadNotesAndRelations(notes, titleOf, mapType, opt = {}) {
   return { nodes: nodes.filter(n => n.id in sizes), links: links.filter(l => keep.has(l.source) && keep.has(l.target)), noteIdToSizeMap: sizes };
 }
 
-const DEF = () => ({ mapType: 'link', f: { q: '', kw: false, topics: false, orphans: true, paper: true }, groups: [], d: { arrows: true, fade: .5, nodeSize: 1, linkW: 1 }, force: { center: .2, repel: null, link: null, dist: 40 }, fixNodes: false, dock: false, tab: 'set', open: { f: true, g: true, d: true, c: true }, sel: null });
+const DEF = () => ({ mapType: 'link', f: { q: '', kw: false, topics: false, orphans: true, paper: true }, groups: [], d: { arrows: true, fade: .5, nodeSize: 1, linkW: 1 }, force: { center: .2, repel: null, link: null, dist: 40 }, fixNodes: false, dock: false, tab: 'set', dockW: 320, open: { f: true, g: true, d: true, c: true }, sel: null });
 const GROUP_COLORS = ['#e03131', '#f08c00', '#2f9e44', '#1c7ed6', '#7048e8', '#d6336c'];
 
 export function mount(box, o) {
   const st = o.state; { const d = DEF(); for (const k in d) if (st[k] === undefined) st[k] = d[k]; for (const k of ['f', 'd', 'force', 'open']) st[k] = { ...d[k], ...st[k] }; }
-  box.innerHTML = '<div class="note-map-widget"><div class="nm-style"><span class="nm-bg"></span><span class="nm-anchor"></span><span class="nm-anchor-icon"></span></div><div class="note-map-container"></div><aside class="nm-dock"><div class="nm-tabs"><button data-tab="set">設定</button><button data-tab="note">ノート</button></div><div class="nm-set"></div><div class="nm-note"></div></aside></div>';
+  box.innerHTML = '<div class="note-map-widget"><div class="nm-style"><span class="nm-bg"></span><span class="nm-anchor"></span><span class="nm-anchor-icon"></span></div><div class="note-map-container"></div><aside class="nm-dock"><div class="nm-grip" title="ドラッグして幅を変える"></div><div class="nm-tabs"><button data-tab="set">設定</button><button data-tab="note">ノート</button></div><div class="nm-set"></div><div class="nm-note"></div></aside></div>';
   const wrap = box.querySelector('.note-map-widget'), container = box.querySelector('.note-map-container'), styleEl = box.querySelector('.nm-style'), noteEl = box.querySelector('.nm-note'), setEl = box.querySelector('.nm-set'), dockTabs = box.querySelector('.nm-tabs');
   const data = loadNotesAndRelations(o.notes, o.titleOf, st.mapType, { query: st.f.q, showKw: st.f.kw, showTopics: st.f.topics, orphans: st.f.orphans, paper: st.f.paper, topics: o.topics, mergeTopic: o.mergeTopic });
   const remount = (focusSel) => { teardown(); mount(box, o); if (focusSel) { const e = box.querySelector(focusSel); if (e) { e.focus(); try { e.setSelectionRange(e.value.length, e.value.length); } catch { } } } };
@@ -190,6 +190,12 @@ export function mount(box, o) {
     .onBackgroundClick(() => { st.sel = null; showNote(); keepPainting(); });
   graph.graphData(data);
   // ---- 右の枠（設定・ノート）: 図に重ねず、図を縮めて横に並べる ----
+  const setW = w => { st.dockW = Math.max(240, Math.min(w, Math.floor(wrap.clientWidth * .75))); wrap.style.setProperty('--dw', st.dockW + 'px'); };
+  setW(st.dockW);
+  box.querySelector('.nm-grip').addEventListener('pointerdown', e => {   // 右の枠の幅を、ドラッグで変える
+    e.preventDefault(); const move = ev => { setW(wrap.getBoundingClientRect().right - ev.clientX); fitSize(); }, up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); fitSize(); };
+    addEventListener('pointermove', move); addEventListener('pointerup', up);
+  });
   function setDock() { wrap.classList.toggle('nm-dock-open', !!st.dock); wrap.classList.toggle('nm-tab-note', st.tab === 'note'); dockTabs.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.tab === st.tab)); const g = box.querySelector('[data-panel]'); if (g) g.classList.toggle('on', !!st.dock); setTimeout(fitSize, 30); }
   dockTabs.onclick = e => { const b = e.target.closest('[data-tab]'); if (b) { st.tab = b.dataset.tab; setDock(); } };
   // ---- 横のノート ----
