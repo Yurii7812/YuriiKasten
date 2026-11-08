@@ -197,13 +197,19 @@ function openVault(vault) {
   const diaryHref = d => enc(diaryFile(d));
   // 記録の種類（日記・夢・ビジネス…）。K_records.json = { kinds: [{ name, parent }] }（parent は、新しく作る日の上位の初期値）
   const recDoc = () => docs.get('K_records') || { kinds: [] };
-  const kindParent = k => (recDoc().kinds.find(x => x.name === k) || {}).parent || '';
+  const kindParents = k => { const x = recDoc().kinds.find(y => y.name === k) || {}; return x.parents || (x.parent ? [x.parent] : []); };   // 種類の上位（いくつでも）
+  const kindParent = k => kindParents(k)[0] || '';
+  const asList = v => (Array.isArray(v) ? v : v ? [v] : []).map(String).filter(Boolean);
+  const dayParents = d => d.parents || (d.parent ? [d.parent] : []);
+  const setDayParents = (d, list) => { list = [...new Set(asList(list))]; d.parents = list; d.parent = list[0] || ''; };
   const kindNames = () => { const out = [DIARY]; for (const k of recDoc().kinds.map(x => x.name).concat([...diaries.values()].map(d => d.kind))) if (k && !out.includes(k)) out.push(k); return out; };
   const saveRecDoc = d => { docs.set('K_records', d); fs.writeFileSync(abs('K_records.json'), JSON.stringify(d, null, 1)); };
   // その日の上位: 日ごとの parent。その種類のその日のノートが無ければ、種類の上位をたどる（その日に無い中間は飛ばす）
-  const effParent = day => { let p = day.parent || '', seen = new Set(); while (p && !diaries.has(dk(p, day.date)) && !seen.has(p)) { seen.add(p); p = kindParent(p); } return p && diaries.has(dk(p, day.date)) ? p : ''; };
+  const upDay = (p0, date) => { let p = p0, seen = new Set(); while (p && !diaries.has(dk(p, date)) && !seen.has(p)) { seen.add(p); p = kindParent(p); } return p && diaries.has(dk(p, date)) ? p : ''; };
+  const effParents = day => [...new Set(dayParents(day).map(p => upDay(p, day.date)).filter(Boolean))];
+  const effParent = day => effParents(day)[0] || '';
   // この日のノートの下に並べる、下位の記録。日記には最上位の記録、各記録にはその日にある直接の下位
-  const lowerOf = day => [...diaries.values()].filter(o => o.date === day.date && o.kind !== day.kind && (day.kind === DIARY ? (effParent(o) === '' || effParent(o) === DIARY) : effParent(o) === day.kind)).sort((x, y) => x.kind.localeCompare(y.kind, 'ja'));
+  const lowerOf = day => [...diaries.values()].filter(o => o.date === day.date && o.kind !== day.kind && (day.kind === DIARY ? (effParents(o).length === 0 || effParents(o).includes(DIARY)) : effParents(o).includes(day.kind))).sort((x, y) => x.kind.localeCompare(y.kind, 'ja'));
 
   // ===== 読み込み =====
   fs.mkdirSync(vault, { recursive: true });
@@ -241,7 +247,7 @@ function openVault(vault) {
     if (!r.fm) continue;
     if (r.fm.record !== undefined && r.fm.date) { // 記録（日記・夢…）の、その日のノート
       const text = r.text, i = text.indexOf(BODY), j = text.indexOf(NAV), kind = String(r.fm.record) || DIARY;
-      diaries.set(dk(kind, String(r.fm.date)), { kind, date: String(r.fm.date), title: r.fm.title || '', parent: r.fm.parent_record || '', stem: r.stem, created: r.fm.created || '', updated: r.fm.updated || r.fm.created || '', body: L.mdToBody(i >= 0 ? text.slice(i + BODY.length, j > i ? j : undefined) : L.fmParse(text).rest) });
+      diaries.set(dk(kind, String(r.fm.date)), { kind, date: String(r.fm.date), title: r.fm.title || '', parent: asList(r.fm.parent_record)[0] || '', parents: asList(r.fm.parent_record), stem: r.stem, created: r.fm.created || '', updated: r.fm.updated || r.fm.created || '', body: L.mdToBody(i >= 0 ? text.slice(i + BODY.length, j > i ? j : undefined) : L.fmParse(text).rest) });
       continue;
     }
     const y = r.fm, sp = y.source === 'paper' ? 'p' : 'd', fz = y.folgezettel !== undefined ? String(y.folgezettel) : '';
@@ -298,7 +304,7 @@ function openVault(vault) {
   const sameKind = d => [...diaries.values()].filter(x => x.kind === d.kind).sort((x, y) => x.date < y.date ? -1 : 1);
   function diaryMd(d) {
     const low = lowerOf(d), head = `${d.date}${d.kind !== DIARY ? '（' + esc(d.kind) + '）' : ''}${d.title ? '-' + esc(d.title) : ''}`;
-    return [L.fmDump({ record: d.kind, date: d.date, parent_record: d.parent || undefined, title: d.title || undefined, created: d.created || undefined, updated: d.updated || d.created || undefined }).replace(/\n$/, ''), `# ${head}`, '',
+    return [L.fmDump({ record: d.kind, date: d.date, parent_record: dayParents(d).length ? (dayParents(d).length === 1 ? dayParents(d)[0] : dayParents(d)) : undefined, title: d.title || undefined, created: d.created || undefined, updated: d.updated || d.created || undefined }).replace(/\n$/, ''), `# ${head}`, '',
       low.length ? `DailyNotes: ${low.map(o => `[${esc(o.kind)}](${diaryHref(o)})`).join('　')}\n` : null,
       BODY + L.bodyToMd(d.body, (x, sp) => noteHref(sp || 'd', x)) + '\n' + NAV, ''].filter(x => x !== null).join('\n');
   }
@@ -468,9 +474,9 @@ function openVault(vault) {
   const url = n => n.img ? 'file://' + abs(n.img).split('/').map(enc).join('/') + '?' + fs.statSync(abs(n.img)).mtimeMs : null;
   const pub = n => ({ pinned: !!n.pinned, color: n.color || '', archived: !!n.archived, s: n.s, id: n.id, stem: n.stem, created: n.created, updated: n.updated || n.created, keywords: n.keywords, body: n.body, image: url(n), kind: n.kind || 'text', data: n.data || null, noid: L.isNoid(n.id), title: n.title || '', parentStem: n.parentStem || '' });
 
-  const pubDiary = d => ({ kind: d.kind, date: d.date, title: d.title, body: d.body, parent: d.parent || '', stem: d.stem, pages: d.kind === DIARY ? pages.get(d.date) || [] : [], lower: lowerOf(d).map(o => o.kind) });
+  const pubDiary = d => ({ kind: d.kind, date: d.date, title: d.title, body: d.body, parent: d.parent || '', parents: dayParents(d), stem: d.stem, pages: d.kind === DIARY ? pages.get(d.date) || [] : [], lower: lowerOf(d).map(o => o.kind) });
   const ensureDiary = (date, kind = DIARY) => {
-    if (!diaries.has(dk(kind, date))) diaries.set(dk(kind, date), { kind, date, title: '', body: '', parent: kind === DIARY ? '' : kindParent(kind), stem: freeStem(), created: L.now() });
+    if (!diaries.has(dk(kind, date))) diaries.set(dk(kind, date), { kind, date, title: '', body: '', parent: kind === DIARY ? '' : kindParent(kind), parents: kind === DIARY ? [] : kindParents(kind), stem: freeStem(), created: L.now() });
     return diaries.get(dk(kind, date));
   };
   // その日に作ったデジタルノートへのリンクを、日記の「今日のノート」に足す（無ければ日記も作る）
@@ -506,7 +512,7 @@ function openVault(vault) {
       const d = ensureDiary(date, kind);
       if (body !== undefined) d.body = body;
       if (title !== undefined) d.title = title.trim();
-      if (parent !== undefined && kind !== DIARY) { const np = parent || ''; if (np !== kind && !this.recordCycle(kind, np)) d.parent = np; }
+      if (parent !== undefined && kind !== DIARY) { const np = asList(parent).filter(x => x !== kind && !this.recordCycle(kind, x)); setDayParents(d, np); }
       d.updated = L.now(); rebuild(); return pubDiary(d);
     },
     deleteDiary(date, kind = DIARY) { const d = diaries.get(dk(kind, date)); if (!d) return false; removeFile(diaryFile(d)); diaries.delete(dk(kind, date)); rebuild(); return true; },
@@ -532,35 +538,36 @@ function openVault(vault) {
       rebuild(); return pubDiary(d);
     },
     // ----- 記録の種類 -----
-    records: () => kindNames().map(k => ({ name: k, parent: k === DIARY ? '' : kindParent(k) })),
+    records: () => kindNames().map(k => ({ name: k, parent: k === DIARY ? '' : kindParent(k), parents: k === DIARY ? [] : kindParents(k) })),
     // child の上位を up にすると、輪になるか（up の上位をたどって child に着く）
-    recordCycle(child, up) { let p = up, n = 0; while (p && n++ < 50) { if (p === child) return true; p = kindParent(p); } return false; },
+    recordCycle(child, up) { const seen = new Set(), walk = p => { if (!p || seen.has(p)) return false; if (p === child) return true; seen.add(p); return kindParents(p).some(walk); }; return asList(up).some(walk); },
     addRecord(name, parent = '') {
       name = (name || '').trim(); if (!name || name === DIARY || /[\\/:*?"<>|#%\n]/.test(name) || kindNames().includes(name)) return false;
-      if (parent && !kindNames().includes(parent)) return false;
-      const d = recDoc(); d.kinds = [...d.kinds, { name, parent }]; saveRecDoc(d); rebuild(); return this.records();
+      const ups = asList(parent); if (ups.some(p => !kindNames().includes(p))) return false;
+      const d = recDoc(); d.kinds = [...d.kinds, { name, parent: ups[0] || '', parents: ups }]; saveRecDoc(d); rebuild(); return this.records();
     },
     // 種類の上位（これから作る日の初期値。もう作った日は変えない）
     setRecordParent(name, parent = '') {
-      if (name === DIARY || !kindNames().includes(name) || (parent && (!kindNames().includes(parent) || parent === name || this.recordCycle(name, parent)))) return false;
-      const d = recDoc(); d.kinds = kindNames().filter(k => k !== DIARY).map(k => ({ name: k, parent: k === name ? parent : kindParent(k) })); saveRecDoc(d); rebuild(); return this.records();
+      const ups = [...new Set(asList(parent))];
+      if (name === DIARY || !kindNames().includes(name) || ups.some(p => !kindNames().includes(p) || p === name || this.recordCycle(name, p))) return false;
+      const d = recDoc(); d.kinds = kindNames().filter(k => k !== DIARY).map(k => k === name ? { name: k, parent: ups[0] || '', parents: ups } : { name: k, parent: kindParent(k), parents: kindParents(k) }); saveRecDoc(d); rebuild(); return this.records();
     },
     // その日だけ上位を変える
     setDayParent(kind, date, parent = '') {
-      const d = diaries.get(dk(kind, date)); if (!d || kind === DIARY || parent === kind || (parent && (!kindNames().includes(parent) || this.recordCycle(kind, parent)))) return false;
-      d.parent = parent; d.updated = L.now(); rebuild(); return pubDiary(d);
+      const d = diaries.get(dk(kind, date)), ups = [...new Set(asList(parent))]; if (!d || kind === DIARY || ups.some(p => p === kind || !kindNames().includes(p) || this.recordCycle(kind, p))) return false;
+      setDayParents(d, ups); d.updated = L.now(); rebuild(); return pubDiary(d);
     },
     renameRecord(from, to) {
       to = (to || '').trim(); if (from === DIARY || !to || to === DIARY || /[\\/:*?"<>|#%\n]/.test(to) || kindNames().includes(to) || !kindNames().includes(from)) return false;
-      for (const d of [...diaries.values()]) { if (d.kind === from) { diaries.delete(dk(from, d.date)); d.kind = to; diaries.set(dk(to, d.date), d); } if (d.parent === from) d.parent = to; }
-      const doc = recDoc(); doc.kinds = kindNames().filter(k => k !== DIARY).map(k => ({ name: k === from ? to : k, parent: kindParent(k) === from ? to : kindParent(k) })); saveRecDoc(doc);
+      for (const d of [...diaries.values()]) { if (d.kind === from) { diaries.delete(dk(from, d.date)); d.kind = to; diaries.set(dk(to, d.date), d); } if (dayParents(d).includes(from)) setDayParents(d, dayParents(d).map(p => p === from ? to : p)); }
+      const doc = recDoc(); doc.kinds = kindNames().filter(k => k !== DIARY).map(k => { const ps = kindParents(k).map(p => p === from ? to : p); return { name: k === from ? to : k, parent: ps[0] || '', parents: ps }; }); saveRecDoc(doc);
       rebuild(); return this.records();
     },
     // 種類を消す（その種類の日のノートは .trash へ。下位だった種類は上位なしに）
     deleteRecord(name) {
       if (name === DIARY || !kindNames().includes(name)) return false;
-      for (const d of [...diaries.values()]) { if (d.kind === name) { removeFile(diaryFile(d)); diaries.delete(dk(name, d.date)); } else if (d.parent === name) d.parent = kindParent(name); }
-      const doc = recDoc(); doc.kinds = kindNames().filter(k => k !== DIARY && k !== name).map(k => ({ name: k, parent: kindParent(k) === name ? kindParent(name) : kindParent(k) })); saveRecDoc(doc);
+      for (const d of [...diaries.values()]) { if (d.kind === name) { removeFile(diaryFile(d)); diaries.delete(dk(name, d.date)); } else if (dayParents(d).includes(name)) setDayParents(d, dayParents(d).flatMap(p => p === name ? kindParents(name) : [p])); }
+      const doc = recDoc(); doc.kinds = kindNames().filter(k => k !== DIARY && k !== name).map(k => { const ps = [...new Set(kindParents(k).flatMap(p => p === name ? kindParents(name) : [p]))]; return { name: k, parent: ps[0] || '', parents: ps }; }); saveRecDoc(doc);
       rebuild(); return this.records();
     },
     // from を into にまとめる（表記揺れの統合）。同じ日は段落を時刻（行頭の 時:分）の順にまぜる。無い日は移す
@@ -577,8 +584,8 @@ function openVault(vault) {
           removeFile(diaryFile(d)); diaries.delete(dk(from, d.date));
         }
       }
-      for (const d of diaries.values()) if (d.parent === from) d.parent = into;
-      const doc = recDoc(); doc.kinds = kindNames().filter(k => k !== DIARY && k !== from).map(k => ({ name: k, parent: kindParent(k) === from ? into : kindParent(k) })); saveRecDoc(doc);
+      for (const d of diaries.values()) if (dayParents(d).includes(from)) setDayParents(d, dayParents(d).map(p => p === from ? into : p));
+      const doc = recDoc(); doc.kinds = kindNames().filter(k => k !== DIARY && k !== from).map(k => { const ps = [...new Set(kindParents(k).map(p => p === from ? into : p))]; return { name: k, parent: ps[0] || '', parents: ps }; }); saveRecDoc(doc);
       rebuild(); return this.records();
     },
     // ===== JSON の文書（チャット・なりきり・役・キャンバス）=====

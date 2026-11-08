@@ -393,15 +393,16 @@ export function newTopicDialog() {
   dialog(`<h3>トピックを作る</h3>
     <div class="sub">名前</div><input id="tp-name" placeholder="例: アイデア">
     <label class="rad"><input type="checkbox" id="tp-rec"> 時系列記録にする（日記のように、日ごとのノートに時刻つきで入る。例: 夢）</label>
-    <div id="tp-recopt" style="display:none"><div class="sub">上位（この日のノートが、上位の日のノートの下に並びます）</div>${parentSelect('tp-par', '', '')}</div>
+    <div id="tp-recopt" style="display:none"><div class="sub">上位（この日のノートが、上位の日のノートの下に並びます）</div><div id="tp-ups">${(ctx.records ? ctx.records() : []).map(r => `<span class="rchip" data-tu="${esc(r.name)}">${esc(r.name === DIARY ? '日記' : r.name)}</span>`).join('')}</div></div>
     <div class="row"><button class="p" id="tp-ok">作る</button><button id="tp-no">やめる</button></div>`, close => {
     $('#tp-name').focus(); $('#tp-no').onclick = close;
+    $('#tp-ups').onclick = e => { const x = e.target.closest('[data-tu]'); if (x) x.classList.toggle('on'); };
     $('#tp-rec').onchange = e => { $('#tp-recopt').style.display = e.target.checked ? '' : 'none'; };
     $('#tp-ok').onclick = async () => {
       const name = $('#tp-name').value.trim();
       if (!name) return; if (topic(name) || ['全部表示', DIARY].includes(name) || isRec(name)) return alert('その名前は使えません');
       if ($('#tp-rec').checked) {   // 時系列記録（日記の仲間）として作る
-        const r = await ctx.api.recordOp('addRecord', name, $('#tp-par').value);
+        const r = await ctx.api.recordOp('addRecord', name, [...document.querySelectorAll('#tp-ups .on')].map(x => x.dataset.tu).filter(u => u !== DIARY));
         if (r === false) return alert('その名前は使えません');
         ctx.applyState(await ctx.api.state()); close(); ctx.renderList(); return open(name);
       }
@@ -412,13 +413,14 @@ export function newTopicDialog() {
 }
 const parentSelect = (id, cur, self) => `<select id="${id}"><option value="">なし（日記の下）</option>${recKinds().filter(k => k !== self).map(k => `<option value="${esc(k)}"${k === cur ? ' selected' : ''}>${esc(k)}</option>`).join('')}</select>`;
 function recConfDialog() {
-  const kind = view, cur = ((ctx.records ? ctx.records() : []).find(r => r.name === kind) || {}).parent || '';
+  const kind = view, rr = (ctx.records ? ctx.records() : []).find(r => r.name === kind) || {}, ups = new Set(rr.parents || (rr.parent ? [rr.parent] : []));
   dialog(`<h3>時系列記録「${esc(kind)}」の設定</h3>
-    <div class="sub">上位（これから作る日の初期値。もう作った日は変わりません）</div>${parentSelect('rc-par', cur, kind)}
+    <div class="sub">上位（いくつでも。これから作る日の初期値。もう作った日は変わりません）</div><div id="rc-ups">${(ctx.records ? ctx.records() : []).filter(r => r.name !== kind).map(r => `<span class="rchip${ups.has(r.name) ? ' on' : ''}" data-rc="${esc(r.name)}">${esc(r.name === DIARY ? '日記' : r.name)}</span>`).join('')}</div>
     <div class="row"><button class="p" id="rc-ok">決定</button><button id="rc-no">やめる</button></div>`, close => {
     $('#rc-no').onclick = close;
+    $('#rc-ups').onclick = e => { const x = e.target.closest('[data-rc]'); if (!x) return; if (ups.has(x.dataset.rc)) ups.delete(x.dataset.rc); else ups.add(x.dataset.rc); x.classList.toggle('on'); };
     $('#rc-ok').onclick = async () => {
-      const r = await ctx.api.recordOp('setRecordParent', kind, $('#rc-par').value);
+      const r = await ctx.api.recordOp('setRecordParent', kind, [...ups].filter(u => u !== DIARY));
       if (r === false) return alert('その上位にはできません（輪になります）');
       ctx.applyState(await ctx.api.state()); close(); paint();
     };

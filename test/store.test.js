@@ -381,9 +381,10 @@ test('昔の日記（D_日付.md）は、日時の名前＋YAML に移る。戻�
   fs.rmSync(dir, { recursive: true });
 });
 
+const recs = v => v.records().map(r => ({ name: r.name, parent: r.parent }));
 test('記録の種類（日記・夢・ビジネス）: 足す・上位・DailyNotes・名前を変える・まとめる・消す', () => {
   const dir = tmp(), v = openVault(dir), r = f => fs.readFileSync(path.join(dir, f), 'utf8');
-  assert.deepStrictEqual(v.records(), [{ name: '日記', parent: '' }]);
+  assert.deepStrictEqual(recs(v), [{ name: '日記', parent: '' }]);
   assert.ok(v.addRecord('夢') && v.addRecord('ビジネス') && v.addRecord('営業', 'ビジネス'));
   assert.ok(!v.addRecord('夢') && !v.addRecord('日記') && !v.addRecord('a/b') && !v.addRecord('x', 'ない'));
   v.openDiary('2026-11-08'); v.saveDiary({ date: '2026-11-08', kind: '夢', body: '空を飛んだ' });
@@ -466,4 +467,16 @@ test('IDなしの分岐: 親にIDが付いた時に、子（と孫）のIDも順
   assert.deepStrictEqual([ids['親'], ids['子1'], ids['子2（並列）'], ids['孫']], ['1c', '1c1', '1c2', '1c1a']);
   const re = openVault(dir), again = Object.fromEntries(re.state().notes.map(n => [n.title, n.id]));   // 保存して読み直しても同じ
   assert.deepStrictEqual([again['子1'], again['孫']], ['1c1', '1c1a']);
+});
+
+test('時系列記録: 上位を、いくつでも決められる（どの上位の日のノートにも、下位として並ぶ）', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pkm-rec2-')), v = openVault(dir);
+  v.addRecord('仕事'); v.addRecord('学び'); v.addRecord('哲学メモ', ['仕事', '学び']);
+  assert.deepStrictEqual(v.records().find(r => r.name === '哲学メモ').parents, ['仕事', '学び']);
+  for (const k of ['仕事', '学び', '哲学メモ']) v.openDiary('2026-11-08', k);
+  assert.deepStrictEqual(v.openDiary('2026-11-08', '仕事').lower, ['哲学メモ']);
+  assert.deepStrictEqual(v.openDiary('2026-11-08', '学び').lower, ['哲学メモ']);
+  assert.deepStrictEqual(v.openDiary('2026-11-08', '哲学メモ').parents, ['仕事', '学び']);
+  assert.strictEqual(v.setRecordParent('仕事', ['哲学メモ']), false);   // 輪になる上位は、だめ
+  const re = openVault(dir); assert.deepStrictEqual(re.openDiary('2026-11-08', '哲学メモ').parents, ['仕事', '学び']);   // 読み直しても同じ
 });
