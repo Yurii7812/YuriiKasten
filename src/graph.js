@@ -117,6 +117,7 @@ export function loadNotesAndRelations(notes, titleOf, mapType, opt = {}) {
       for (const m of ch.messages) if (inc.has(m.id)) {
         const id = 'M:' + m.id; add(id, 'memo', (m.text || '').split('\n')[0].replace(/\[@[^\]]*\]\(memo:[^)]*\)\s*/g, '').slice(0, 24) || '（メモ）');
         const tn = m.topic && ch.topics.find(t => t.name === m.topic); if (tn) links.push({ id: topicId(tn.name) + '-' + id, source: topicId(tn.name), target: id, name: '' });
+        for (const u of m.ups || []) if (ch.topics.some(t => t.name === u)) links.push({ id: topicId(u) + '-' + id + '-u', source: topicId(u), target: id, name: '' });
         let x; MEN.lastIndex = 0; while ((x = MEN.exec(m.text || ''))) if (inc.has(x[1])) links.push({ id: id + '-M:' + x[1], source: id, target: 'M:' + x[1], name: '' });
         for (const rid of (m.replies || (m.reply ? [m.reply] : []))) if (inc.has(rid)) links.push({ id: id + '-M:' + rid + '-r', source: id, target: 'M:' + rid, name: '' });
         for (const stem of ch.noted[m.id] || []) { const k = byStem.get(stem); if (k && keep.has(k)) links.push({ id: id + '-' + k, source: id, target: k, name: '' }); }

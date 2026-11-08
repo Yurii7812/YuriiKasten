@@ -440,7 +440,7 @@ function openVault(vault) {
         const text = String(m.text || '').replace(/\[@([^\]]*)\]\(memo:([^)\s]+)\)/g, (_a, lb, id) => dayFileOf.has(id) ? `[@${lb}](${enc(dayFileOf.get(id))}#m-${id})` : `@${lb}`).replace(/\n{2,}/g, '\n').split('\n').join('  \n');
         const noted = ((d.noted || {})[m.id] || []).map(st => { const n = [...notes.values()].find(x => x.stem === st); return n ? `[ノート ${L.isNoid(n.id) ? '（IDなし）' : n.id}](${enc(st + '.md')})` : null; }).filter(Boolean);
         const rep = (m.replies || (m.reply ? [m.reply] : [])).filter(id => dayFileOf.has(id)).map(id => { const o = d.messages.find(x => x.id === id); return `↩ [${String((o && o.text) || '').replace(/\[@[^\]]*\]\(memo:[^)]*\)\s*/g, '').split('\n')[0].replace(/[\[\]]/g, '').slice(0, 30)}](${enc(dayFileOf.get(id))}#m-${id})  \n`; }).join('');
-        return `<a id="m-${m.id}"></a>${time} ${rep}${text}${m.topic ? `　［${m.topic}］` : ''}${noted.length ? '　→ ' + noted.join(' ') : ''}`;
+        return `<a id="m-${m.id}"></a>${time} ${rep}${text}${m.topic ? `　［${m.topic}${(m.ups || []).length ? '／上: ' + m.ups.join('、') : ''}］` : ''}${noted.length ? '　→ ' + noted.join(' ') : ''}`;
       });
       out.set(`C_${date}.md`, `# チャットメモ ${date}\n\n## ${date}\n\n${paras.join('\n\n')}\n`);
     }

@@ -33,7 +33,7 @@ function importCapture(v, data) {
   for (const pid of data.pcDeleted || []) { const m = chatMsg(pid); if (m) { chat.messages = chat.messages.filter(x => x !== m); chat.trash.push({ ...m, deleted: Date.now() }); chatTouched = true; sum.removed++; } }
   for (const e of entries) {
     if (e.pcId) {   // PC から来たメモ: スマホで直したもの（新しい方が勝つ）だけ PC に反映
-      const m = chatMsg(e.pcId); if (m && (e.edited || 0) > (m.edited || 0)) { m.text = e.text; m.topic = e.topic === 'メモ' ? '' : (e.topic || ''); m.edited = e.edited; chatTouched = true; sum.updated++; }
+      const m = chatMsg(e.pcId); if (m && (e.edited || 0) > (m.edited || 0)) { m.text = e.text; m.topic = e.topic === 'メモ' ? '' : (e.topic || ''); if (e.ups && e.ups.length) m.ups = [...e.ups]; else delete m.ups; m.edited = e.edited; chatTouched = true; sum.updated++; }
       continue;
     }
     if (st.ids[e.id]) {   // 取り込み済みのメモを、スマホで直した（新しい方が勝つ）→ チャットメモの本文も。日の・まとめのノートには、手を入れない
@@ -55,6 +55,7 @@ function importCapture(v, data) {
     if (topic && topic !== '日記' && !chat.topics.some(t => t.name === topic)) chat.topics.push({ name: topic, type: 'bubble', stamp: true, entry: null });
     const memo = { id: uid(), topic, t: e.created, text: memoText, src: 'phone:' + e.id };
     if (repl.length) memo.replies = repl;
+    if (e.ups && e.ups.length) memo.ups = [...e.ups];
     chat.messages.push(memo); chatTouched = true; sum.chats++;
     st.ids[e.id] = { dest: `chat:${memo.id}`, memo: memo.id, snap: e };
     // 2. 日記・記録・まとめのノートにも
@@ -108,7 +109,7 @@ function pcMemos(v) {
   const removed = Object.entries(st.ids).filter(([, rec]) => rec && rec.memo && !alive.has(rec.memo)).map(([eid]) => eid);   // PC で消したメモ（スマホで書いたもの）。スマホからも消す
   return {
     version: 2, removed,
-    memos: (chat.messages || []).filter(m => !String(m.src || '').startsWith('phone:')).map(m => { const os = (m.replies || (m.reply ? [m.reply] : [])).map(id => (chat.messages || []).find(x => x.id === id)).filter(Boolean); return { id: m.id, topic: m.topic || '', t: m.t, text: os.map(o => '↩ ' + String(o.text || '').split('\n')[0].slice(0, 40) + '\n').join('') + (m.text || ''), edited: m.edited || 0 }; }),
+    memos: (chat.messages || []).filter(m => !String(m.src || '').startsWith('phone:')).map(m => { const os = (m.replies || (m.reply ? [m.reply] : [])).map(id => (chat.messages || []).find(x => x.id === id)).filter(Boolean); return { id: m.id, topic: m.topic || '', ups: m.ups || [], t: m.t, text: os.map(o => '↩ ' + String(o.text || '').split('\n')[0].slice(0, 40) + '\n').join('') + (m.text || ''), edited: m.edited || 0 }; }),
     days: (s.diaries || []).map(d => ({ kind: d.kind || '日記', date: d.date, body: d.body || '' })),
   };
 }
