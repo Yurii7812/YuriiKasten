@@ -38,3 +38,12 @@ test('ID候補はFolgezettelの分岐・並列規則を守り、既存番号を�
   assert.equal(X.available(notes,'1a',notes[1]),true);
   assert.equal(X.available(notes,'20261109093000'),false);
 });
+
+test('未取り込みの紙Indexも検索でき、存在しないノートとして区別する',()=>{
+  const pending = [{kw:'紙の資料',reading:'かみのしりょう',ids:['9a','9b(1)']}];
+  const result = X.search(notes, topics, read, 'かみのしりょう', pending);
+  assert.deepEqual(result.keywords.map(k=>k.name),['紙の資料']);
+  assert.deepEqual(result.keywords[0].pending,['9a','9b(1)']);
+  assert.equal(result.notes.length,0);
+  assert.equal(result.topics.length,0);
+});
