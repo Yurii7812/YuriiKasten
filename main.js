@@ -70,7 +70,7 @@ function startSync() {
 // ===== スマホにアプリを入れる（USB・adb）=====
 ipcMain.handle('phoneInstall', async (_e, withSync) => {
   const c = syncCfg();
-  return require('./phone').install({ sync: withSync && c.url && c.token ? { url: c.url, token: c.token } : null }, m => { if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('phoneMsg', m); });
+  return require('./phone').install({ sync: c.url && c.token ? { url: c.url, token: c.token } : null, syncWanted: true }, m => { if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('phoneMsg', m); });
 });
 ipcMain.handle('syncGet', () => ({ ...syncCfg(), state: syncState }));
 ipcMain.handle('syncSet', (_e, c) => { const cfg = readCfg(); cfg.sync = c && c.url ? { url: String(c.url).trim(), token: String(c.token || '').trim() } : {}; writeCfg(cfg); startSync(); return runSync().then(() => ({ ...syncCfg(), state: syncState })); });

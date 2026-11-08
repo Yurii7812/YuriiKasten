@@ -199,7 +199,7 @@ fun NoteList(app: AppState) {
             IconButton(onClick = { app.card = !app.card }) { Icon(if (app.card) Icons.Default.ViewList else Icons.Default.GridView, "一覧・カード") }
         }
         if (app.syncMsg.isNotEmpty()) Text(app.syncMsg, Modifier.padding(horizontal = 16.dp), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (list.isEmpty()) Box(Modifier.fillMaxSize(), Alignment.Center) { Text(if (app.vault.notes.isEmpty()) "ノートはまだありません。右下の＋で書き始めます。\n設定で同期サーバーをつなぐと、PC のノートが入ります。" else "見つかりません", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        if (list.isEmpty()) Box(Modifier.fillMaxSize().padding(32.dp), Alignment.Center) { Text(if (app.vault.notes.isEmpty()) "ノートはまだありません。右下の＋で書き始めます。\n設定で同期サーバーをつなぐと、PC のノートが入ります。" else "見つかりません", color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
         else if (app.card) LazyVerticalStaggeredGrid(StaggeredGridCells.Fixed(2), Modifier.fillMaxSize().padding(horizontal = 8.dp), verticalItemSpacing = 8.dp, horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 90.dp)) {
             gridItems(list, key = { it.stem }) { n -> NoteCard(app, n) }
         }

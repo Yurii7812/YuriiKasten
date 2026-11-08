@@ -11,8 +11,8 @@ echo "$@" >> "${dir}/calls.log"
 case "$*" in
   devices) printf 'List of devices attached\\n${devices}\\n' ;;
   *install*) echo '${installOut}' ;;
-  *"cat files/settings.json"*) echo '{"alarmOn":true}' ;;
-  *"cat > files/settings.json"*) cat > "${dir}/settings.out" ;;
+  *"cat files/settings.json"*) if [ -f "${dir}/settings.out" ]; then cat "${dir}/settings.out"; else echo '{"alarmOn":true}'; fi ;;
+  *"sh -c 'cat > files/settings.json'"*) cat > "${dir}/settings.out" ;;
 esac
 exit 0
 `, { mode: 0o755 });
@@ -36,7 +36,8 @@ test('スマホが無い・許可待ちのときは、やることを案内す�
 test('入れて、同期の設定も渡す（既存の設定は壊さない）', async () => {
   const d = tmp(); process.env.ADB = fakeAdb(d, 'ABC123\\tdevice');
   const r = await load().install({ sync: { url: 'http://raspberrypi.local:8787', token: 'tk' } }, () => { });
-  assert.ok(r.ok, r.message); assert.match(r.message, /同期の設定/);
+  assert.ok(r.ok, r.message); assert.match(r.message, /読み返して確かめました/);
+  assert.match(fs.readFileSync(path.join(d, 'calls.log'), 'utf8'), /force-stop/);
   const calls = fs.readFileSync(path.join(d, 'calls.log'), 'utf8');
   assert.match(calls, /-s ABC123 install -r .*YuriiKasten-memo\.apk/);
   const o = JSON.parse(fs.readFileSync(path.join(d, 'settings.out'), 'utf8'));

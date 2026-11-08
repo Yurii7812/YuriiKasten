@@ -50,15 +50,18 @@ async function install(opts = {}, say = () => { }) {
   const r = await run(adb, A(['install', '-r', apk]), { timeout: 180000 });
   if (r.code !== 0 || !/Success/.test(r.out)) return { ok: false, message: '入れられませんでした:\n' + (r.out + r.err).trim().split('\n').slice(-4).join('\n') };
   let note = '';
-  if (opts.sync && opts.sync.url && opts.sync.token) { // 設定も入れる（アプリは、空の設定ファイルがあればそれを読む）
+  if (opts.sync && opts.sync.url && opts.sync.token) { // 設定も入れる。アプリを止めてから書いて、読み返して確かめ、そのあと起動する（動いたままだと、読み込み済みの設定のまま）
     say('同期の設定を入れています…');
+    await run(adb, A(['shell', 'am', 'force-stop', PKG]));
     const cur = await run(adb, A(['shell', 'run-as', PKG, 'cat', 'files/settings.json']));
     let o = {}; try { o = JSON.parse(cur.out); } catch { }
     o.serverUrl = opts.sync.url; o.serverToken = opts.sync.token;
     await run(adb, A(['shell', 'run-as', PKG, 'mkdir', '-p', 'files']));
-    const w = await run(adb, A(['shell', 'run-as', PKG, 'sh', '-c', 'cat > files/settings.json']), { input: JSON.stringify(o) });
-    note = w.code === 0 ? '\n同期の設定（アドレスと合言葉）も、スマホに入れました。' : '\n同期の設定は入れられませんでした（スマホの設定画面で入れてください）。';
-  }
+    const w = await run(adb, A(['shell', `run-as ${PKG} sh -c 'cat > files/settings.json'`]), { input: JSON.stringify(o) });
+    const back = await run(adb, A(['shell', 'run-as', PKG, 'cat', 'files/settings.json']));
+    let ok = false; try { const r = JSON.parse(back.out); ok = r.serverUrl === opts.sync.url && r.serverToken === opts.sync.token; } catch { }
+    note = w.code === 0 && ok ? '\n同期の設定（アドレスと合言葉）も、スマホに入れました（読み返して確かめました）。' : '\n同期の設定は入れられませんでした（' + ((w.err || back.err || '書き込み後に読み返せませんでした').trim().split('\n').pop()) + '）。スマホの ⚙️ 設定で入れてください。';
+  } else if (opts.syncWanted) note = '\n同期の設定は、PC 側にまだありません。PC の「⋯ → 同期の設定…」で入れてから、もう一度やってください。';
   if (opts.open !== false) await run(adb, A(['shell', 'monkey', '-p', PKG, '-c', 'android.intent.category.LAUNCHER', '1']));
   return { ok: true, message: 'スマホにアプリを入れました（YuriiKasten メモ）。' + note + (ready.length > 1 ? `\n（つながっていたスマホが複数あったので、${serial} に入れました）` : '') };
 }

@@ -1287,10 +1287,10 @@ api.onState(st => { // 同期で取り込んだ変更を、画面に反映
 // スマホにアプリを入れる（USB でつないだスマホに、adb で）
 api.onPhoneMsg(m => toast(m));
 async function phoneInstall() {
-  if (!confirm('スマホを USB ケーブルでつないで、「USBデバッグ」をオンにしてから、OK を押してください。\nスマホに YuriiKasten メモ（アラームとメモのアプリ）を入れます。')) return;
-  const c = await api.syncGet(), withSync = !!(c.url && c.token) && confirm('スマホの設定にも、同期のアドレスと合言葉を入れますか？\n（スマホで入力しなくて済みます。USB の中だけで渡します）');
+  const c = await api.syncGet(), has = !!(c.url && c.token);
+  if (!confirm(`スマホを USB ケーブルでつないで、「USBデバッグ」をオンにしてから、OK を押してください。\nスマホに YuriiKasten のアプリを入れます。${has ? '\n同期の設定（アドレスと合言葉）も、USB の中だけで、スマホに入れます。' : ''}`)) return;
   toast('入れています…');
-  const r = await api.phoneInstall(withSync);
+  const r = await api.phoneInstall(true);
   alert(r.message);
 }
 async function syncDialog() {
