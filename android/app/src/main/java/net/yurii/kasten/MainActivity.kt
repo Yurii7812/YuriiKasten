@@ -258,7 +258,10 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
     fun setTopic(t: String) {
         if (t != topic) backdate = null   // 日時の指定はトピックを変えたら今に戻す
         topic = t
-        settings = settings.copy(lastTopic = t, writeTopic = if (t == ALL) settings.writeTopic else t, writeUps = settings.writeUps.filter { it != t }); store.saveSettings(settings)
+        val assigned = if (t == ALL) UNASSIGNED else t
+        settings = settings.copy(lastTopic = t, writeTopic = assigned,
+            writeUps = settings.writeUpsByTopic[assigned].orEmpty().filter { it != assigned })
+        store.saveSettings(settings)
     }
     // PC が USB でメモを書き込んだら、アプリを開いたままでも、すぐ取り込む（2 秒ごとに、ファイルの更新を見る）
     LaunchedEffect(Unit) {
@@ -464,7 +467,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
             val bd = backdate
             val at = if (bd != null) backdatedTime(bd, now) else now
             val body = if (bd != null) backdatedText(text, settings.writtenStamp, now) else text
-            entries.add(Entry(id = Store.newId(at, entries), created = at, topic = if (topic == ALL) settings.writeTopic else topic, ups = settings.writeUps.filter { it != (if (topic == ALL) settings.writeTopic else topic) }, text = body,
+            entries.add(Entry(id = Store.newId(at, entries), created = at, topic = if (topic == ALL) UNASSIGNED else topic, ups = settings.writeUps.filter { it != (if (topic == ALL) UNASSIGNED else topic) }, text = body,
                 images = pendingImages.toList(), parent = null, contexts = contextsTo.toList(),
                 noTime = bd != null && !settings.writtenStamp))
             replyTo = null; contextsTo.clear()
@@ -776,18 +779,32 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
         onAfter = { if (replyTo != null || editing != null) focusTick++ })
 
     upsDialogIds?.let { ids ->
-        val target = if (ids.isEmpty()) topic.let { if (it == ALL) settings.writeTopic else it } else byId[ids.first()]?.topic
+        val target = if (ids.isEmpty()) topic.let { if (it == ALL) UNASSIGNED else it } else byId[ids.first()]?.topic
         val used = remember(entrySnapshot, target) { entrySnapshot.filter { it.topic == target }.flatMap { it.ups }.toSet() }
         val ordered = remember(topics, used) { topics.filter { it in used } + topics.filter { it !in used } }
         val initial = if (ids.isEmpty()) settings.writeUps.toSet() else if (ids.size == 1) (byId[ids.first()]?.ups ?: emptyList()).toSet() else emptySet()
         UpsDialog(ordered, initial, target, onDismiss = { upsDialogIds = null }, onDone = { list ->
-            if (ids.isEmpty()) { settings = settings.copy(writeUps = list); store.saveSettings(settings) }
+            if (ids.isEmpty()) {
+                val assigned = target ?: UNASSIGNED
+                val cleaned = list.distinct().filter { it.isNotEmpty() && it != assigned }
+                settings = settings.copy(writeUps = cleaned, writeUpsByTopic = settings.writeUpsByTopic + (assigned to cleaned))
+                store.saveSettings(settings)
+            }
             else {
                 val now = System.currentTimeMillis()
                 for (k in entries.indices) if (entries[k].id in ids) entries[k] = entries[k].copy(ups = list.filter { it != entries[k].topic }, edited = now, exported = false)
                 persist(); if (selecting) { selected.clear(); selecting = false }
             }
             upsDialogIds = null
+        }, onCreate = { proposed ->
+            val name = normalizedTopic(proposed.trim())
+            if (name.isBlank() || name == target || name in settings.topics || name in pcRecords || name in pcTopics ||
+                name in setOf(ALL, DIARY, "全部", "全部表示", "未所属", "トピック未選択", "その他")) false
+            else {
+                settings = settings.copy(topics = settings.topics + name)
+                store.saveSettings(settings)
+                true
+            }
         })
     }
     if (topicDialogFor != null || moveSelectedOpen) {
