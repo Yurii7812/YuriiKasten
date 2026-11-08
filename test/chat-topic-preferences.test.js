@@ -36,3 +36,11 @@ test('自己参照・重複の除去と、トピック名変更・削除に設�
   assert.deepEqual(d.target.ups, []);
   assert.deepEqual(d.upperByTopic.C, ['新A']);
 });
+
+test('トピック削除で以前の上位設定がトピック未選択へ漏れない', () => {
+  const d = P.init({ target: { topic: '哲学', ups: ['理論'] }, upperByTopic: { 哲学: ['理論'], '': ['メモ一般'] } });
+  P.remove(d, '哲学');
+  assert.deepEqual(d.target, { topic: '', ups: ['メモ一般'] });
+  assert.deepEqual(d.upperByTopic[''], ['メモ一般']);
+  assert.equal(Object.hasOwn(d.upperByTopic, '哲学'), false);
+});
