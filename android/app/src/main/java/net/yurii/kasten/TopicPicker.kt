@@ -82,3 +82,26 @@ private fun TopicRow(t: String, current: String?, counts: Map<String, Int>, onPi
         if (onEdit != null) IconButton(onClick = { onEdit(t) }) { Icon(Icons.Filled.MoreVert, "「${topicLabel(t)}」を編集（名前・取り込み方・消す）") }
     }
 }
+
+/** 「上」のトピックを、いくつでも選ぶ（探せる。最近使った順。トピックと過去に一緒に使ったものを先に）。 */
+@Composable
+fun UpsDialog(ordered: List<String>, initial: Set<String>, exclude: String?, onDismiss: () -> Unit, onDone: (List<String>) -> Unit) {
+    var query by remember { mutableStateOf("") }
+    val chosen = remember { mutableStateListOf<String>().also { it.addAll(initial) } }
+    val shown = remember(ordered, query) { ordered.filter { it != exclude && matchesQuery(topicLabel(it), query) } }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("上のトピック（いくつでも）") },
+        text = { Column {
+            OutlinedTextField(query, { query = it }, placeholder = { Text("探す") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                items(shown.size) { i ->
+                    val n = shown[i]
+                    Row(Modifier.fillMaxWidth().clickable { if (n in chosen) chosen.remove(n) else chosen.add(n) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = n in chosen, onCheckedChange = { if (n in chosen) chosen.remove(n) else chosen.add(n) })
+                        Text(topicLabel(n), fontSize = 16.sp)
+                    }
+                }
+            }
+        } },
+        confirmButton = { TextButton(onClick = { onDone(chosen.toList()) }) { Text("決定") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("やめる") } })
+}

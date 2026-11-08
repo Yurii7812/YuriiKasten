@@ -21,6 +21,7 @@ data class Entry(
     val exported: Boolean = false,
     val edited: Long = 0,
     val noTime: Boolean = false, // 日付を指定して「時刻を入れない」で書いた（PC では時刻を付けずに入る）
+    val ups: List<String> = emptyList(),   // 上のトピック（いくつでも。PC のチャットメモと同じ。トピック＝下）
     val pcId: String? = null,    // PC のチャットメモから来たメモの、PC での id（共有。直したり消したりすると、次の USB で PC にも反映される）
 )
 
@@ -31,6 +32,8 @@ data class Settings(
     val toHour: Int = 23,
     val topics: List<String> = listOf(DIARY),
     val lastTopic: String = ALL,
+    val writeTopic: String = UNASSIGNED,                 // 全部表示から書くときの書き込み先（前に使ったトピックを引き継ぐ）
+    val writeUps: List<String> = emptyList(),           // 次に書くメモの「上」（変えない限り引き継ぐ）
     val topicModes: Map<String, TopicMode> = emptyMap(),
     val ringSeconds: Int = 0,        // アラームを鳴らし続ける長さ（秒）。0 は 1 回だけ鳴らす
     val expandAll: Boolean = false,  // 長いメモを「続きを見る」を押さずに全部見せる
@@ -180,7 +183,7 @@ fun matchesQuery(text: String, query: String): Boolean {
 }
 
 /** PC のチャットメモ 1 件（PC が USB で pc_memos.json に書く）。 */
-data class PcMemo(val id: String, val topic: String, val t: Long, val text: String, val edited: Long)
+data class PcMemo(val id: String, val topic: String, val t: Long, val text: String, val edited: Long, val ups: List<String> = emptyList())
 /** PC の日・時系列記録の日のノート（読むだけ）。 */
 data class PcDay(val kind: String, val date: String, val body: String)
 
@@ -196,8 +199,8 @@ fun mergePcMemos(entries: List<Entry>, memos: List<PcMemo>, deleted: Set<String>
     for (m in memos) {
         if (m.id in deleted) continue
         val ex = byPc[m.id]
-        if (ex == null) out.add(Entry(id = "pc-" + m.id, created = m.t, topic = normalizedTopic(m.topic.ifEmpty { UNASSIGNED }), text = m.text, edited = m.edited, pcId = m.id))
-        else if (m.edited > ex.edited) out[out.indexOf(ex)] = ex.copy(topic = normalizedTopic(m.topic.ifEmpty { UNASSIGNED }), text = m.text, edited = m.edited)
+        if (ex == null) out.add(Entry(id = "pc-" + m.id, created = m.t, topic = normalizedTopic(m.topic.ifEmpty { UNASSIGNED }), text = m.text, edited = m.edited, pcId = m.id, ups = m.ups))
+        else if (m.edited > ex.edited) out[out.indexOf(ex)] = ex.copy(topic = normalizedTopic(m.topic.ifEmpty { UNASSIGNED }), text = m.text, edited = m.edited, ups = m.ups)
     }
     return out
 }
@@ -252,6 +255,8 @@ class Store(private val ctx: Context) {
             toHour = o.optInt("toHour", 23),
             topics = (listOf(DIARY) + (topics ?: emptyList()).map(::normalizedTopic)).filter { it.isNotEmpty() && it != ALL }.distinct(),
             lastTopic = o.optString("lastTopic", ALL).let { if (it == ALL) ALL else normalizedTopic(it) },
+            writeTopic = normalizedTopic(o.optString("writeTopic", UNASSIGNED)),
+            writeUps = o.optJSONArray("writeUps")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
             topicModes = o.optJSONObject("topicModes")?.let { m ->
                 m.keys().asSequence().filter { it.isNotEmpty() && it != DIARY }.associateWith { k ->
                     val t = m.getJSONObject(k); TopicMode(t.optBoolean("single", false), t.optBoolean("stamp", true), t.optBoolean("record", false))
@@ -291,7 +296,7 @@ class Store(private val ctx: Context) {
         return try {
             val o = JSONObject(f.readText())
             val a = o.optJSONArray("memos") ?: JSONArray(); val d = o.optJSONArray("days") ?: JSONArray()
-            Pair((0 until a.length()).map { val m = a.getJSONObject(it); PcMemo(m.getString("id"), m.optString("topic", ""), m.optLong("t"), m.optString("text", ""), m.optLong("edited", 0)) },
+            Pair((0 until a.length()).map { val m = a.getJSONObject(it); PcMemo(m.getString("id"), m.optString("topic", ""), m.optLong("t"), m.optString("text", ""), m.optLong("edited", 0), m.optJSONArray("ups")?.let { u -> (0 until u.length()).map { u.getString(it) } } ?: emptyList()) },
                 (0 until d.length()).map { val x = d.getJSONObject(it); PcDay(x.optString("kind", DIARY), x.optString("date", ""), x.optString("body", "")) })
         } catch (e: Exception) { Pair(emptyList(), emptyList()) }
     }
@@ -319,7 +324,7 @@ class Store(private val ctx: Context) {
         val o = JSONObject()
         o.put("alarmOn", s.alarmOn); o.put("alarmMinutes", s.alarmMinutes)
         o.put("fromHour", s.fromHour); o.put("toHour", s.toHour)
-        o.put("topics", JSONArray(s.topics)); o.put("lastTopic", s.lastTopic)
+        o.put("topics", JSONArray(s.topics)); o.put("lastTopic", s.lastTopic); o.put("writeTopic", s.writeTopic); o.put("writeUps", JSONArray(s.writeUps))
         o.put("ringSeconds", s.ringSeconds); o.put("expandAll", s.expandAll)
         o.put("folgeView", s.folgeView); o.put("writtenStamp", s.writtenStamp)
         // PC の取り込み（\M）もこのファイルを読む（topicModes）
@@ -347,6 +352,7 @@ class Store(private val ctx: Context) {
             put("contexts", JSONArray(e.contexts)); put("exported", e.exported); put("edited", e.edited)
             if (e.noTime) put("notime", true)
             if (e.pcId != null) put("pcId", e.pcId)
+            if (e.ups.isNotEmpty()) put("ups", JSONArray(e.ups))
         }
 
         private fun parentOf(o: JSONObject): String? = if (o.isNull("parent")) null else o.optString("parent").ifEmpty { null }   // 昔の「Branch の親」は、返信先に移す
@@ -357,7 +363,7 @@ class Store(private val ctx: Context) {
                 text = o.optString("text", ""), images = strs("images"),
                 parent = null,
                 contexts = (strs("contexts") + listOfNotNull(parentOf(o))).distinct(), exported = o.optBoolean("exported", false), edited = o.optLong("edited", 0),
-                noTime = o.optBoolean("notime", false), pcId = o.optString("pcId", "").ifEmpty { null },
+                noTime = o.optBoolean("notime", false), pcId = o.optString("pcId", "").ifEmpty { null }, ups = strs("ups"),
             )
         }
     }

@@ -181,8 +181,9 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
     var pcRecords by remember { mutableStateOf(store.loadRecords()) }   // PC にある時系列記録の名前
     var pcTopics by remember { mutableStateOf(store.loadPcTopics()) }   // PC のチャットメモのトピック名
     val entrySnapshot by remember { derivedStateOf { entries.toList() } }   // 変わったときだけ作り直す（毎回コピーして比べると、スクロールが重い）
+    val lastUse = remember(entrySnapshot) { HashMap<String, Long>().also { mp -> entrySnapshot.forEach { e -> (listOf(e.topic) + e.ups).forEach { n -> if (n.isNotEmpty() && (mp[n] ?: 0L) < e.created) mp[n] = e.created } } } }
     val topics = remember(settings.topics, entrySnapshot, pcRecords, pcTopics) {
-        (settings.topics + entrySnapshot.map { it.topic } + pcRecords + pcTopics).filter { it.isNotEmpty() && it != ALL }.distinct()
+        (settings.topics + entrySnapshot.map { it.topic } + pcRecords + pcTopics).filter { it.isNotEmpty() && it != ALL }.distinct().sortedByDescending { lastUse[it] ?: 0L }   // 最近使った順
     }
     val topicCounts = remember(entrySnapshot) { entrySnapshot.groupingBy { it.topic }.eachCount() }
     val selected = remember { mutableStateListOf<String>() }
@@ -229,6 +230,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
     var backdate by remember { mutableStateOf<Long?>(null) }       // 日付を指定して書く（日記・時系列記録）。その日の 0 時。null は今日
     var pickDate by remember { mutableStateOf(false) }
     var viewDate by remember { mutableStateOf(false) }
+    var upsDialogIds by remember { mutableStateOf<List<String>?>(null) }   // 「上」を選んでいる。空なら次に書くメモ、あれば、そのメモ
     var limit by remember { mutableStateOf(150) }                  // 新しい順に、これだけ表示（多いと重いので、「さらに表示」で足す）
     LaunchedEffect(topic, search) { limit = 150 }             // 日付を指定して、その日のメモを見る
     var renameFor by remember { mutableStateOf<String?>(null) }    // 名前を変えるトピック
@@ -256,7 +258,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
     fun setTopic(t: String) {
         if (t != topic) backdate = null   // 日時の指定はトピックを変えたら今に戻す
         topic = t
-        settings = settings.copy(lastTopic = t); store.saveSettings(settings)
+        settings = settings.copy(lastTopic = t, writeTopic = if (t == ALL) settings.writeTopic else t, writeUps = settings.writeUps.filter { it != t }); store.saveSettings(settings)
     }
     // PC が USB でメモを書き込んだら、アプリを開いたままでも、すぐ取り込む（2 秒ごとに、ファイルの更新を見る）
     LaunchedEffect(Unit) {
@@ -462,7 +464,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
             val bd = backdate
             val at = if (bd != null) backdatedTime(bd, now) else now
             val body = if (bd != null) backdatedText(text, settings.writtenStamp, now) else text
-            entries.add(Entry(id = Store.newId(at, entries), created = at, topic = writingTopic(topic), text = body,
+            entries.add(Entry(id = Store.newId(at, entries), created = at, topic = if (topic == ALL) settings.writeTopic else topic, ups = settings.writeUps.filter { it != (if (topic == ALL) settings.writeTopic else topic) }, text = body,
                 images = pendingImages.toList(), parent = null, contexts = contextsTo.toList(),
                 noTime = bd != null && !settings.writtenStamp))
             replyTo = null; contextsTo.clear()
@@ -587,6 +589,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
                                 selected.clear(); selecting = false
                             }, enabled = selected.isNotEmpty(), modifier = Modifier.weight(1f)) { Text("コピー") }
                             OutlinedButton(onClick = { moveSelectedOpen = true }, enabled = selected.isNotEmpty(), modifier = Modifier.weight(1f)) { Text("移動") }
+                            OutlinedButton(onClick = { upsDialogIds = selected.toList() }, enabled = selected.isNotEmpty(), modifier = Modifier.weight(1f)) { Text("上") }
                             OutlinedButton(onClick = { deleteSelectedOpen = true }, enabled = selected.isNotEmpty(), modifier = Modifier.weight(1f)) { Text("消す") }
                         }
                     }
@@ -602,6 +605,9 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
                     FilterChip(selected = other, onClick = { topicListOpen = true }, shape = RoundedCornerShape(16.dp),
                         label = { Text("🏷 " + if (other) topic else "その他", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp)) })
+                    val upsNow = settings.writeUps
+                    FilterChip(selected = upsNow.isNotEmpty(), onClick = { upsDialogIds = emptyList() }, shape = RoundedCornerShape(16.dp),
+                        label = { Text("↑ " + if (upsNow.isEmpty()) "上" else upsNow.joinToString("、"), maxLines = 1, overflow = TextOverflow.Ellipsis) })
                 }
                 if (pendingImages.isNotEmpty()) {
                     LazyRow(Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -757,6 +763,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
                 add(SheetAct(Icons.Filled.Link, "返信先を足す", "返信先にするメモを続けてタップ") { contextFor = target.id })
                 add(SheetAct(Icons.Filled.AccountTree, "返信先を編集", "返信先を確かめて外す") { relEditFor = target.id })
                 add(SheetAct(Icons.Filled.Label, "トピックを変える", "別のトピックへ移す") { topicDialogFor = target.id })
+                add(SheetAct(Icons.Filled.Label, "上を変える", "上のトピック（いくつでも）") { upsDialogIds = listOf(target.id) })
                 add(SheetAct(Icons.Filled.Checklist, "複数選択", "まとめて移す・消す") { selecting = true; selected.clear(); selected.add(target.id); rangeAnchor = target.id; rangeMode = false; contextFor = null; keyboard?.hide() })
                 add(SheetAct(Icons.Filled.ContentCopy, "コピー", "文章をクリップボードへ") {
                     ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("memo", target.text))
@@ -768,6 +775,21 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
         // 書く操作のあとだけ入力欄を選ぶ（コピー・トピックを変えるなどでは選ばない）
         onAfter = { if (replyTo != null || editing != null) focusTick++ })
 
+    upsDialogIds?.let { ids ->
+        val target = if (ids.isEmpty()) topic.let { if (it == ALL) settings.writeTopic else it } else byId[ids.first()]?.topic
+        val used = remember(entrySnapshot, target) { entrySnapshot.filter { it.topic == target }.flatMap { it.ups }.toSet() }
+        val ordered = remember(topics, used) { topics.filter { it in used } + topics.filter { it !in used } }
+        val initial = if (ids.isEmpty()) settings.writeUps.toSet() else if (ids.size == 1) (byId[ids.first()]?.ups ?: emptyList()).toSet() else emptySet()
+        UpsDialog(ordered, initial, target, onDismiss = { upsDialogIds = null }, onDone = { list ->
+            if (ids.isEmpty()) { settings = settings.copy(writeUps = list); store.saveSettings(settings) }
+            else {
+                val now = System.currentTimeMillis()
+                for (k in entries.indices) if (entries[k].id in ids) entries[k] = entries[k].copy(ups = list.filter { it != entries[k].topic }, edited = now, exported = false)
+                persist(); if (selecting) { selected.clear(); selecting = false }
+            }
+            upsDialogIds = null
+        })
+    }
     if (topicDialogFor != null || moveSelectedOpen) {
         val ids = topicDialogFor?.let { listOf(it) } ?: selected.toList()
         fun closeMove() { topicDialogFor = null; moveSelectedOpen = false }
@@ -1236,6 +1258,7 @@ private fun Bubble(e: Entry, done: Boolean, byId: Map<String, Entry>, store: Sto
                     }
                 }
                 Row(Modifier.align(Alignment.End).padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                    e.ups.forEach { u -> Text("↑" + topicLabel(u), fontSize = 10.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 6.dp)) }   // 上のトピック
                     if (e.topic.isNotEmpty() && e.topic != ALL) {   // トピックは、小さな色つきのラベル
                         val hue = (e.topic.fold(7) { h, c -> (h * 31 + c.code) and 0xffff } % 360).toFloat()
                         Text(topicLabel(e.topic), fontSize = 10.sp, color = Color.hsv(hue, .55f, .55f),
