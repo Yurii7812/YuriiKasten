@@ -200,7 +200,14 @@ function openLink(rel) {
   try { path = decodeURIComponent(path); } catch { }
   let m;
   if ((m = path.match(/^(\d{14}(?:-\d+)?)\.md$/)) && (m = notes.find(x => x.stem === m[1]))) return openNote(m.s, m.id, null, false, hash); // ノート（紙・IDなし・なりきり・キャンバスも）
-  if ((m = path.match(/^C_\d{4}-\d{2}-\d{2}\.md$/)) && /^m-/.test(hash)) return Chat.gotoMemo(hash.slice(2));   // チャットメモの出典リンク
+  if (path.match(/^C_\d{4}-\d{2}-\d{2}\.md$/)) {
+    if (hash.startsWith('ms-')) return Chat.gotoSource(hash.slice(3).split(',').filter(Boolean)); // 新しいノート: 選択した全ID
+    if (hash.startsWith('m-')) {
+      const id = hash.slice(2), note = cur && cur.k === 'note' && get(cur.s, cur.id);
+      const oldIds = note && Chat.memosForNote(note.stem); // 旧ノートでも、保存された対応情報があれば全件を復元
+      return Chat.gotoSource(oldIds && oldIds.includes(id) ? oldIds : [id]);
+    }
+  }
   if ((m = path.match(/^(\d{14}(?:-\d+)?)\.md$/)) && (m = diaries.find(x => x.stem === m[1]))) return openDiary(m.date, false, m.kind);   // 記録（日記・夢…）の、その日のノート
   return api.openPath(rel);
 }
