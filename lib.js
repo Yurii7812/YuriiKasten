@@ -336,7 +336,7 @@ const fmDump = o => '---\n' + Object.entries(o).filter(([, v]) => v !== undefine
 
 // ===== ノートの種類: text（文章）/ rp（なりきりチャット）/ canvas（キャンバス）=====
 // なりきり・キャンバスはデータ（data）を持ち、本文はそこから作る（検索やMarkdownで文字が見えるように）
-const KINDS = { text: '', rp: '🎭', canvas: '🗺' };
+const KINDS = { text: '', rp: '🎭', canvas: '🗺', 'memo-group': '💬 ノート化' };
 function deriveBody(kind, data) {
   data = data || {};
   if (kind === 'rp') {
