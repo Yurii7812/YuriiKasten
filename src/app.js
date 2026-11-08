@@ -223,8 +223,7 @@ function globalIndex() {
   return [...m].sort((a, b) => L.byReading(k => readings[k])(a[0], b[0]));
 }
 // id は 1a のほか 1a(1) も（(番号) は、ノートの中のその場所へ）
-const entryOn = (s_, id) => { const o = cur && cur.k === 'topic' && topics.find(x => x.name === cur.name); return !!(o && o.entry && o.entry.s === s_ && o.entry.id === id); };
-const chip = (s, raw, topic) => { const { id, n } = L.splitAnchor(raw); return `<span class="chip ${s}${get(s, id) ? '' : ' miss'}${topic ? ' dotted' : ''}${entryOn(s, id) ? ' entry-on' : ''}" data-s="${s}" data-id="${esc(id)}"${n ? ` data-n="${n}"` : ''}>${topic ? (topic.name ? `<i class="dotabove" data-topic="${esc(topic.name)}" title="トピックIndex ${esc(topic.name)}">●</i>` : '<i class="dotabove">●</i>') : ''}${s === 'p' ? '紙' : ''}${esc(raw)}</span>`; };
+const chip = (s, raw, topic) => { const { id, n } = L.splitAnchor(raw); return `<span class="chip ${s}${get(s, id) ? '' : ' miss'}${topic ? ' dotted' : ''}" data-s="${s}" data-id="${esc(id)}"${n ? ` data-n="${n}"` : ''}>${topic ? (topic.name ? `<i class="dotabove" data-topic="${esc(topic.name)}" title="トピックIndex ${esc(topic.name)}">●</i>` : '<i class="dotabove">●</i>') : ''}${s === 'p' ? '紙' : ''}${esc(raw)}</span>`; };
 // t があれば、その入口のIDだけ点を付ける
 const dotOf = (t, kw) => { const r = t && L.mergeTopic(t).rows.find(x => x.kw === (kw !== undefined ? kw : t.keyword) && x.dot); return r ? r.dot : t && t.entry; }; // * の印があればそのID、なければ入口
 // トピックIndex の中の行: ID の前の * の印のIDの上に赤い点（そのIDが入口のトピックIndexがあれば、押すとそこへ）
