@@ -531,7 +531,7 @@ function toNoteDialog(explicitMemos) {
         id = ctx.free('d', L.child(p));
       } else if (kind === 'id') {
         id = $('#as-id').value.trim().toLowerCase();
-        if (!L.isId(id) || /^\\d{8,}$/.test(id)) return alert('IDの形が違います（例: 12 や 3a）');
+        if (!L.isId(id) || /^\d{8,}$/.test(id)) return alert('IDの形が違います（例: 12 や 3a）');
         if (ctx.get('d', id)) return alert(`ノート ${id} は既にあります`);
       }
       const title = $('#as-title').value.trim();
