@@ -7,23 +7,34 @@ const textMatches = (text, query) => {
   const all = String(text || '').toLocaleLowerCase();
   return String(query || '').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean).every(w => all.includes(w));
 };
-function keywords(notes, readings = {}) {
+function keywords(notes, readings = {}, paperEntries = []) {
   const rows = new Map();
   for (const n of notes) {
     if (!isAssigned(n)) continue;
     for (const kw of n.keywords || []) {
-      if (!rows.has(kw)) rows.set(kw, { name: kw, reading: readings[kw] || '', notes: [] });
+      if (!rows.has(kw)) rows.set(kw, { name: kw, reading: readings[kw] || '', notes: [], pending: [] });
       if (!rows.get(kw).notes.some(x => key(x) === key(n))) rows.get(kw).notes.push(n);
     }
   }
-  return [...rows.values()].sort((a, b) => L.byReading(k => readings[k])(a.name, b.name));
+  for (const entry of paperEntries) {
+    if (!entry || !entry.kw) continue;
+    const kw = entry.kw;
+    if (!rows.has(kw)) rows.set(kw, { name: kw, reading: readings[kw] || entry.reading || '', notes: [], pending: [] });
+    const r = rows.get(kw);
+    if (!r.reading) r.reading = entry.reading || '';
+    for (const raw of entry.ids || []) {
+      const id = L.splitAnchor(raw).id;
+      if (!r.notes.some(n => n.s === 'p' && n.id === id) && !r.pending.includes(raw)) r.pending.push(raw);
+    }
+  }
+  return [...rows.values()].sort((a, b) => L.byReading(k => readings[k] || (rows.get(k) || {}).reading)(a.name, b.name));
 }
 function matchesTopic(t, query) {
   const merged = L.mergeTopic(t);
   return textMatches([t.name, t.keyword || '', L.topicText(t), ...merged.rows.map(x => x.kw)].join('\n'), query);
 }
-function search(notes, topics, readings, query) {
-  const kw = keywords(notes, readings).filter(k => textMatches([k.name, k.reading].join(' '), query));
+function search(notes, topics, readings, query, paperEntries = []) {
+  const kw = keywords(notes, readings, paperEntries).filter(k => textMatches([k.name, k.reading].join(' '), query));
   const ti = topics.filter(t => matchesTopic(t, query)).sort((a, b) => a.name.localeCompare(b.name, 'ja'));
   const nn = notes.filter(n => textMatches([
     isAssigned(n) ? n.id : '', n.title || '', n.body || '',
