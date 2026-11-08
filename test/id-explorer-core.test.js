@@ -47,3 +47,12 @@ test('未取り込みの紙Indexも検索でき、存在しないノートとし
   assert.equal(result.notes.length,0);
   assert.equal(result.topics.length,0);
 });
+
+test('IndexのIDチップはトピックIndexがあるならそちらを先に開き、索引内ではノートへ進む',()=>{
+  assert.deepEqual(X.followIndexReference(notes,topics,'d','1'),{kind:'topic',key:'1-哲学'});
+  assert.deepEqual(X.followIndexReference(notes,topics,'d','1','1-哲学'),{kind:'note',key:'d:1'});
+  assert.deepEqual(X.followIndexReference(notes,topics,'d','1a'),{kind:'note',key:'d:1a'});
+  assert.deepEqual(X.followIndexReference(notes,topics,'p','1'),{kind:'note',key:'p:1'});
+  assert.deepEqual(X.followIndexReference(notes,topics,'d','99'),{kind:'missing',key:'d:99'});
+  assert.deepEqual(X.followIndexReference(notes,topics,'d','2'),{kind:'topic',key:'2-学習'});
+});
