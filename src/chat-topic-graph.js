@@ -8,7 +8,7 @@ export function unmount(host) {
 export function mount(host, { topics, messages, onOpen, createGraph = el => new ForceGraph(el) }) {
   unmount(host);
   const data = Relations.topicGraphData(topics, messages);
-  host.innerHTML = '<div class="ctg-toolbar"><span class="sub">上位 → 下位・線の数字はメモ件数。トピックを押すとメモを開きます。</span><span class="grow"></span><button data-ctg="out" aria-label="縮小">−</button><button data-ctg="in" aria-label="拡大">＋</button><button data-ctg="fit">全体表示</button></div><div class="ctg-canvas"></div>';
+  host.innerHTML = '<div class="ctg-toolbar"><span class="sub">上位トピック → 所属トピック・線の数字はメモ件数。トピックを押すとメモを開きます。</span><span class="grow"></span><button data-ctg="out" aria-label="縮小">−</button><button data-ctg="in" aria-label="拡大">＋</button><button data-ctg="fit">全体表示</button></div><div class="ctg-canvas"></div>';
   const canvas = host.querySelector('.ctg-canvas');
   if (!data.nodes.length) { canvas.innerHTML = '<div class="none">トピックがまだありません。</div>'; return; }
   const graph = createGraph(canvas);
