@@ -19,7 +19,7 @@ const SP = { d: 'デジタル', p: '紙' };
 let notes = [], topics = [], readings = {}, tab = 'd', cur = null, vault = '';
 // 開いているタブ（Obsidian 風）。cur は今のタブ
 let tabs = [], active = -1, newTab = false, bgOpen = false;
-let mode = 'notes', diaries = [], lastNote = null; // 左の列で選んでいる種類（ノート・日記…）
+let mode = 'notes', diaries = [], records = [{ name: '日記', parent: '' }], lastNote = null, curKind = (() => { try { return localStorage.getItem('pkm-kind') || '日記'; } catch { return '日記'; } })(); // 左の列で選んでいる種類（ノート・日記…）
 let selMode = false, picked = new Set(), lastPick = null; // 一括選択
 let searchQ = ''; // いま検索している語（一覧と、開いたノートの中の印に使う）
 const get = (s, id) => notes.find(n => n.s === s && n.id === id);
@@ -190,7 +190,7 @@ function openLink(rel) {
   try { path = decodeURIComponent(path); } catch { }
   let m;
   if ((m = path.match(/^(\d{14}(?:-\d+)?)\.md$/)) && (m = notes.find(x => x.stem === m[1]))) return openNote(m.s, m.id, null, false, hash); // ノート（紙・IDなし・なりきり・キャンバスも）
-  if ((m = path.match(/^D_(\d{4}-\d{2}-\d{2})(?:-.*)?\.md$/))) return openDiary(m[1]);
+  if ((m = path.match(/^(\d{14}(?:-\d+)?)\.md$/)) && (m = diaries.find(x => x.stem === m[1]))) return openDiary(m.date, false, m.kind);   // 記録（日記・夢…）の、その日のノート
   return api.openPath(rel);
 }
 async function follow(l, view) {
@@ -314,7 +314,7 @@ function renderList() {
     const fh = filesCache.filter(f => [f.title, f.desc, f.orig, f.name].join('\n').toLowerCase().includes(q));
     if (fh.length) out.push('<h4>ファイル</h4>', ...fh.map(f => fileRow(f, q)));
     const dh = diaries.filter(d => [d.date, d.title, d.body].join('\n').toLowerCase().includes(q)).sort((a, b) => b.date.localeCompare(a.date));
-    if (dh.length) out.push('<h4>日記</h4>', ...dh.map(d => `<div class="item note" data-diary="${d.date}"><div class="nrow"><div class="nt">${mk(d.title || d.date, q)}</div><div class="ns">日記 · ${d.date}</div>${snippet(d.body, q) ? `<div class="sn">${snippet(d.body, q)}</div>` : ''}</div></div>`));
+    if (dh.length) out.push('<h4>日記</h4>', ...dh.map(d => `<div class="item note" data-diary="${d.date}" data-kind="${esc(d.kind || '日記')}"><div class="nrow"><div class="nt">${mk(d.title || d.date, q)}</div><div class="ns">${esc(d.kind || '日記')} · ${d.date}</div>${snippet(d.body, q) ? `<div class="sn">${snippet(d.body, q)}</div>` : ''}</div></div>`));
     if (!out.length) out.push('<div class="none">見つかりません</div>');
   } else if (tab === 'f') {
     refreshFiles();
@@ -355,7 +355,7 @@ document.addEventListener('keydown', e => { if (e.altKey && (e.key === 'ArrowLef
 document.addEventListener('mouseup', e => { if (e.button === 3) { e.preventDefault(); go(-1); } if (e.button === 4) { e.preventDefault(); go(1); } });
 function onOpenClick(e) {
   if (e.target.closest('#modal') || e.target.closest('#selbar')) return;
-  const dd = e.target.closest('[data-diary]'); if (dd && !e.target.closest('.cm-editor')) return openDiary(dd.dataset.diary);
+  const dd = e.target.closest('[data-diary]'); if (dd && !e.target.closest('.cm-editor')) return openDiary(dd.dataset.diary, undefined, dd.dataset.kind || '日記');
   const cc = e.target.closest('[data-chat]'); if (cc) return Chat.open(cc.dataset.chat);
   if (e.target.id === 'c-new') return Chat.newTopicDialog();
   const row = e.target.closest('#list .item');
@@ -543,7 +543,7 @@ function show(i) {
   active = Math.max(-1, Math.min(i, tabs.length - 1));
   const t = tabs[active];
   if (!t || t.k === 'empty') { cur = t || null; $('#pane').innerHTML = '<div class="none">左から選ぶか、「＋ 新規」で書き始めます。<br>Ctrl+クリックで新しいタブに開きます。</div>'; renderTabs(); return renderList(); }
-  if (t.k === 'note') openNote(t.s, t.id, null, true); else if (t.k === 'diary') openDiary(t.date, true); else if (t.k === 'chat') Chat.open(t.topic, true); else if (t.k === 'graph') openGraph(true); else if (t.k === 'mandala') openMandala(true); else if (t.k === 'cards') openCards(true); else if (t.k === 'export') openExport(t, true); else openTopic(t.name, t.mode, true);
+  if (t.k === 'note') openNote(t.s, t.id, null, true); else if (t.k === 'diary') openDiary(t.date, true, t.kind); else if (t.k === 'chat') Chat.open(t.topic, true); else if (t.k === 'graph') openGraph(true); else if (t.k === 'mandala') openMandala(true); else if (t.k === 'cards') openCards(true); else if (t.k === 'export') openExport(t, true); else openTopic(t.name, t.mode, true);
 }
 function closeTab(i) {
   if (i < 0 || i >= tabs.length) return;
@@ -553,7 +553,7 @@ function closeTab(i) {
   show(active < 0 && tabs.length ? 0 : active);
 }
 const tabLabel = t => t.k === 'note' ? (n => `${n && icon(n) ? icon(n) + ' ' : ''}${n ? esc(titleOf(n).slice(0, 16)) : esc(t.id)}<small>${n && n.noid ? 'IDなし' : (t.s === 'p' ? '紙 ' : '') + esc(t.id)}</small>`)(get(t.s, t.id))
-  : t.k === 'topic' ? `📑 ${esc(t.name)}` : t.k === 'diary' ? `📔 ${esc(t.date.slice(5))}` : t.k === 'chat' ? `💬 ${esc(Chat.label(t.topic))}` : t.k === 'graph' ? '🕸 グラフ' : t.k === 'mandala' ? '❖ 曼荼羅' : t.k === 'cards' ? '🗒 カード' : t.k === 'export' ? '📤 エクスポート' : '新しいタブ';
+  : t.k === 'topic' ? `📑 ${esc(t.name)}` : t.k === 'diary' ? `📔 ${esc(t.date.slice(5))}${t.kind && t.kind !== '日記' ? ' <small>' + esc(t.kind) + '</small>' : ''}` : t.k === 'chat' ? `💬 ${esc(Chat.label(t.topic))}` : t.k === 'graph' ? '🕸 グラフ' : t.k === 'mandala' ? '❖ 曼荼羅' : t.k === 'cards' ? '🗒 カード' : t.k === 'export' ? '📤 エクスポート' : '新しいタブ';
 function renderTabs() {
   $('#tabbar').innerHTML = tabs.map((t, i) => `<div class="tab${i === active ? ' on' : ''}" data-ti="${i}"><span>${tabLabel(t)}</span><b class="x" data-close="${i}" title="閉じる (Ctrl+W)">×</b></div>`).join('')
     + '<button class="tab-new" title="新しいタブ (Ctrl+T)">＋</button>';
@@ -739,7 +739,7 @@ async function create(s, id) {
 }
 // ノートを作ると作った日の日記が（無ければ）できて、リンクが入る。その日記を取り込み直す
 async function refreshDiaries() {
-  for (const r of await api.diaryState()) { const d = getDiary(r.date); if (!d) diaries.push(r); else if (!timers['dy' + r.date] && !timers['dt' + r.date]) Object.assign(d, r); }
+  for (const r of await api.diaryState()) { const d = getDiary(r.date, r.kind); if (!d) diaries.push(r); else if (!timers['dy' + r.kind + r.date] && !timers['dt' + r.kind + r.date]) Object.assign(d, r); }
 }
 $('#pane').addEventListener('click', async e => {
   const del = e.target.closest('[data-kwdel]');
@@ -792,7 +792,7 @@ async function clearIdFlow(note) {
   if (!confirm(`「${titleOf(note)}」のIDを消して、IDなしにしますか？\n${n ? `このノートを指している ${n} 件のリンクは、自動で直ります。\n` : ''}子のノートのIDは、そのままです。`)) return;
   await flush(); await api.saveNote(pubNote(note));
   const old = note.id, st = await api.clearId(note.s, old); if (!st) return alert('IDを消せませんでした');
-  ({ notes, topics } = st); diaries = st.diaries; readings = st.readings || readings;
+  ({ notes, topics } = st); diaries = st.diaries; records = st.records || records; readings = st.readings || readings;
   const stem = notes.find(x => x.noid && x.stem === note.stem);
   for (const t of tabs) if (t.k === 'note' && t.s === note.s && t.id === old && stem) t.id = stem.id;
   if (stem) openNote('d', stem.id, null, true); else show(Math.max(0, active));
@@ -1222,49 +1222,85 @@ async function topicAct(act) {
 
 // ===== 日記 =====
 // 名前は D_2026-11-07-タイトル。日付が変わるのは朝5時。その日に作ったノートのリンクと、紙の日記の画像は、本文に書き込まれる
-const getDiary = date => diaries.find(d => d.date === date);
-const upsertDiary = r => { const d = getDiary(r.date); if (d) { Object.assign(d, r); return d; } diaries.push(r); return r; };
+const getDiary = (date, kind = '日記') => diaries.find(d => d.date === date && (d.kind || '日記') === kind);
+const upsertDiary = r => { const d = getDiary(r.date, r.kind); if (d) { Object.assign(d, r); return d; } diaries.push(r); return r; };
+const setKind = k => { curKind = k; try { localStorage.setItem('pkm-kind', k); } catch { } };
 function diaryList() {
-  const dayRow = d => `<div class="day${cur && cur.k === 'diary' && cur.date === d.date ? ' on' : ''}" data-diary="${d.date}"><span>${d.date.slice(8)}（${L.weekday(d.date)}）</span><small>${esc(d.title)}${d.pages.length ? ' 📷' : ''}</small></div>`;
-  const tree = L.diaryTree(diaries.map(d => d.date));
+  if (!records.some(r => r.name === curKind)) setKind('日記');
+  const kind = curKind, mine = diaries.filter(d => (d.kind || '日記') === kind);
+  const dayRow = d => `<div class="day${cur && cur.k === 'diary' && cur.date === d.date && (cur.kind || '日記') === kind ? ' on' : ''}" data-diary="${d.date}" data-kind="${esc(kind)}"><span>${d.date.slice(8)}（${L.weekday(d.date)}）</span><small>${esc(d.title)}${d.pages.length ? ' 📷' : ''}</small></div>`;
+  const tree = L.diaryTree(mine.map(d => d.date));
   if (sortDir === 'asc') { tree.reverse(); for (const g of tree) { if (g.months) { g.months.reverse(); for (const m of g.months) m.days.reverse(); } else g.days.reverse(); } }   // 昇順: 古い日から
   const grp = (label, inner, open) => `<details${open ? ' open' : ''}><summary>${label}</summary>${inner}</details>`;
-  const days = ds => ds.map(x => dayRow(getDiary(x))).join('');
+  const days = ds => ds.map(x => dayRow(getDiary(x, kind))).join('');
   let first = true;
   const html = tree.map(g => {
     const open = first; first = false;
     return grp(g.label, g.months ? g.months.map((m, i) => grp(m.label, days(m.days), open && i === 0)).join('') : days(g.days), open);
   }).join('');
-  return `<div id="dlist"><div class="dtop"><button class="p" id="d-today">今日の日記</button><input type="date" id="d-pick" value="${L.todayStr()}"><button id="d-make" title="この日の日記を開く（無ければ作る）">開く</button></div>${sortBar(true)}${html || '<div class="none">日記はまだありません</div>'}</div>`;
+  const chips = records.map(r => `<span class="kchip${r.name === kind ? ' on' : ''}" data-kindpick="${esc(r.name)}">${esc(r.name)}</span>`).join('') + '<span class="kchip" data-kindmanage title="記録の種類を足す・名前を変える・まとめる・消す">＋ ⚙</span>';
+  return `<div id="dlist"><div class="kinds">${chips}</div><div class="dtop"><button class="p" id="d-today">今日の${esc(kind)}</button><input type="date" id="d-pick" value="${L.todayStr()}"><button id="d-make" title="この日の${esc(kind)}を開く（無ければ作る）">開く</button></div>${sortBar(true)}${html || `<div class="none">${esc(kind)}はまだありません</div>`}</div>`;
 }
 $('#list').addEventListener('click', e => {
   if (e.target.id === 'd-today') openDiary(L.todayStr());
   if (e.target.id === 'd-make') { const v = $('#d-pick').value; if (L.isDate(v)) openDiary(v); }
+  const kp = e.target.closest('[data-kindpick]'); if (kp) { setKind(kp.dataset.kindpick); renderList(); }
+  if (e.target.closest('[data-kindmanage]')) recordsDialog();
 });
-async function openDiary(date, keep) {
-  if (bgOpen) { place({ k: 'diary', date }, false); return; }
-  let d = getDiary(date);
+// 記録の種類（日記・夢・ビジネス…）を管理する: 足す・上位・名前を変える・まとめる・消す
+function recordsDialog() {
+  const names = () => records.map(r => r.name);
+  const draw = () => {
+    $('#modal .box').innerHTML = `<h3>記録の種類</h3><div class="sub">日記のように、日ごとのノートを書く種類です。上位を決めると、その日の上位のノートの上に、下位へのリンク（DailyNotes）が並びます。上位を変えても、もう作った日は変わりません（これから作る日だけ）。</div>
+      <table class="ti">${records.map(r => `<tr><td><b>${esc(r.name)}</b></td><td>${r.name === '日記' ? '<span class="sub">いつもある</span>' : `上位 <select data-rpar="${esc(r.name)}"><option value="">なし</option>${names().filter(n => n !== r.name).map(n => `<option${r.parent === n ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>
+        <button class="mini" data-rren="${esc(r.name)}">名前</button><button class="mini" data-rmer="${esc(r.name)}">まとめる</button><button class="mini danger" data-rdel="${esc(r.name)}">消す</button>`}</td></tr>`).join('')}</table>
+      <div class="row"><input id="r-new" placeholder="新しい種類（例: 夢）" style="flex:1"><button class="p" id="r-add">足す</button></div><div class="row"><button id="r-close">閉じる</button></div>`;
+    $('#modal').style.display = 'flex';
+  };
+  draw();
+  const apply = async (op, ...a) => { await flush(); const r = await api.recordOp(op, ...a); if (r === false) { alert('できませんでした（名前が使えない・すでにある・輪になる、など）'); return false; } const st = await api.state(); applyState(st); diaries = st.diaries; records = st.records; return true; };
+  $('#modal').onclick = async e => {
+    const t = e.target;
+    if (t.id === 'r-close') { $('#modal').style.display = 'none'; return renderList(); }
+    if (t.id === 'r-add') { const n = $('#r-new').value.trim(); if (n && await apply('addRecord', n)) draw(); return; }
+    if (t.dataset.rren) { const to = prompt(`「${t.dataset.rren}」の新しい名前（その種類の日のノートも、まとめて変わります）`, t.dataset.rren); if (to && to.trim() !== t.dataset.rren && await apply('renameRecord', t.dataset.rren, to)) { if (curKind === t.dataset.rren) setKind(to.trim()); draw(); } return; }
+    if (t.dataset.rmer) { const into = prompt(`「${t.dataset.rmer}」を、どの種類にまとめますか？（${names().filter(n => n !== t.dataset.rmer).join('・')}）\\n同じ日のノートは、時刻の順にまざります。`, ''); if (into && names().includes(into) && await apply('mergeRecords', t.dataset.rmer, into)) { if (curKind === t.dataset.rmer) setKind(into); draw(); } return; }
+    if (t.dataset.rdel) { const n = diaries.filter(d => d.kind === t.dataset.rdel).length; if (confirm(`「${t.dataset.rdel}」を消しますか？\\n${n} 日分のノートも、ごみ箱（.trash）に移ります。`) && await apply('deleteRecord', t.dataset.rdel)) { if (curKind === t.dataset.rdel) setKind('日記'); draw(); } return; }
+  };
+  $('#modal').onchange = async e => { const p = e.target.dataset.rpar; if (p !== undefined) await apply('setRecordParent', p, e.target.value); };
+  $('#modal').onkeydown = e => { if (e.key === 'Escape') { $('#modal').style.display = 'none'; renderList(); } };
+}
+async function openDiary(date, keep, kind) {
+  kind = kind || (cur && cur.k === 'diary' && keep ? cur.kind : curKind) || '日記';
+  if (bgOpen) { place({ k: 'diary', date, kind }, false); return; }
+  let d = getDiary(date, kind);
   if (!d || !keep) { // 開くとき、その日に作ったノートで足りないリンクを足す。無い日は作る
     await flush();
-    const r = await api.openDiary(date); if (!r) return;
+    const r = await api.openDiary(date, kind); if (!r) return;
     d = upsertDiary(r);
   }
-  cur = place({ k: 'diary', date }, keep); mode = 'diary';
-  const idx = diaries.map(x => x.date).sort().indexOf(date);
+  setKind(kind);
+  cur = place({ k: 'diary', date, kind }, keep); mode = 'diary';
+  const mine = diaries.filter(x => (x.kind || '日記') === kind).map(x => x.date).sort(), idx = mine.indexOf(date);
+  const lower = (d.lower || []).map(k => `<span class="chip t" data-dkind="${esc(k)}">${esc(k)}</span>`).join('');
   $('#pane').innerHTML = `
     <div class="row">
-      <span class="sp d">日記</span>
+      <span class="sp d">${esc(kind)}</span>
       <h2 style="margin:0">${date}（${L.weekday(date)}）</h2>
       <input class="kw" id="d-title" style="flex:1;min-width:140px;margin:0" value="${esc(d.title)}" placeholder="タイトル（任意）　例: 旅の話">
-      <button data-act="dprev" title="前の日記">←</button><button data-act="dnext" title="次の日記">→</button>
+      <button data-act="dprev" title="前の${esc(kind)}">←</button><button data-act="dnext" title="次の${esc(kind)}">→</button>
       <button data-act="table" title="表を入れる">▦ 表</button>
       <button data-act="attach" title="ファイルを添付（ドラッグや貼り付けでも）">📎 添付</button>
       <button data-act="ddel" class="danger">削除</button>
     </div>
+    ${kind !== '日記' ? `<div class="row sub">上位 <select id="d-par"><option value="">なし（日記の下）</option>${records.filter(r => r.name !== kind && r.name !== '日記').map(r => `<option${d.parent === r.name ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}</select><span class="sub">この日だけの上位。これから作る日の初期値は、記録の種類（＋ ⚙）で決めます</span></div>` : ''}
+    ${lower ? `<div class="row"><span class="sub">DailyNotes</span>${lower}</div>` : ''}
     <div class="ed" id="ed"></div>`;
-  const view = editor($('#ed'), d.body, 'note', 'd', v => { d.body = v; later('dy' + date, () => api.saveDiary({ date, body: d.body })); },
-    '今日のこと。書いたノートのリンクは、下の「今日のノート」に自動で入ります');
-  $('#d-title').oninput = e => { d.title = e.target.value; later('dt' + date, () => api.saveDiary({ date, title: d.title, body: d.body }).then(() => { renderList(); renderTabs(); })); renderList(); };
+  const key = kind + date;
+  const view = editor($('#ed'), d.body, 'note', 'd', v => { d.body = v; later('dy' + key, () => api.saveDiary({ date, kind, body: d.body })); },
+    kind === '日記' ? '今日のこと。書いたノートのリンクは、下の「今日のノート」に自動で入ります' : `今日の${kind}`);
+  $('#d-title').oninput = e => { d.title = e.target.value; later('dt' + key, () => api.saveDiary({ date, kind, title: d.title, body: d.body }).then(() => { renderList(); renderTabs(); })); renderList(); };
+  const par = $('#d-par'); if (par) par.onchange = async () => { await flush(); const r = await api.recordOp('setDayParent', kind, date, par.value); if (r) { upsertDiary(r); const st = await api.state(); applyState(st); diaries = st.diaries; openDiary(date, true, kind); } else alert('その上位にはできません（輪になります）'); };
   renderTabs(); renderList();
   // 自由に書く部分（最初の「## 」より前）にカーソル。節で始まる日記は、その前に空行を足して書く場所を作る
   if (/^## /.test(view.state.doc.toString())) view.dispatch({ changes: { from: 0, insert: '\n\n\n' } }); // 本文は onChange で d.body に入る（上下に空行）
@@ -1272,15 +1308,16 @@ async function openDiary(date, keep) {
   if (cur.pos != null && keep) view.dispatch({ selection: { anchor: Math.min(cur.pos, view.state.doc.length) } });
   else { view.dispatch({ selection: { anchor: at } }); view.focus(); }
 }
+$('#pane').addEventListener('click', e => { const k = e.target.closest('[data-dkind]'); if (k && cur && cur.k === 'diary') openDiary(cur.date, false, k.dataset.dkind); });
 async function diaryAct(act) {
-  const d = getDiary(cur.date), dates = diaries.map(x => x.date).sort(), i = dates.indexOf(cur.date);
-  if (act === 'dprev' && i > 0) openDiary(dates[i - 1]);
-  if (act === 'dnext' && i < dates.length - 1) openDiary(dates[i + 1]);
+  const kind = cur.kind || '日記', d = getDiary(cur.date, kind), dates = diaries.filter(x => (x.kind || '日記') === kind).map(x => x.date).sort(), i = dates.indexOf(cur.date);
+  if (act === 'dprev' && i > 0) openDiary(dates[i - 1], false, kind);
+  if (act === 'dnext' && i < dates.length - 1) openDiary(dates[i + 1], false, kind);
   if (act === 'ddel') {
-    if (!confirm(`${cur.date} の日記を削除しますか？（ファイルは .trash に移ります。紙の日記の画像は残ります）`)) return;
-    await flush(); await api.deleteDiary(cur.date);
+    if (!confirm(`${cur.date} の${kind}を削除しますか？（ファイルは .trash に移ります。紙の日記の画像は残ります）`)) return;
+    await flush(); await api.deleteDiary(cur.date, kind);
     diaries = diaries.filter(x => x !== d);
-    for (let k = tabs.length - 1; k >= 0; k--) if (tabs[k].k === 'diary' && tabs[k].date === cur.date) { tabs.splice(k, 1); if (active >= k) active--; }
+    for (let k = tabs.length - 1; k >= 0; k--) if (tabs[k].k === 'diary' && tabs[k].date === cur.date && (tabs[k].kind || '日記') === kind) { tabs.splice(k, 1); if (active >= k) active--; }
     return show(Math.max(0, active));
   }
   if (act === 'attach') pick(true, f => attach(d, f), '*');
@@ -1359,12 +1396,12 @@ $('#scan').onkeydown = e => {
 
 // ===== 保存フォルダ =====
 function loaded(st) {
-  ({ notes, topics, vault } = st); readings = st.readings || {}; diaries = st.diaries || []; Chat.init(st.docs || {}); RP.init(st.docs || {}); PI.init(st.docs || {}); cur = null; tabs = []; active = -1; refreshFiles();
+  ({ notes, topics, vault } = st); readings = st.readings || {}; diaries = st.diaries || []; records = st.records || records; Chat.init(st.docs || {}); RP.init(st.docs || {}); PI.init(st.docs || {}); cur = null; tabs = []; active = -1; refreshFiles();
   $('#vault').textContent = '📁 ' + vault.split('/').pop(); $('#vault').title = vault + '\n（Brave では Index.md を開くと全部たどれます）';
   try {
     const saved = JSON.parse(localStorage.getItem('pkm-tabs:' + vault) || 'null');
     if (saved) {
-      tabs = saved.tabs.filter(t => t.k === 'empty' || (t.k === 'note' && get(t.s, t.id)) || (t.k === 'topic' && topics.find(x => x.name === t.name)) || (t.k === 'diary' && getDiary(t.date)) || t.k === 'chat' || t.k === 'graph' || t.k === 'mandala' || t.k === 'cards');
+      tabs = saved.tabs.filter(t => t.k === 'empty' || (t.k === 'note' && get(t.s, t.id)) || (t.k === 'topic' && topics.find(x => x.name === t.name)) || (t.k === 'diary' && getDiary(t.date, t.kind)) || t.k === 'chat' || t.k === 'graph' || t.k === 'mandala' || t.k === 'cards');
       tabs.forEach(t => { if (t.k === 'topic') t.mode = 'view'; });
       active = Math.min(saved.active, tabs.length - 1);
     }
@@ -1378,51 +1415,26 @@ $('#more').onclick = async () => {
     [`YuriiKasten ${info.version}`, () => { }],
     ['更新を確認', () => checkUpdate(info)],
     ...(info.platform !== 'win32' ? [[info.platform === 'darwin' ? 'デスクトップにショートカットを作る' : 'ショートカットを作る（デスクトップ・アプリ一覧）', async () => toast(await api.installShortcuts())]] : []),
-    [`同期の設定…（${syncStatus}）`, syncDialog],
+    ['スマホのメモを取り込む…（USB）', phoneImport],
     ['スマホにアプリを入れる…（USB）', phoneInstall],
     ['保存フォルダを変える…', () => $('#vault').click()],
     ['GitHub を開く', () => api.openUrl('https://github.com/Yurii7812/YuriiKasten')]
   ]);
 };
-// ===== 同期（ラズパイの同期サーバー）=====
-let syncStatus = '…';
-api.syncGet().then(c => { syncStatus = c.state ? c.state.status : '…'; });
-api.onSyncState(st => { syncStatus = st.status; if (st.error) toast(st.status); });
-api.onState(st => { // 同期で取り込んだ変更を、画面に反映（いま見ている・書いているものを邪魔しない）
-  const before = cur && cur.k === 'note' ? get(cur.s, cur.id) : null, snap = before && JSON.stringify([before.title, before.body, before.keywords, before.data]);
-  applyState(st);
-  tabs = tabs.filter(t => t.k !== 'note' || get(t.s, t.id)); active = Math.min(active, tabs.length - 1);
-  if (mode !== 'notes' || !cur) return;                                // 日記・チャットなどを見ているときは、動かさない
-  const ae = document.activeElement, typing = ae && (/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.isContentEditable);
-  if (cur.k === 'note') {
-    const now = get(cur.s, cur.id);
-    if (!now) { const t = tabs[active]; if (t && t.k !== 'empty') show(active); else renderTabs(); return; }   // 消えたノート
-    if (!typing && snap !== JSON.stringify([now.title, now.body, now.keywords, now.data])) show(active);       // 相手が書き換えたノートだけ、描き直す（書いている最中は触らない）
-  }
-  renderTabs();
-});
 // スマホにアプリを入れる（USB でつないだスマホに、adb で）
 api.onPhoneMsg(m => toast(m));
 async function phoneInstall() {
-  const c = await api.syncGet(), has = !!(c.url && c.token);
-  if (!confirm(`スマホを USB ケーブルでつないで、「USBデバッグ」をオンにしてから、OK を押してください。\nスマホに YuriiKasten のアプリを入れます。${has ? '\n同期の設定（アドレスと合言葉）も、USB の中だけで、スマホに入れます。' : ''}`)) return;
+  if (!confirm('スマホを USB ケーブルでつないで、「USBデバッグ」をオンにしてから、OK を押してください。\nスマホに YuriiKasten のメモのアプリを入れます。')) return;
   toast('入れています…');
-  const r = await api.phoneInstall(true);
+  const r = await api.phoneInstall();
   alert(r.message);
 }
-async function syncDialog() {
-  const c = await api.syncGet();
-  dialog(`<h3>同期（ラズパイ）</h3>
-    <div class="sub">ラズパイの同期サーバーとつなぐと、PC とスマホで同じノートが使えます。空にして保存すると、同期をやめます。</div>
-    <div class="sub">サーバーのアドレス（例: http://raspberrypi.local:8787）</div><input id="sy-url" value="${esc(c.url || '')}" placeholder="http://raspberrypi.local:8787">
-    <div class="sub">合言葉（サーバーを入れたときに表示されるもの）</div><input id="sy-token" type="password" value="${esc(c.token || '')}">
-    <div class="sub" id="sy-state">${esc(c.state ? c.state.status : '')}</div>
-    <div class="row"><button class="p" id="sy-ok">保存して同期</button><button id="sy-now">今すぐ同期</button><button id="sy-no">閉じる</button></div>`, close => {
-    $('#sy-no').onclick = close;
-    const show1 = st => { $('#sy-state').textContent = st.status; };
-    $('#sy-ok').onclick = async () => { $('#sy-state').textContent = '同期しています…'; const r = await api.syncSet({ url: $('#sy-url').value, token: $('#sy-token').value }); show1(r.state); };
-    $('#sy-now').onclick = async () => { $('#sy-state').textContent = '同期しています…'; show1(await api.syncNow()); };
-  });
+// スマホのメモを取り込む（USB）。メモは「未整理」へ。日記・記録のトピックは、その日のノートへ。番号つきのスキャンは、紙のノートへ
+async function phoneImport() {
+  toast('スマホのメモを読んでいます…');
+  const r = await api.phoneImport();
+  if (r.ok) { applyState(r.state); diaries = r.state.diaries; records = r.state.records || records; refreshFiles(); if (mode === 'diary') renderList(); }
+  alert(r.message);
 }
 async function checkUpdate(info) {
   toast('更新を確認しています…');
@@ -1503,7 +1515,7 @@ async function attach(note, files) {
   const md = (head === at.from ? '' : '\n') + names.map((n, i) => PIC.test(n) ? `![](${encRel(n)})` : `[${(list[i].name || n).replace(/[\[\]]/g, '')}](${encRel(n)})`).join('\n') + '\n';
   view.dispatch({ changes: { from: head, insert: md }, selection: { anchor: head + md.length } }); view.focus();
 }
-const curNote = () => cur && cur.k === 'note' ? get(cur.s, cur.id) : cur && cur.k === 'diary' ? getDiary(cur.date) : null;
+const curNote = () => cur && cur.k === 'note' ? get(cur.s, cur.id) : cur && cur.k === 'diary' ? getDiary(cur.date, cur.kind) : null;
 $('#pane').addEventListener('dragover', e => { if ((curNote() || (cur && cur.k === 'chat')) && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); $('#pane').classList.add('drop'); } });
 $('#pane').addEventListener('dragleave', e => { if (!e.relatedTarget || !$('#pane').contains(e.relatedTarget)) $('#pane').classList.remove('drop'); });
 $('#pane').addEventListener('drop', e => {
@@ -1524,13 +1536,13 @@ document.addEventListener('paste', e => {
 });
 
 // 保存側の状態（ノート・日記・読み・紙のIndex）を、画面に反映する
-function applyState(st) { ({ notes, topics } = st); diaries = st.diaries || diaries; readings = st.readings || readings; PI.apply(st); renderList(); }
+function applyState(st) { ({ notes, topics } = st); diaries = st.diaries || diaries; records = st.records || records; readings = st.readings || readings; PI.apply(st); renderList(); }
 // チャット・なりきり・キャンバスの部品に、アプリの機能を渡す
 Object.assign(ctx, {
   api, later, flush, place, renderTabs, openLink, applyState, readings: () => readings, lastNote: () => lastNote,
  renderList, pick, get, free, refreshDiaries, openNote, openDiary, getDiary,
   setCur: c => { cur = c; }, setMode: m => { mode = m; }, cur: () => cur, notes: () => notes, vault: () => vault,
   touchNote: n => saveNote(n),
-  touchDiary: d => later('dy' + d.date, () => api.saveDiary({ date: d.date, body: d.body })),
-  openDiaryData: async date => { await flush(); const r = await api.openDiary(date); if (r) upsertDiary(r); }
+  touchDiary: d => later('dy' + (d.kind || '日記') + d.date, () => api.saveDiary({ date: d.date, kind: d.kind || '日記', body: d.body })),
+  openDiaryData: async date => { await flush(); const r = await api.openDiary(date, '日記'); if (r) upsertDiary(r); }
 });

@@ -42,45 +42,21 @@ let v = null;
 const open = () => { v = store.openVault(vault); return v.state(); };
 
 ipcMain.handle('load', () => open());
+ipcMain.handle('state', () => v.state());
 
 // ===== 同期（ラズパイの同期サーバーと。設定が無ければ何もしない）=====
-const Sync = require('./sync');
-let mainWin = null, syncer = null, syncStop = null, syncTimer = null, syncState = { status: '同期はオフです', at: null };
-const syncCfg = () => readCfg().sync || {};
-async function runSync() {
-  const c = syncCfg(); if (!c.url || !c.token || !v) return syncState;
-  if (!syncer) return syncState;
-  try {
-    const r = await syncer.sync();
-    if (r.conflicts.length > 5) { // 競合が一度にたくさん出るのは、どこかが繰り返している印。広がる前に止める
-      if (syncStop) { syncStop(); syncStop = null; } clearInterval(syncTimer); syncer = null;
-      syncState = { status: `競合が ${r.conflicts.length} 件も出たので、同期を止めました。確認してから「同期の設定」で保存し直すと、再開します`, at: Date.now(), error: true };
-      if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('syncState', syncState);
-      return syncState;
-    }
-    if (r.pulled.length || r.deleted.length) { v = store.openVault(vault); if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('state', v.state()); }
-    syncState = { status: r.conflicts.length ? `同期しました（競合 ${r.conflicts.length} 件を未整理に残しました）` : '同期しました', at: Date.now(), pulled: r.pulled.length, pushed: r.pushed.length, conflicts: r.conflicts.length };
-  } catch (e) { syncState = { status: '同期できません: ' + (e.message || e), at: Date.now(), error: true }; }
-  if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('syncState', syncState);
-  return syncState;
-}
-function startSync() {
-  if (syncStop) { syncStop(); syncStop = null; } clearInterval(syncTimer); syncer = null;
-  const c = syncCfg(); if (!c.url || !c.token) { syncState = { status: '同期はオフです', at: null }; return; }
-  syncer = Sync.create({ dir: vault, url: c.url, token: c.token });
-  let t = null; const soon = () => { clearTimeout(t); t = setTimeout(runSync, 1500); };
-  syncStop = syncer.watch(soon);                                   // サーバーが変わったら、すぐ取る
-  try { const w = fs.watch(vault, { persistent: false }, (_e, f) => { if (f && Sync.okName(String(f)) && f !== '.pkm-sync.json') soon(); }); const old = syncStop; syncStop = () => { old(); w.close(); }; } catch { }
-  syncTimer = setInterval(runSync, 60000); setTimeout(runSync, 800);
-}
-// ===== スマホにアプリを入れる（USB・adb）=====
-ipcMain.handle('phoneInstall', async (_e, withSync) => {
-  const c = syncCfg();
-  return require('./phone').install({ sync: c.url && c.token ? { url: c.url, token: c.token } : null, syncWanted: true }, m => { if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('phoneMsg', m); });
+let mainWin = null;
+// ===== スマホ（USB・adb）=====
+ipcMain.handle('phoneInstall', async () => require('./phone').install({}, m => { if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('phoneMsg', m); }));
+// スマホのメモを取り込む（Gnosis の \M と同じ）。取り込んだら、スマホへ「取り込み済み」の印を返す
+ipcMain.handle('phoneImport', async () => {
+  const P = require('./phone'), C = require('./capture');
+  const r = await P.pull(); if (!r.ok) return { ok: false, message: r.message };
+  const out = C.importCapture(v, r.data);
+  const m = await P.mark(C.importedEntries(v), out.scansDone);
+  await P.sendRecords(v.records().map(x => x.name));
+  return { ok: true, state: v.state(), message: C.summaryText(out.sum) + (m.ok ? '\nスマホには「取り込み済み」の印を返しました。もう要らないメモは、スマホの中から消せます（PC のノートは消えません）。' : '\n（取り込み済みの印は、スマホへ返せませんでした: ' + m.message + '）') };
 });
-ipcMain.handle('syncGet', () => ({ ...syncCfg(), state: syncState }));
-ipcMain.handle('syncSet', (_e, c) => { const cfg = readCfg(); cfg.sync = c && c.url ? { url: String(c.url).trim(), token: String(c.token || '').trim() } : {}; writeCfg(cfg); startSync(); return runSync().then(() => ({ ...syncCfg(), state: syncState })); });
-ipcMain.handle('syncNow', () => runSync());
 ipcMain.handle('saveNote', (_e, n) => v.saveNote(n));
 ipcMain.handle('createNote', (_e, x) => v.createNote(x));
 ipcMain.handle('addPaperIndex', (_e, x) => v.addPaperIndex(x));
@@ -103,9 +79,10 @@ ipcMain.handle('openPath', (_e, rel) => {
   return shell.openPath(full);
 });
 ipcMain.handle('diaryState', () => v.diaryState());
-ipcMain.handle('openDiary', (_e, date) => v.openDiary(date));
+ipcMain.handle('openDiary', (_e, date, kind) => v.openDiary(date, kind));
 ipcMain.handle('saveDiary', (_e, d) => v.saveDiary(d));
-ipcMain.handle('deleteDiary', (_e, date) => v.deleteDiary(date));
+ipcMain.handle('deleteDiary', (_e, date, kind) => v.deleteDiary(date, kind));
+ipcMain.handle('recordOp', (_e, op, ...a) => ['addRecord', 'setRecordParent', 'setDayParent', 'renameRecord', 'deleteRecord', 'mergeRecords'].includes(op) ? v[op](...a) : false);
 ipcMain.handle('addDiaryScan', (_e, date, bytes) => v.addDiaryScan(date, Buffer.from(bytes)));
 ipcMain.handle('saveDoc', (_e, name, obj) => v.saveDoc(name, obj));
 ipcMain.handle('deleteDoc', (_e, name) => v.deleteDoc(name));
@@ -190,6 +167,6 @@ if (!argv.some(a => ['--version', '--update', '--check', '--install'].includes(a
     width: 1200, height: 800, title: 'YuriiKasten', backgroundColor: '#ffffff',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
   });
-  mainWin = w; w.loadFile('index.html'); w.webContents.once('did-finish-load', () => startSync());
+  mainWin = w; w.loadFile('index.html'); 
 });
 app.on('window-all-closed', () => app.quit());

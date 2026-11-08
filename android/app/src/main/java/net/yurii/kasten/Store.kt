@@ -35,8 +35,6 @@ data class Settings(
     val expandAll: Boolean = false,  // 長いメモを「続きを見る」を押さずに全部見せる
     val folgeView: Boolean = false,  // Folgezettel 表示（Branch の親子を木で見せる）。false は時系列
     val writtenStamp: Boolean = false, // 日付を指定して書いたとき、書いている時刻を入れる（本文の最初に書いた日も入れる）
-    val serverUrl: String = "",       // ラズパイの同期サーバー（例: http://raspberrypi.local:8787）。空なら送らない
-    val serverToken: String = "",     // 同期サーバーの合言葉
 )
 
 /**
@@ -238,7 +236,6 @@ class Store(private val ctx: Context) {
             expandAll = o.optBoolean("expandAll", false),
             folgeView = o.optBoolean("folgeView", false),
             writtenStamp = o.optBoolean("writtenStamp", false),
-            serverUrl = o.optString("serverUrl", ""), serverToken = o.optString("serverToken", ""),
         )
     }
 
@@ -259,7 +256,6 @@ class Store(private val ctx: Context) {
         o.put("topics", JSONArray(s.topics)); o.put("lastTopic", s.lastTopic)
         o.put("ringSeconds", s.ringSeconds); o.put("expandAll", s.expandAll)
         o.put("folgeView", s.folgeView); o.put("writtenStamp", s.writtenStamp)
-        o.put("serverUrl", s.serverUrl); o.put("serverToken", s.serverToken)
         // PC の取り込み（\M）もこのファイルを読む（topicModes）
         val modes = JSONObject()
         s.topicModes.forEach { (k, v) -> modes.put(k, JSONObject().put("single", v.single).put("stamp", v.stamp).put("record", v.record)) }

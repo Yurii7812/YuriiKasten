@@ -33,18 +33,75 @@ test('スマホが無い・許可待ちのときは、やることを案内す�
   assert.ok(!r.ok && /許可/.test(r.message));
 });
 
-test('入れて、同期の設定も渡す（既存の設定は壊さない）', async () => {
+test('入れる（USB）。設定は渡さない', async () => {
   const d = tmp(); process.env.ADB = fakeAdb(d, 'ABC123\\tdevice');
-  const r = await load().install({ sync: { url: 'http://raspberrypi.local:8787', token: 'tk' } }, () => { });
-  assert.ok(r.ok, r.message); assert.match(r.message, /読み返して確かめました/);
-  assert.match(fs.readFileSync(path.join(d, 'calls.log'), 'utf8'), /force-stop/);
-  const calls = fs.readFileSync(path.join(d, 'calls.log'), 'utf8');
-  assert.match(calls, /-s ABC123 install -r .*YuriiKasten-memo\.apk/);
-  const o = JSON.parse(fs.readFileSync(path.join(d, 'settings.out'), 'utf8'));
-  assert.deepStrictEqual([o.alarmOn, o.serverUrl, o.serverToken], [true, 'http://raspberrypi.local:8787', 'tk']);
+  const r = await load().install({}, () => { });
+  assert.ok(r.ok, r.message);
+  assert.match(fs.readFileSync(path.join(d, 'calls.log'), 'utf8'), /-s ABC123 install -r .*YuriiKasten-memo\.apk/);
+  assert.ok(!fs.existsSync(path.join(d, 'settings.out')));
 });
 
 test('入れるのに失敗したら、理由を返す', async () => {
   const d = tmp(); process.env.ADB = fakeAdb(d, 'ABC123\\tdevice', 'Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE]');
   const r = await load().install({}, () => { }); assert.ok(!r.ok && /INSTALL_FAILED/.test(r.message));
+});
+
+// スマホの代わりに、フォルダ（data/files/…）を読み書きする adb
+function fakePhone(dir) {
+  const data = path.join(dir, 'data'); fs.mkdirSync(path.join(data, 'files/images'), { recursive: true }); fs.mkdirSync(path.join(data, 'files/scans'), { recursive: true });
+  const f = path.join(dir, 'adb');
+  fs.writeFileSync(f, `#!/bin/sh
+D="${data}"
+case "$*" in
+  devices) printf 'List of devices attached\\nPH1\\tdevice\\n' ;;
+  *"pm path"*) echo 'package:/x' ;;
+  *"exec-out run-as net.yurii.kasten cat "*) rel="\${*##*cat }"; cat "$D/$rel" ;;
+  *"sh -c 'cat > "*) rel="\$(echo "$*" | sed -E "s/.*cat > ([^']*)'.*/\\1/")"; cat > "$D/$rel" ;;
+  *"run-as net.yurii.kasten mv "*) all="$*"; tail="\${all##*mv }"; set -- $tail; mv "$D/$1" "$D/$2" ;;
+esac
+exit 0
+`, { mode: 0o755 });
+  return { adb: f, data };
+}
+
+test('スマホのメモを USB で取り込む: 未整理・日記・記録・まとめ・スキャン。取り込み済みの印をスマホへ返す', async () => {
+  const d = tmp(), ph = fakePhone(d), vdir = tmp(); process.env.ADB = ph.adb;
+  const t0 = new Date(2026, 10, 8, 9, 30, 0).getTime(), w = (rel, x) => fs.writeFileSync(path.join(ph.data, rel), x);
+  const entries = [
+    { id: 'a', created: t0, topic: '', text: '未整理のメモ', images: ['p1.jpg'], parent: null, contexts: [], exported: false, edited: 0 },
+    { id: 'b', created: t0 + 60000, topic: '', text: '続き [元](memo:a)', images: [], parent: 'a', contexts: ['a'], exported: false, edited: 0 },
+    { id: 'c', created: t0 + 120000, topic: '日記', text: '朝の日記', images: [], parent: null, contexts: [], exported: false, edited: 0 },
+    { id: 'd', created: t0 + 180000, topic: '夢', text: '空を飛んだ', images: [], parent: null, contexts: [], exported: false, edited: 0 },
+    { id: 'e', created: t0 + 240000, topic: '読書', text: '1 行目', images: [], parent: null, contexts: [], exported: false, edited: 0 },
+  ];
+  w('files/entries.json', JSON.stringify(entries)); w('files/images/p1.jpg', Buffer.from([0xff, 0xd8, 1]));
+  w('files/settings.json', JSON.stringify({ topicModes: { 夢: { record: true }, 読書: { single: true, stamp: true } } }));
+  w('files/scans/scans.json', JSON.stringify([{ name: 'paper-scan-1.jpg', id: '12a', imported: false }, { name: 'paper-scan-2.jpg', id: '', imported: false }]));
+  w('files/scans/paper-scan-1.jpg', Buffer.from([0xff, 0xd8, 2])); w('files/scans/paper-scan-2.jpg', Buffer.from([0xff, 0xd8, 3]));
+  const P = load(), C = require('../capture'), { openVault } = require('../store');
+  const r = await P.pull(); assert.ok(r.ok, r.message); assert.strictEqual(r.data.entries.length, 5); assert.ok(r.data.images['p1.jpg'].length === 3);
+  assert.deepStrictEqual(Object.keys(r.data.scans.files), ['paper-scan-1.jpg']);   // 番号の無いスキャンは、取らない
+  const v = openVault(vdir), out = C.importCapture(v, r.data), st = v.state();
+  assert.deepStrictEqual([out.sum.notes, out.sum.days, out.sum.appended, out.sum.scans, out.sum.blankScans], [2, 2, 1, 1, 1]);
+  const a = st.notes.find(n => n.body.includes('未整理のメモ')), b = st.notes.find(n => n.body.includes('続き'));
+  assert.ok(a.noid && /!\[\]\(\d{14}\.jpg\)/.test(a.body));                                  // 写真は日時の名前で取り込まれる
+  assert.ok(b.body.startsWith(`[分岐元](${a.stem}.md)\n[文脈](${a.stem}.md)`) && b.body.includes(`[元](${a.stem}.md)`));   // 分岐元・文脈・memo: リンク
+  assert.match(st.diaries.find(x => x.kind === '日記').body, /09:32 朝の日記/); assert.match(st.diaries.find(x => x.kind === '夢').body, /09:33 空を飛んだ/);
+  assert.ok(st.records.some(k => k.name === '夢'));                                                  // 記録の種類は、なければ足される
+  const book = st.notes.find(n => n.title === '読書'); assert.match(book.body, /## 2026-11-08[\s\S]*09:34 1 行目/);
+  assert.ok(st.notes.find(n => n.s === 'p' && n.id === '12a').image);                                // 番号つきのスキャン → 紙のノート
+  const m = await P.mark(C.importedEntries(v), out.scansDone); assert.ok(m.ok);
+  const imp = JSON.parse(fs.readFileSync(path.join(ph.data, 'files/imported.json'), 'utf8')); assert.strictEqual(imp.entries.length, 5);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(ph.data, 'files/scans_done.json'), 'utf8')), ['paper-scan-1.jpg']);
+  // もう一度取り込んでも、増えない
+  const out2 = C.importCapture(v, (await P.pull()).data); assert.deepStrictEqual([out2.sum.notes, out2.sum.days, out2.sum.already], [0, 0, 5]);
+  assert.strictEqual(openVault(vdir).state().notes.filter(n => n.noid).length, 3);   // 未整理 2 件 + まとめのノート 1 件
+  // 取り込み先のノートを消したら、そのメモは「取り込み済み」に含めない
+  v.deleteNotes([{ s: 'd', id: a.id }]); assert.strictEqual(C.importedEntries(v).length, 4);
+  await P.sendRecords(['夢']); assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(ph.data, 'files/records.json'), 'utf8')).records, ['夢']);
+});
+
+test('スマホにアプリが無い・つながっていないときは、やることを案内する（取り込み）', async () => {
+  const d = tmp(); process.env.ADB = fakeAdb(d, ''); const r = await load().pull();
+  assert.ok(!r.ok && /USBデバッグ/.test(r.message));
 });

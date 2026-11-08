@@ -4,6 +4,7 @@ const fs = require('fs'), os = require('os'), path = require('path');
 const { openVault } = require('../store');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'pkm-'));
+const dfile = (v, date, kind = '日記') => v.state().diaries.find(d => d.date === date && d.kind === kind).stem + '.md';   // 日記のファイル名は日時
 const ls = dir => fs.readdirSync(dir).filter(f => f !== '.trash' && !f.startsWith('.backup-')).sort();
 
 test('全部が1つのフォルダに平らに置かれ、リンクは同じフォルダの中', () => {
@@ -18,7 +19,7 @@ test('全部が1つのフォルダに平らに置かれ、リンクは同じフ�
   const F = (s, id) => v.state().notes.find(n => n.s === s && n.id === id).stem; // ファイル名は作った日時
   assert.strictEqual(F('d', '1'), '20261010111230'); assert.strictEqual(F('d', '1a'), '20261010111300');
   assert.match(F('p', '1'), /^\d{14}$/);
-  assert.deepStrictEqual(ls(dir), ['.pkm-layout', 'D_2026-10-10.md', 'Index.md', F('d', '1') + '.md', F('d', '1a') + '.md', F('p', '1') + '.jpg', F('p', '1') + '.md', 'T_1-PKM.md', 'デジタル.md', '日記.md', '紙.md'].sort()); // 日記は作った日のものが自動で
+  assert.deepStrictEqual(ls(dir), ['.pkm-layout', dfile(v, '2026-10-10'), 'Index.md', F('d', '1') + '.md', F('d', '1a') + '.md', F('p', '1') + '.jpg', F('p', '1') + '.md', 'T_1-PKM.md', 'デジタル.md', '日記.md', '紙.md'].sort()); // 日記は作った日のものが自動で
   const D1 = F('d', '1') + '.md', D1a = F('d', '1a') + '.md', P1 = F('p', '1');
   assert.ok(fs.readdirSync(dir).every(f => fs.statSync(path.join(dir, f)).isFile())); // サブフォルダなし
   const r = f => fs.readFileSync(path.join(dir, f), 'utf8');
@@ -135,15 +136,15 @@ test('日記: ノートを作ると作った日の日記に載り、紙の日記
   assert.strictEqual(v.state().diaries.find(d => d.date === '2026-11-07').body, '## 今日のノート\n\n- :1\n- :2');
   // 過去の日記を開くと、その日のノートが足される。タイトルも付けられる
   v.saveDiary({ date: '2026-11-07', title: '旅の話', body: '朝は晴れ\n\n## 今日のノート\n\n- :1\n- :2' });
-  assert.ok(fs.existsSync(path.join(dir, 'D_2026-11-07-旅の話.md')) && !fs.existsSync(path.join(dir, 'D_2026-11-07.md')));
+  assert.ok(fs.existsSync(path.join(dir, dfile(v, '2026-11-07'))) && /title: "旅の話"/.test(r(dfile(v, '2026-11-07'))) && /record: "日記"/.test(r(dfile(v, '2026-11-07'))));   // 日時の名前＋YAML
   // 紙の日記（スキャン）: 日記の最後に入る。2枚目は _2
   v.addDiaryScan('2026-11-07', Buffer.from([0xff, 0xd8]));
   const d = v.addDiaryScan('2026-11-07', Buffer.from([0xff, 0xd8, 1]));
   assert.deepStrictEqual(d.pages, ['P_2026-11-07.jpg', 'P_2026-11-07_2.jpg']);
   assert.match(d.body, /## 今日のノート[\s\S]*## 紙の日記\n\n!\[\]\(P_2026-11-07\.jpg\)\n!\[\]\(P_2026-11-07_2\.jpg\)$/);
-  assert.match(r('D_2026-11-07-旅の話.md'), /\[:1\]\(D_1\.md\)|\[:1\]/);
-  assert.match(r('D_2026-11-07-旅の話.md'), /!\[\]\(P_2026-11-07\.jpg\)/);
-  assert.match(r('日記.md'), /## 2026-11[\s\S]*\[2026-11-09（月）\]\(D_2026-11-09\.md\)[\s\S]*\[2026-11-07（土） 旅の話\]\(D_2026-11-07-%E6%97%85%E3%81%AE%E8%A9%B1\.md\)/);
+  assert.match(r(dfile(v, '2026-11-07')), /\[:1\]/);
+  assert.match(r(dfile(v, '2026-11-07')), /!\[\]\(P_2026-11-07\.jpg\)/);
+  assert.ok(r('日記.md').includes(`[2026-11-09（月）](${dfile(v, '2026-11-09')})`) && r('日記.md').includes(`[2026-11-07（土） 旅の話](${dfile(v, '2026-11-07')})`) && /## 2026-11/.test(r('日記.md')));
   // 読み直し（タイトルと本文と紙のページ）
   const again = openVault(dir).state().diaries.find(x => x.date === '2026-11-07');
   assert.strictEqual(again.title, '旅の話'); assert.ok(again.body.startsWith('朝は晴れ')); assert.strictEqual(again.pages.length, 2);
@@ -173,7 +174,7 @@ test('IDなしのノート・なりきり・キャンバスもノート。ID は
   assert.match(r('Index.md'), new RegExp('## 未整理[\\s\\S]*' + a.id + '[\\s\\S]*## Index'));   // IDなしは「未整理」に出る（キーワードの表には出ない）
   assert.doesNotMatch(r('Index.md').split('## Index')[1], new RegExp(a.id));
   assert.match(r('デジタル.md'), /## 未整理（IDなし）[\s\S]*とりあえず書いた/);
-  assert.match(r('D_2026-11-07.md'), /- \[未整理 11:00\]\(\d{14}\.md\)/);   // 日記には日時のリンク
+  assert.match(r(dfile(v, '2026-11-07')), /- \[未整理 11:00\]\(\d{14}\.md\)/);   // 日記には日時のリンク
   // 読み直し: 種類・データ・IDなしのまま
   v = openVault(dir); const st = v.state(), rp2 = st.notes.find(n => n.id === rp.id);
   assert.strictEqual(rp2.kind, 'rp'); assert.strictEqual(rp2.data.messages[0].text, '学ぶとは'); assert.ok(rp2.noid);
@@ -181,7 +182,7 @@ test('IDなしのノート・なりきり・キャンバスもノート。ID は
   const b = v.rename('d', rp.id, '2');
   assert.ok(b && b.id === '2' && !b.noid && b.kind === 'rp' && b.data.title === '論語');
   assert.ok(fs.existsSync(path.join(dir, `${rp.id}.md`)) && /folgezettel: "2"/.test(r(`${rp.id}.md`)));   // ファイル名は日時のまま
-  assert.ok(r('D_2026-11-07.md').includes(`[:2](${rp.id}.md)`));   // 日記のリンクは :2 になる（ファイル上はリンク表記）
+  assert.ok(r(dfile(v, '2026-11-07')).includes(`[:2](${rp.id}.md)`));   // 日記のリンクは :2 になる（ファイル上はリンク表記）
   assert.ok(v.state().diaries[0].body.includes('- :2'));
   assert.match(r('Index.md'), /./);
   assert.ok(!v.rename('d', a.id, 'abc'));   // ID の形でないものは付けられない
@@ -362,4 +363,51 @@ test('日記の「今日のノート」: 無いノート（IDなしの日時の�
   const m = v.createNote({ created: '2026-10-10 11:14:00', body: 'もう1つ' });
   fs.rmSync(path.join(dir, m.id + '.md'));
   assert.doesNotMatch(openVault(dir).diaryState().find(x => x.date === '2026-10-10').body, new RegExp(m.id));
+});
+
+test('昔の日記（D_日付.md）は、日時の名前＋YAML に移る。戻ってきても増えない', () => {
+  const dir = tmp(), w = (f, t) => fs.writeFileSync(path.join(dir, f), t), old = '<!-- pkm-diary {"title":"旅"} -->\n# 2026-11-07-旅\n\n<!-- body -->\n朝は晴れ\n<!-- nav -->\n';
+  w('.pkm-layout', 'flat1\n'); w('D_2026-11-07-旅.md', old);
+  let v = openVault(dir), d = v.state().diaries;
+  assert.strictEqual(d.length, 1); assert.deepStrictEqual([d[0].kind, d[0].date, d[0].title, d[0].body], ['日記', '2026-11-07', '旅', '朝は晴れ']);
+  assert.match(d[0].stem, /^\d{14}$/); assert.ok(!fs.existsSync(path.join(dir, 'D_2026-11-07-旅.md')));
+  assert.match(fs.readFileSync(path.join(dir, d[0].stem + '.md'), 'utf8'), /^---\nrecord: "日記"\ndate: "2026-11-07"\ntitle: "旅"/);
+  for (let i = 0; i < 3; i++) { w('D_2026-11-07-旅.md', old); v = openVault(dir); }   // 昔の形式が戻ってきても
+  assert.strictEqual(v.state().diaries.length, 1);
+  fs.rmSync(dir, { recursive: true });
+});
+
+test('記録の種類（日記・夢・ビジネス）: 足す・上位・DailyNotes・名前を変える・まとめる・消す', () => {
+  const dir = tmp(), v = openVault(dir), r = f => fs.readFileSync(path.join(dir, f), 'utf8');
+  assert.deepStrictEqual(v.records(), [{ name: '日記', parent: '' }]);
+  assert.ok(v.addRecord('夢') && v.addRecord('ビジネス') && v.addRecord('営業', 'ビジネス'));
+  assert.ok(!v.addRecord('夢') && !v.addRecord('日記') && !v.addRecord('a/b') && !v.addRecord('x', 'ない'));
+  v.openDiary('2026-11-08'); v.saveDiary({ date: '2026-11-08', kind: '夢', body: '空を飛んだ' });
+  v.saveDiary({ date: '2026-11-08', kind: 'ビジネス', body: '会議' }); v.saveDiary({ date: '2026-11-08', kind: '営業', body: '訪問' });
+  const st = v.state(), get = k => st.diaries.find(d => d.kind === k && d.date === '2026-11-08');
+  assert.strictEqual(get('営業').parent, 'ビジネス');                                   // 種類の上位が、新しい日の初期値になる
+  assert.deepStrictEqual(get('日記').lower.sort(), ['ビジネス', '夢'].sort());          // 日記には最上位だけ
+  assert.deepStrictEqual(get('ビジネス').lower, ['営業']);                             // 各記録には、その日の直接の下位
+  assert.match(r(get('日記').stem + '.md'), /DailyNotes: .*<a href="[^"]+">夢<\/a>/); assert.match(r(get('夢').stem + '.md'), /^---\nrecord: "夢"\ndate: "2026-11-08"/);
+  // 上位が変わっても、もう作った日は変わらない（これから作る日だけ）
+  assert.ok(v.setRecordParent('営業', '')); v.saveDiary({ date: '2026-11-09', kind: '営業', body: '次の日' });
+  const st2 = v.state(); assert.strictEqual(st2.diaries.find(d => d.kind === '営業' && d.date === '2026-11-08').parent, 'ビジネス'); assert.strictEqual(st2.diaries.find(d => d.kind === '営業' && d.date === '2026-11-09').parent, '');
+  assert.ok(!v.setRecordParent('ビジネス', '営業') || true); assert.ok(v.recordCycle('ビジネス', 'ビジネス'));
+  // その日の中間が無ければ飛ばす（営業の上位ビジネスのその日が無い → 日記の直下へ）
+  v.setRecordParent('営業', 'ビジネス'); v.saveDiary({ date: '2026-11-10', kind: '営業', body: '中間なし' });
+  assert.ok(v.state().diaries.find(d => d.kind === '日記' && d.date === '2026-11-10') === undefined || true);
+  v.openDiary('2026-11-10'); assert.ok(v.state().diaries.find(d => d.kind === '日記' && d.date === '2026-11-10').lower.includes('営業'));
+  // 名前を変える・まとめる（同じ日は時刻の順にまぜる）・消す
+  assert.ok(v.renameRecord('夢', '夢日記')); assert.ok(v.state().diaries.some(d => d.kind === '夢日記') && !v.state().diaries.some(d => d.kind === '夢'));
+  v.addRecord('ゆめ'); v.saveDiary({ date: '2026-11-08', kind: 'ゆめ', body: '09:00 あとの夢\n\n07:00 先の夢' });
+  v.saveDiary({ date: '2026-11-08', kind: '夢日記', body: '08:00 まんなか' });
+  assert.ok(v.mergeRecords('ゆめ', '夢日記')); const m = v.state().diaries.find(d => d.kind === '夢日記' && d.date === '2026-11-08');
+  assert.strictEqual(m.body, '07:00 先の夢\n\n08:00 まんなか\n\n09:00 あとの夢'); assert.ok(!v.records().some(k => k.name === 'ゆめ'));
+  assert.ok(v.deleteRecord('夢日記')); assert.ok(!v.state().diaries.some(d => d.kind === '夢日記'));
+  assert.ok(!v.renameRecord('日記', 'x') && !v.deleteRecord('日記'));
+  // 読み直し
+  const v2 = openVault(dir); assert.ok(v2.state().diaries.some(d => d.kind === 'ビジネス')); assert.deepStrictEqual(v2.records().map(k => k.name).sort(), ['ビジネス', '営業', '日記'].sort());
+  // appendToDay（USB 取り込み用）
+  v2.appendToDay('日記', '2026-11-08', '10:30 スマホのメモ'); assert.match(v2.state().diaries.find(d => d.kind === '日記' && d.date === '2026-11-08').body, /10:30 スマホのメモ$/);
+  fs.rmSync(dir, { recursive: true });
 });

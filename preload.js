@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer: r } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   load: () => r.invoke('load'),
+  state: () => r.invoke('state'),
   saveNote: n => r.invoke('saveNote', n),
   createNote: x => r.invoke('createNote', x),
   addPaperIndex: x => r.invoke('addPaperIndex', x),
@@ -16,9 +17,10 @@ contextBridge.exposeInMainWorld('api', {
   setFileInfo: (name, info) => r.invoke('setFileInfo', name, info),
   openPath: rel => r.invoke('openPath', rel),
   diaryState: () => r.invoke('diaryState'),
-  openDiary: date => r.invoke('openDiary', date),
+  openDiary: (date, kind) => r.invoke('openDiary', date, kind),
   saveDiary: d => r.invoke('saveDiary', d),
-  deleteDiary: date => r.invoke('deleteDiary', date),
+  deleteDiary: (date, kind) => r.invoke('deleteDiary', date, kind),
+  recordOp: (op, ...a) => r.invoke('recordOp', op, ...a),
   addDiaryScan: (date, bytes) => r.invoke('addDiaryScan', date, bytes),
   saveDoc: (name, obj) => r.invoke('saveDoc', name, obj),
   deleteDoc: name => r.invoke('deleteDoc', name),
@@ -30,11 +32,7 @@ contextBridge.exposeInMainWorld('api', {
   setReading: (k, yomi) => r.invoke('setReading', k, yomi),
   suggest: text => r.invoke('suggest', text),
   chooseVault: () => r.invoke('chooseVault'),
-  phoneInstall: withSync => r.invoke('phoneInstall', withSync),
-  onPhoneMsg: cb => r.on('phoneMsg', (_e, m) => cb(m)),
-  syncGet: () => r.invoke('syncGet'),
-  syncSet: c => r.invoke('syncSet', c),
-  syncNow: () => r.invoke('syncNow'),
-  onState: cb => r.on('state', (_e, st) => cb(st)),
-  onSyncState: cb => r.on('syncState', (_e, st) => cb(st))
+  phoneInstall: () => r.invoke('phoneInstall'),
+  phoneImport: () => r.invoke('phoneImport'),
+  onPhoneMsg: cb => r.on('phoneMsg', (_e, m) => cb(m))
 });
