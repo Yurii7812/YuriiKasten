@@ -164,8 +164,8 @@ function entries() {
 }
 
 // ===== 画面 =====
-export function open(name, keep) {
-  view = name; sourceIds = null; sel = null; draft = '';
+export function open(name, keep, savedSourceIds) {
+  view = name; sourceIds = keep && Array.isArray(savedSourceIds) ? new Set(savedSourceIds) : null; sel = null; draft = '';
   if (name !== '*') { doc.target.topic = name; doc.target.ups = doc.target.ups.filter(u => u !== name); save(); }   // 書き込み先は、見ているトピックに。設定（トピック・上）は、変えない限り引き継ぐ
   ctx.setCur(ctx.place({ k: 'chat', topic: name }, keep)); ctx.setMode('chat');
   render(); ctx.renderTabs(); ctx.renderList();
@@ -177,7 +177,7 @@ export function gotoSource(ids) {
   sourceIds = new Set(ids.filter(Boolean));
   if (!sourceIds.size) return toast('元のチャットメモが指定されていません');
   view = '*'; viewMode = 'all'; day = ''; cq = ''; sel = null;
-  ctx.setCur(ctx.place({ k: 'chat', topic: '*' }, false)); ctx.setMode('chat');
+  ctx.setCur(ctx.place({ k: 'chat', topic: '*', sourceMemoIds: [...sourceIds] }, false)); ctx.setMode('chat');
   render(); ctx.renderTabs(); ctx.renderList();
   const missing = [...sourceIds].filter(id => !msg(id)).length;
   if (missing) toast(`${missing} 件の元メモが見つかりません（削除された可能性があります）`);
@@ -538,7 +538,11 @@ document.addEventListener('click', e => {
     if (a === 'rcancel') { const id = e.target.closest('[data-id]') && e.target.closest('[data-id]').dataset.id; replyTos = id ? replyTos.filter(x => x !== id) : []; showReply(); }
     if (a === 'rdone') { redit = null; showRedit(); }
     if (a === 'selno') { sel = null; paint(); selbar(); }
-    if (a === 'source-clear') { sourceIds = null; render(); return; }
+    if (a === 'source-clear') {
+      sourceIds = null;
+      const current = ctx.cur(); if (current && current.k === 'chat') delete current.sourceMemoIds;
+      render(); ctx.renderTabs(); return;
+    }
     if (a === 'selmove') { const ms = [...sel].map(id => msg(id)).filter(Boolean); if (ms.length) setTopicsDialog(ms); return; }
     if (a === 'seldel') { const ids = [...sel]; if (!ids.length || !confirm(`${ids.length} 件のメモを消しますか？（復元用に残しておきます。ノートにしたものは、残ります）`)) return; for (const id of ids) { const m = msg(id); if (!m) continue; doc.messages = doc.messages.filter(x => x !== m); doc.trash.push({ ...m, deleted: Date.now() }); memoToDay(m, m.text, true); } sel = null; save(); paint(); selbar(); ctx.renderList(); }
     if (a === 'selclear') { sel = new Set(); lastSel = null; paint(); selbar(); }   // 選択を全部外す（選ぶ状態は続く）
