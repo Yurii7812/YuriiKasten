@@ -81,23 +81,28 @@ test('スマホのメモを USB で取り込む: 未整理・日記・記録・�
   const P = load(), C = require('../capture'), { openVault } = require('../store');
   const r = await P.pull(); assert.ok(r.ok, r.message); assert.strictEqual(r.data.entries.length, 5); assert.ok(r.data.images['p1.jpg'].length === 3);
   assert.deepStrictEqual(Object.keys(r.data.scans.files), ['paper-scan-1.jpg']);   // 番号の無いスキャンは、取らない
-  const v = openVault(vdir), out = C.importCapture(v, r.data), st = v.state();
-  assert.deepStrictEqual([out.sum.notes, out.sum.days, out.sum.appended, out.sum.scans, out.sum.blankScans], [2, 2, 1, 1, 1]);
-  const a = st.notes.find(n => n.body.includes('未整理のメモ')), b = st.notes.find(n => n.body.includes('続き'));
-  assert.ok(a.noid && /!\[\]\(\d{14}\.jpg\)/.test(a.body));                                  // 写真は日時の名前で取り込まれる
-  assert.ok(b.body.startsWith(`[分岐元](${a.stem}.md)\n[文脈](${a.stem}.md)`) && b.body.includes(`[元](${a.stem}.md)`));   // 分岐元・文脈・memo: リンク
-  assert.match(st.diaries.find(x => x.kind === '日記').body, /09:32 朝の日記/); assert.match(st.diaries.find(x => x.kind === '夢').body, /09:33 空を飛んだ/);
+  const v = openVault(vdir), out = C.importCapture(v, r.data), st = v.state(), chat = st.docs['C_チャット'];
+  assert.deepStrictEqual([out.sum.chats, out.sum.days, out.sum.appended, out.sum.scans, out.sum.blankScans], [5, 2, 1, 1, 1]);
+  const ma = chat.messages.find(m => m.text.includes('未整理のメモ')), mb = chat.messages.find(m => m.text.includes('続き'));
+  assert.ok(/!\[\]\(\d{14}\.jpg\)/.test(ma.text) && ma.topic === '');                               // 写真は日時の名前で取り込まれる
+  assert.ok(mb.text.startsWith(`[@未整理のメモ](memo:${ma.id}) `));                                       // 分岐元・文脈は、返信の @ になる（親・文脈は持たない）
+  assert.ok(!chat.messages.some(m => 'parent' in m || 'ctx' in m));
+  assert.strictEqual(st.notes.filter(n => n.noid && n.title !== '読書').length, 0);                       // 普通のメモは、ノートにならない
+  assert.match(st.diaries.find(x => x.kind === '日記').body, /09:32 朝の日記/); assert.match(st.diaries.find(x => x.kind === '夢').body, /09:33 空を飛んだ/);   // 日記・記録には、行としても入る
+  assert.ok(chat.messages.some(m => m.topic === '日記' && m.text.includes('朝の日記')) && chat.messages.some(m => m.topic === '夢'));
   assert.ok(st.records.some(k => k.name === '夢'));                                                  // 記録の種類は、なければ足される
+  assert.ok(chat.topics.some(t => t.name === '読書'));
   const book = st.notes.find(n => n.title === '読書'); assert.match(book.body, /## 2026-11-08[\s\S]*09:34 1 行目/);
   assert.ok(st.notes.find(n => n.s === 'p' && n.id === '12a').image);                                // 番号つきのスキャン → 紙のノート
+  assert.ok(fs.readdirSync(vdir).some(f => /^C_2026-11-08\.md$/.test(f)) && /09:30 未整理のメモ/.test(fs.readFileSync(path.join(vdir, 'C_2026-11-08.md'), 'utf8')));   // 日ごとの md
   const m = await P.mark(C.importedEntries(v), out.scansDone); assert.ok(m.ok);
   const imp = JSON.parse(fs.readFileSync(path.join(ph.data, 'files/imported.json'), 'utf8')); assert.strictEqual(imp.entries.length, 5);
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(ph.data, 'files/scans_done.json'), 'utf8')), ['paper-scan-1.jpg']);
   // もう一度取り込んでも、増えない
-  const out2 = C.importCapture(v, (await P.pull()).data); assert.deepStrictEqual([out2.sum.notes, out2.sum.days, out2.sum.already], [0, 0, 5]);
-  assert.strictEqual(openVault(vdir).state().notes.filter(n => n.noid).length, 3);   // 未整理 2 件 + まとめのノート 1 件
-  // 取り込み先のノートを消したら、そのメモは「取り込み済み」に含めない
-  v.deleteNotes([{ s: 'd', id: a.id }]); assert.strictEqual(C.importedEntries(v).length, 4);
+  const out2 = C.importCapture(v, (await P.pull()).data); assert.deepStrictEqual([out2.sum.chats, out2.sum.days, out2.sum.already], [0, 0, 5]);
+  assert.strictEqual(openVault(vdir).state().docs['C_チャット'].messages.length, 5);
+  // チャットメモを消して、ごみ箱からも無くなったら、そのメモは「取り込み済み」に含めない
+  const cd = v.state().docs['C_チャット']; cd.messages = cd.messages.filter(x => x.id !== ma.id); cd.trash = []; v.saveDoc('C_チャット', cd); assert.strictEqual(C.importedEntries(v).length, 4);
   await P.sendRecords(['夢']); assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(ph.data, 'files/records.json'), 'utf8')).records, ['夢']);
 });
 

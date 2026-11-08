@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('api', {
   saveDiary: d => r.invoke('saveDiary', d),
   deleteDiary: (date, kind) => r.invoke('deleteDiary', date, kind),
   recordOp: (op, ...a) => r.invoke('recordOp', op, ...a),
+  appendToDay: (kind, date, text) => r.invoke('appendToDay', kind, date, text),
   addDiaryScan: (date, bytes) => r.invoke('addDiaryScan', date, bytes),
   saveDoc: (name, obj) => r.invoke('saveDoc', name, obj),
   deleteDoc: name => r.invoke('deleteDoc', name),

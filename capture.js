@@ -1,10 +1,9 @@
 'use strict';
-// スマホのメモ（USB で読んだもの）を vault に取り込む。Gnosis の \M と同じ決まり
-//   日記トピック → その日の「日記」に、時刻つきで入る
-//   時系列記録のトピック（夢など）→ その種類の、その日のノートに、時刻つきで入る
-//   「1つのノートにまとめる」トピック → そのトピックのノート（IDなし）に追記
-//   ふつうのトピック・未所属 → 1 件 = 1 つの「未整理」（IDなし）ノート。トピック名はキーワードに。分岐元・文脈は先頭にリンクの行
-//   紙のスキャン（番号つき）→ その番号の紙のノートの画像。番号の無いものは、スマホで番号を付けてから
+// スマホのメモ（USB で読んだもの）を vault に取り込む
+//   すべてのメモは、PC の「チャットメモ」に入る（トピックは、スマホと同じ名前。ノートにはならない。ノートにするのは、あとで選んだものだけ）
+//   さらに: 日記トピック → その日の「日記」に、時刻つきの行でも／時系列記録のトピック（夢など）→ その種類の、その日のノートにも／
+//           「1つのノートにまとめる」トピック → そのトピックのノート（IDなし）にも追記
+//   分岐元・文脈は、チャットメモでは使わない（返信の @ に直す）。紙のスキャン（番号つき）→ その番号の紙のノートの画像。番号の無いものは、スマホで番号を付けてから
 // 取り込み先は .pkm-import.json に覚える（同じメモを二度取り込まない。取り込み済みの印をスマホへ返すのに使う）
 const fs = require('fs'), path = require('path');
 const L = require('./lib');
@@ -16,42 +15,48 @@ const stateFile = v => path.join(v.vault, '.pkm-import.json');
 function loadState(v) { try { return { ids: {}, scans: [], topicNotes: {}, ...JSON.parse(fs.readFileSync(stateFile(v), 'utf8')) }; } catch { return { ids: {}, scans: [], topicNotes: {} }; } }
 const saveState = (v, st) => fs.writeFileSync(stateFile(v), JSON.stringify(st, null, 1));
 
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 function importCapture(v, data) {
-  const st = loadState(v), sum = { notes: 0, days: 0, appended: 0, scans: 0, blankScans: 0, already: 0 };
+  const st = loadState(v), sum = { notes: 0, chats: 0, days: 0, appended: 0, scans: 0, blankScans: 0, already: 0 };
   const names = new Map();   // スマホの写真の名前 → vault に入れた名前
   const saveImages = list => (list || []).filter(n => data.images[n]).map(n => {
     if (!names.has(n)) names.set(n, v.addFiles([{ name: n, bytes: [...data.images[n]] }])[0]);
     return names.get(n);
   });
-  const stemOfEntry = id => { const t = st.ids[id]; return t && t.dest && /^\d{14}/.test(t.dest) ? t.dest : null; };
+  const chat = JSON.parse(JSON.stringify((v.state().docs || {})['C_チャット'] || {})); chat.topics = chat.topics || []; chat.messages = chat.messages || []; chat.noted = chat.noted || {}; chat.trash = chat.trash || []; chat.converted = chat.converted || {};
+  const memoOf = id => st.ids[id] && st.ids[id].memo;     // スマホのメモ id → チャットメモの id
   const noteByStem = stem => v.state().notes.find(n => n.stem === stem);
   const entries = [...data.entries].sort((a, b) => a.created - b.created), modes = data.topicModes || {};
+  let chatTouched = false;
   for (const e of entries) {
     if (st.ids[e.id]) { sum.already++; continue; }
     const topic = e.topic === 'メモ' ? '' : (e.topic || ''), at = L.now(new Date(e.created)), date = L.dayOf(at), mode = modes[topic] || {};
     const imgs = saveImages(e.images).map(n => `![](${n})`);
-    const text = (e.text || '').replace(MEMO_LINK, (_a, label, id) => { const s = stemOfEntry(id); return s ? `[${label}](${s}.md)` : label; }).trim();
+    const mention = id => { const m = memoOf(id); const o = m && chat.messages.find(x => x.id === m); return o ? `[@${(o.text || '').split('\n')[0].replace(/[\[\]()]/g, '').slice(0, 14)}](memo:${o.id})` : ''; };
+    const refs = [e.parent, ...(e.contexts || [])].filter(Boolean).map(mention).filter(Boolean).join(' ');   // 分岐元・文脈 → 返信の @
+    const text = (e.text || '').replace(MEMO_LINK, (_a, label, id) => mention(id) || label).trim();
+    const memoText = [refs ? refs + ' ' + text : text, ...imgs].filter(x => x.trim()).join('\n').trim();
+    // 1. チャットメモに
+    if (topic && topic !== '日記' && !chat.topics.some(t => t.name === topic)) chat.topics.push({ name: topic, type: 'bubble', stamp: true, entry: null });
+    const memo = { id: uid(), topic, t: e.created, text: memoText, src: 'phone:' + e.id };
+    chat.messages.push(memo); chatTouched = true; sum.chats++;
+    st.ids[e.id] = { dest: `chat:${memo.id}`, memo: memo.id, snap: e };
+    // 2. 日記・記録・まとめのノートにも
     const stamp = e.notime ? '' : hm(e.created) + ' ';
     const line = [stamp + text, ...imgs].filter(x => x.trim()).join('\n');
-    if (topic === '日記' || (mode.record && topic)) { // 日記・時系列記録: その日のノートに
+    if (topic === '日記' || (mode.record && topic)) {
       const kind = topic === '日記' ? '日記' : topic;
       if (!v.records().some(r => r.name === kind)) v.addRecord(kind);
-      v.appendToDay(kind, date, line); st.ids[e.id] = { dest: `record:${kind}:${date}`, snap: e }; sum.days++;
-    } else if (mode.single && topic) { // 1 つのノートにまとめる
+      v.appendToDay(kind, date, line); sum.days++;
+    } else if (mode.single && topic) {
       let n = st.topicNotes[topic] && noteByStem(st.topicNotes[topic]);
       if (!n) { const c = v.createNote({ kind: 'text', title: topic, created: at, body: '', keywords: [] }); st.topicNotes[topic] = c.stem; n = c; }
       const head = mode.stamp !== false && !(n.body || '').includes(`## ${date}`) ? `## ${date}\n\n` : '';
       v.saveNote({ s: 'd', id: n.id, keywords: n.keywords, body: ((n.body || '').trim() ? n.body.replace(/\s+$/, '') + '\n\n' : '') + head + line, title: n.title, created: n.created });
-      st.ids[e.id] = { dest: n.stem, snap: e }; sum.appended++;
-    } else { // 1 件 = 1 ノート（IDなし）
-      const heads = [];
-      const par = e.parent && stemOfEntry(e.parent); if (par) heads.push(`[分岐元](${par}.md)`);
-      for (const c of e.contexts || []) { const s = stemOfEntry(c); if (s) heads.push(`[文脈](${s}.md)`); }
-      const body = [heads.join('\n'), text, imgs.join('\n')].filter(x => x.trim()).join('\n\n');
-      const n = v.createNote({ kind: 'text', created: at, body, keywords: topic && topic !== '日記' ? [topic] : [] });
-      st.ids[e.id] = { dest: n.stem, snap: e }; sum.notes++;
+      sum.appended++;
     }
   }
+  if (chatTouched) v.saveDoc('C_チャット', chat);
   // 紙のスキャン（番号つき）
   const done = [];
   for (const sc of (data.scans && data.scans.index) || []) {
@@ -65,7 +70,8 @@ function importCapture(v, data) {
 }
 // スマホへ返す「取り込み済み」: 取り込み先がまだ vault にあるものだけ（消したノートは、取り込み済みにしない）
 function importedEntries(v) {
-  const st = loadState(v), s = v.state(), has = dest => {
+  const st = loadState(v), s = v.state(), chat = (s.docs || {})['C_チャット'] || {}, has = dest => {
+    if (dest.startsWith('chat:')) { const id = dest.slice(5); return (chat.messages || []).some(m => m.id === id) || (chat.trash || []).some(m => m.id === id); }
     if (dest.startsWith('record:')) { const [, kind, date] = dest.split(':'); return s.diaries.some(d => d.kind === kind && d.date === date); }
     return s.notes.some(n => n.stem === dest);
   };
@@ -73,7 +79,7 @@ function importedEntries(v) {
 }
 function summaryText(sum) {
   const parts = [];
-  if (sum.notes) parts.push(`未整理のノート ${sum.notes} 件`); if (sum.days) parts.push(`日記・記録に ${sum.days} 件`); if (sum.appended) parts.push(`まとめのノートに ${sum.appended} 件`);
+  if (sum.chats) parts.push(`チャットメモに ${sum.chats} 件`); if (sum.days) parts.push(`日記・記録にも ${sum.days} 件`); if (sum.appended) parts.push(`まとめのノートにも ${sum.appended} 件`);
   if (sum.scans) parts.push(`紙のスキャン ${sum.scans} 枚`);
   let t = parts.length ? '取り込みました: ' + parts.join('、') + '。' : '新しく取り込むものはありませんでした。';
   if (sum.blankScans) t += `\n番号の無いスキャン ${sum.blankScans} 枚は、スマホで番号を付けてから取り込めます。`;

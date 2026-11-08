@@ -192,6 +192,7 @@ function openLink(rel) {
   try { path = decodeURIComponent(path); } catch { }
   let m;
   if ((m = path.match(/^(\d{14}(?:-\d+)?)\.md$/)) && (m = notes.find(x => x.stem === m[1]))) return openNote(m.s, m.id, null, false, hash); // ノート（紙・IDなし・なりきり・キャンバスも）
+  if ((m = path.match(/^C_\d{4}-\d{2}-\d{2}\.md$/)) && /^m-/.test(hash)) return Chat.gotoMemo(hash.slice(2));   // チャットメモの出典リンク
   if ((m = path.match(/^(\d{14}(?:-\d+)?)\.md$/)) && (m = diaries.find(x => x.stem === m[1]))) return openDiary(m.date, false, m.kind);   // 記録（日記・夢…）の、その日のノート
   return api.openPath(rel);
 }
@@ -1593,7 +1594,7 @@ async function phoneInstall() {
 async function phoneImport() {
   toast('スマホのメモを読んでいます…');
   const r = await api.phoneImport();
-  if (r.ok) { applyState(r.state); diaries = r.state.diaries; records = r.state.records || records; refreshFiles(); if (mode === 'diary') renderList(); }
+  if (r.ok) { Chat.init(r.state.docs || {}); applyState(r.state); diaries = r.state.diaries; records = r.state.records || records; refreshFiles(); if (mode === 'diary') renderList(); }
   alert(r.message);
 }
 async function checkUpdate(info) {

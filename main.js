@@ -87,6 +87,7 @@ ipcMain.handle('diaryState', () => v.diaryState());
 ipcMain.handle('openDiary', (_e, date, kind) => v.openDiary(date, kind));
 ipcMain.handle('saveDiary', (_e, d) => v.saveDiary(d));
 ipcMain.handle('deleteDiary', (_e, date, kind) => v.deleteDiary(date, kind));
+ipcMain.handle('appendToDay', (_e, kind, date, text) => v.appendToDay(kind, date, text));
 ipcMain.handle('recordOp', (_e, op, ...a) => ['addRecord', 'setRecordParent', 'setDayParent', 'renameRecord', 'deleteRecord', 'mergeRecords'].includes(op) ? v[op](...a) : false);
 ipcMain.handle('addDiaryScan', (_e, date, bytes) => v.addDiaryScan(date, Buffer.from(bytes)));
 ipcMain.handle('saveDoc', (_e, name, obj) => v.saveDoc(name, obj));

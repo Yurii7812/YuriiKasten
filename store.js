@@ -427,9 +427,28 @@ function openVault(vault) {
       }
     }
   }
+  // チャットメモの、日ごとの md（見る用。正は C_チャット.json）。「## 日付」のあとに、「時:分 本文」を 1 メモ 1 段落で。ノートにしたメモは「→ ノート」のリンクつき
+  function chatMdFiles() {
+    const d = docs.get('C_チャット'), out = new Map(); if (!d || !Array.isArray(d.messages) || !d.messages.length) return out;
+    const dayOf = m => L.dayOf(L.now(new Date(m.t))), dayFileOf = new Map(d.messages.map(m => [m.id, `C_${dayOf(m)}.md`]));
+    const byDay = new Map(); for (const m of [...d.messages].sort((x, y) => x.t - y.t)) { const k = dayOf(m); if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(m); }
+    for (const [date, ms] of byDay) {
+      const paras = ms.map(m => {
+        const t = new Date(m.t), time = `${pad2(t.getHours())}:${pad2(t.getMinutes())}`;
+        const text = String(m.text || '').replace(/\[@([^\]]*)\]\(memo:([^)\s]+)\)/g, (_a, lb, id) => dayFileOf.has(id) ? `[@${lb}](${enc(dayFileOf.get(id))}#m-${id})` : `@${lb}`).replace(/\n{2,}/g, '\n').split('\n').join('  \n');
+        const noted = ((d.noted || {})[m.id] || []).map(st => { const n = [...notes.values()].find(x => x.stem === st); return n ? `[ノート ${L.isNoid(n.id) ? '（IDなし）' : n.id}](${enc(st + '.md')})` : null; }).filter(Boolean);
+        return `<a id="m-${m.id}"></a>${time} ${text}${m.topic ? `　［${m.topic}］` : ''}${noted.length ? '　→ ' + noted.join(' ') : ''}`;
+      });
+      out.set(`C_${date}.md`, `# チャットメモ ${date}\n\n## ${date}\n\n${paras.join('\n\n')}\n`);
+    }
+    return out;
+  }
+  const pad2 = x => String(x).padStart(2, '0');
   function rebuild() {
     mergePaperIndex(); pruneDiaryLinks();
-    const files = new Map([['Index.md', indexMd()], [KEYWORDS, keywordsMd()], [UNSORTED, unsortedMd()], [LIST.d, listMd('d')], [LIST.p, listMd('p')], [DIARY_LIST, diaryListMd()]]);
+    const chatFiles = chatMdFiles();
+    for (const f of fs.readdirSync(vault)) if (/^C_\d{4}-\d{2}-\d{2}\.md$/.test(f) && !chatFiles.has(f)) removeFile(f);   // メモが無くなった日のファイル
+    const files = new Map([...chatFiles, ['Index.md', indexMd()], [KEYWORDS, keywordsMd()], [UNSORTED, unsortedMd()], [LIST.d, listMd('d')], [LIST.p, listMd('p')], [DIARY_LIST, diaryListMd()]]);
     for (const d of diaries.values()) files.set(diaryFile(d), diaryMd(d));
     for (const n of notes.values()) files.set(noteFile(n.s, n.id), noteMd(n));
     for (const t of topics.values()) files.set(topicFile(t.name), topicMd(t));
@@ -554,7 +573,7 @@ function openVault(vault) {
     // ===== JSON の文書（チャット・なりきり・役・キャンバス）=====
     saveDoc(name, obj) {
       if (!/^(C|K)_[^\\/]+$/.test(name)) return false;
-      docs.set(name, obj); fs.writeFileSync(abs(name + '.json'), JSON.stringify(obj, null, 1)); return true;
+      docs.set(name, obj); fs.writeFileSync(abs(name + '.json'), JSON.stringify(obj, null, 1)); if (name === 'C_チャット') rebuild(); return true;
     },
     deleteDoc(name) { if (!docs.has(name)) return false; docs.delete(name); removeFile(name + '.json'); return true; },
     setReading(k, r) { if (r) readings[k] = r; else delete readings[k]; rebuild(); return true; },

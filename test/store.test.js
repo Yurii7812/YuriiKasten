@@ -415,3 +415,14 @@ test('記録の種類（日記・夢・ビジネス）: 足す・上位・DailyN
   v2.appendToDay('日記', '2026-11-08', '10:30 スマホのメモ'); assert.match(v2.state().diaries.find(d => d.kind === '日記' && d.date === '2026-11-08').body, /10:30 スマホのメモ$/);
   fs.rmSync(dir, { recursive: true });
 });
+
+test('チャットメモ: 日ごとの md（## 日付・時刻つきの段落・ノートにしたメモの→リンク・メンションのリンク）', () => {
+  const dir = tmp(), v = openVault(dir), r = f => fs.readFileSync(path.join(dir, f), 'utf8');
+  const t = new Date(2026, 10, 8, 14, 3).getTime(), note = v.createNote({ created: '2026-11-08 14:05', body: '元のチャットメモ: x' });
+  v.saveDoc('C_チャット', { topics: [], messages: [{ id: 'a1', topic: '', t, text: '最初のメモ\n2行目' }, { id: 'b2', topic: '読書', t: t + 600000, text: '[@最初のメモ](memo:a1) の続き' }], noted: { a1: [note.stem] } });
+  const md = r('C_2026-11-08.md');
+  assert.ok(md.startsWith('# チャットメモ 2026-11-08\n\n## 2026-11-08\n\n<a id="m-a1"></a>14:03 最初のメモ  \n2行目　→ [ノート （IDなし）](' + note.stem + '.md)'), md);
+  assert.match(md, /<a id="m-b2"><\/a>14:13 \[@最初のメモ\]\(C_2026-11-08\.md#m-a1\) の続き　［読書］/);
+  v.saveDoc('C_チャット', { topics: [], messages: [], noted: {} });
+  assert.ok(!fs.existsSync(path.join(dir, 'C_2026-11-08.md')));   // メモが無くなった日のファイルは消える
+});
