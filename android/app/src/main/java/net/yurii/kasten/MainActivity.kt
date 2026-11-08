@@ -762,8 +762,8 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
                 add(SheetAct(Icons.Filled.Edit, "編集", "このメモの文章を直す") { editing = target.id; input = target.text })
                 add(SheetAct(Icons.Filled.Link, "返信先を足す", "返信先にするメモを続けてタップ") { contextFor = target.id })
                 add(SheetAct(Icons.Filled.AccountTree, "返信先を編集", "返信先を確かめて外す") { relEditFor = target.id })
-                add(SheetAct(Icons.Filled.Label, "トピックを変える", "別のトピックへ移す") { topicDialogFor = target.id })
-                add(SheetAct(Icons.Filled.Label, "上を変える", "上のトピック（いくつでも）") { upsDialogIds = listOf(target.id) })
+                add(SheetAct(Icons.Filled.Label, "所属トピックを変える", "別の所属トピックへ移す") { topicDialogFor = target.id })
+                add(SheetAct(Icons.Filled.Label, "上位トピックを変える", "上位トピック（いくつでも）") { upsDialogIds = listOf(target.id) })
                 add(SheetAct(Icons.Filled.Checklist, "複数選択", "まとめて移す・消す") { selecting = true; selected.clear(); selected.add(target.id); rangeAnchor = target.id; rangeMode = false; contextFor = null; keyboard?.hide() })
                 add(SheetAct(Icons.Filled.ContentCopy, "コピー", "文章をクリップボードへ") {
                     ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("memo", target.text))
