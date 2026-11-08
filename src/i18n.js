@@ -201,7 +201,7 @@ EN['Ctrl+クリックで新しいタブに開きます。'] = 'Ctrl+click opens 
 const TABLES = { en: EN };
 const SKIP = '.cm-editor,.nt,.mt,.mhead b,textarea,input,[data-user],.msg-text,.mc,.snip,.kc-body,.kc-title,.title,.bubble .tx';
 let lang = 'ja', obs = null, keys = [];
-const orig = new WeakMap();
+const orig = new WeakMap(), origA = new WeakMap();   // original (Japanese) text of text nodes / attributes
 function tr(s) {
   if (lang === 'ja' || !s) return s;
   const T = TABLES[lang]; if (!T) return s;
@@ -211,6 +211,7 @@ function tr(s) {
   for (const k of keys) if (k.length > 1 && out.includes(k)) out = out.split(k).join(T[k]);
   return out;
 }
+const ATTRS = ['title', 'placeholder', 'aria-label'];
 function node(n) {
   if (n.nodeType === 3) {
     const p = n.parentElement; if (!p || p.closest(SKIP) || ['SCRIPT', 'STYLE'].includes(p.tagName)) return;
@@ -219,7 +220,11 @@ function node(n) {
     const v = tr(orig.get(n)); if (v !== n.data) n.data = v;
   } else if (n.nodeType === 1) {
     if (n.closest && n.closest(SKIP) && !n.matches('button,[title]')) return;
-    for (const a of ['title', 'placeholder', 'aria-label']) if (n.hasAttribute && n.hasAttribute(a)) { const v = n.getAttribute(a), t = tr(v); if (t !== v) n.setAttribute(a, t); }
+    for (const a of ATTRS) if (n.hasAttribute && n.hasAttribute(a)) {
+      const m = origA.get(n) || {}; origA.set(n, m); const v = n.getAttribute(a);
+      if (!(a in m) || (v !== m[a] && v !== tr(m[a]))) m[a] = v;
+      const t = tr(m[a]); if (t !== v) n.setAttribute(a, t);
+    }
     n.childNodes.forEach(node);
   }
 }
@@ -231,7 +236,10 @@ export function setLang(l) {
   if (!obs) { obs = new MutationObserver(ms => { obs.disconnect(); for (const m of ms) { if (m.type === 'characterData') node(m.target); else if (m.type === 'attributes') node(m.target); else m.addedNodes.forEach(node); } watch(); }); watch(); }
 }
 function watch() { obs.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['title', 'placeholder'] }); }
-function restore(n) { const w = document.createTreeWalker(n, 4); let x; while ((x = w.nextNode())) if (orig.has(x)) x.data = orig.get(x); }
+function restore(n) {
+  const w = document.createTreeWalker(n, 4); let x; while ((x = w.nextNode())) if (orig.has(x)) x.data = orig.get(x);
+  n.querySelectorAll('*').forEach(e => { const m = origA.get(e); if (m) for (const a in m) if (e.hasAttribute(a)) e.setAttribute(a, m[a]); });
+}
 export const t = tr;
 export const LANGS = { en: 'English', ja: '日本語' };
 // dialogs
