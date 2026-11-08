@@ -12,6 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const L = require('./lib');
+const MemoGroup = require('./memo-group');
 
 const PRE = { d: 'D_', p: 'P_' };
 const LIST = { d: 'デジタル.md', p: '紙.md' };
@@ -254,7 +255,7 @@ function openVault(vault) {
     const id = validId(fz) && !get(sp, fz) ? fz : r.stem;   // IDが無い・重なったものは IDなし として残す（消えない）
     const text = r.text, i = text.indexOf(BODY), j = text.indexOf(NAV), kind = y.kind || 'text';
     const created = y.created || L.now(r.mtime || new Date()), n = { s: sp, id, stem: r.stem, created, updated: y.updated || created, keywords: Array.isArray(y.keywords) ? y.keywords : [], kind, title: y.title || '', body: '', img: r.img, data: null, pinned: !!y.pinned, color: y.color || '', archived: !!y.archived, parentStem: y.parent_stem || '' };
-    if (kind !== 'text') { n.data = meta(text, 'pkm-data') || {}; if (!n.title) n.title = n.data.title || ''; n.data.title = n.title; n.body = L.deriveBody(kind, n.data); }
+    if (kind !== 'text') { n.data = meta(text, 'pkm-data') || {}; if (!n.title) n.title = n.data.title || ''; n.data.title = n.title; n.body = kind === 'memo-group' ? '' : L.deriveBody(kind, n.data); }
     else n.body = L.mdToBody(i >= 0 ? text.slice(i + BODY.length, j > i ? j : undefined) : L.fmParse(text).rest);
     notes.set(key(sp, id), n);
   }
@@ -274,14 +275,15 @@ function openVault(vault) {
   const topicOf = (s, id) => [...topics.values()].find(t => t.entry && t.entry.s === s && t.entry.id === id);
   const label = (s, id) => (s === 'p' ? '紙' : '') + id;
 
-  const titleOfNote = n => n.title ? n.title : n.kind && n.kind !== 'text' ? ((n.data && n.data.title) || (n.kind === 'rp' ? '会話' : 'キャンバス')) : (n.body.split('\n').find(x => x.trim()) || '').replace(/^#+\s*/, '').slice(0, 30);
+  const titleOfNote = n => n.title ? n.title : n.kind && n.kind !== 'text' ? ((n.data && n.data.title) || (n.kind === 'rp' ? '会話' : n.kind === 'memo-group' ? 'チャットメモのノート' : 'キャンバス')) : (n.body.split('\n').find(x => x.trim()) || '').replace(/^#+\s*/, '').slice(0, 30);
   // ノートの md（Gnosis 風）:  YAML ／ # 題 ／ ParentBranch: TopicBranch: Topic: ／ 本文 ／ ChildBranch:   空の行は出さない。前・次・一覧へのリンクは Index.md にだけ
   //   ParentBranch ＝ 親（番号の1つ上）　TopicBranch ＝ このノートが入口のトピックIndex　Topic ＝ このノートが載っているトピックIndex　ChildBranch ＝ 分岐（子）
   const ml = (href, text) => `[${esc(text)}](${href})`;
   const lk = (s_, id) => { const m = get(s_, id); return ml(noteHref(s_, id), `${label(s_, id)}${m && m.title ? ' ' + m.title : ''}`); };
   function noteMd(n) {
     const head = `# ${n.title ? esc(n.title) : L.isNoid(n.id) ? '未整理 ' + n.created : (n.s === 'p' ? '紙 ' : '') + n.id}`;
-    const body = BODY + L.bodyToMd(n.body, (x, sp) => noteHref(sp || n.s, x)) + '\n' + NAV;
+    const shownBody = n.kind === 'memo-group' ? MemoGroup.markdown(n.data, docs.get('C_チャット')) : n.body;
+    const body = BODY + L.bodyToMd(shownBody, (x, sp) => noteHref(sp || n.s, x)) + '\n' + NAV;
     if (L.isNoid(n.id)) return [fmOf(n).replace(/\n$/, ''), n.data ? `<!-- pkm-data ${J(n.data)} -->` : null, head, '', body, ''].filter(x => x !== null).join('\n');
     const has = x => !!get(n.s, x), parent = L.parentIn(n.id, has), kids = ids(n.s).filter(x => L.parentIn(x, has) === n.id), t = topicOf(n.s, n.id);
     const listed = [...topics.values()].filter(o => L.mergeTopic(o).rows.some(r => r[n.s].some(x => L.splitAnchor(x).id === n.id)));
@@ -472,7 +474,7 @@ function openVault(vault) {
 
   // ===== 画面とのやりとり =====
   const url = n => n.img ? 'file://' + abs(n.img).split('/').map(enc).join('/') + '?' + fs.statSync(abs(n.img)).mtimeMs : null;
-  const pub = n => ({ pinned: !!n.pinned, color: n.color || '', archived: !!n.archived, s: n.s, id: n.id, stem: n.stem, created: n.created, updated: n.updated || n.created, keywords: n.keywords, body: n.body, image: url(n), kind: n.kind || 'text', data: n.data || null, noid: L.isNoid(n.id), title: n.title || '', parentStem: n.parentStem || '' });
+  const pub = n => ({ pinned: !!n.pinned, color: n.color || '', archived: !!n.archived, s: n.s, id: n.id, stem: n.stem, created: n.created, updated: n.updated || n.created, keywords: n.keywords, body: n.kind === 'memo-group' ? MemoGroup.body(n.data, docs.get('C_チャット')) : n.body, image: url(n), kind: n.kind || 'text', data: n.data || null, noid: L.isNoid(n.id), title: n.title || '', parentStem: n.parentStem || '' });
 
   const pubDiary = d => ({ kind: d.kind, date: d.date, title: d.title, body: d.body, parent: d.parent || '', parents: dayParents(d), stem: d.stem, pages: d.kind === DIARY ? pages.get(d.date) || [] : [], lower: lowerOf(d).map(o => o.kind) });
   const ensureDiary = (date, kind = DIARY) => {
@@ -616,7 +618,7 @@ function openVault(vault) {
       if (x.kind) n.kind = x.kind;
       if (x.data !== undefined) n.data = x.data;
       if (x.title !== undefined) n.title = (x.title || '').trim();
-      if (n.kind && n.kind !== 'text') { if (n.data) n.data.title = n.title || n.data.title; n.body = L.deriveBody(n.kind, n.data); }
+      if (n.kind && n.kind !== 'text') { if (n.data) n.data.title = n.title || n.data.title; n.body = n.kind === 'memo-group' ? '' : L.deriveBody(n.kind, n.data); }
       if (before !== JSON.stringify([n.keywords, n.body, n.title, n.data, n.kind, n.pinned, n.color, n.archived, n.parentStem])) n.updated = L.now();
       notes.set(key(x.s, x.id), n);
       if (n.s === 'd' && (fresh || n.pending)) linkNote(n); // 作った日の日記に載る（空のノートは、書いてから）
@@ -624,7 +626,7 @@ function openVault(vault) {
     },
     // IDなしのノートを作る（kind: text / rp / canvas）。ID を渡せば、その ID で作る
     createNote({ kind = 'text', id, data = null, body = '', created, title = '', keywords = [], parentStem = '' } = {}) {
-      const at = created || L.now(), stem = freeStem(L.parseTime(at) || new Date()), nid = id || stem, n = { s: 'd', id: nid, stem, parentStem, created: at, updated: at, keywords: keywords || [], kind, title, data, img: null, body: kind === 'text' ? body : L.deriveBody(kind, data) };
+      const at = created || L.now(), stem = freeStem(L.parseTime(at) || new Date()), nid = id || stem, n = { s: 'd', id: nid, stem, parentStem, created: at, updated: at, keywords: keywords || [], kind, title, data, img: null, body: kind === 'text' ? body : kind === 'memo-group' ? '' : L.deriveBody(kind, data) };
       notes.set(key('d', nid), n); linkNote(n); rebuild(); return pub(n);
     },
     // IDを消して、IDなしにする（デジタルのみ）。このノートを指していた :ID は、ファイルへのリンクに直す。
