@@ -7,7 +7,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
@@ -85,13 +84,34 @@ private fun TopicRow(t: String, current: String?, counts: Map<String, Int>, onPi
 
 /** 「上」のトピックを、いくつでも選ぶ（探せる。最近使った順。トピックと過去に一緒に使ったものを先に）。 */
 @Composable
-fun UpsDialog(ordered: List<String>, initial: Set<String>, exclude: String?, onDismiss: () -> Unit, onDone: (List<String>) -> Unit) {
+fun UpsDialog(ordered: List<String>, initial: Set<String>, exclude: String?, onDismiss: () -> Unit, onDone: (List<String>) -> Unit, onCreate: (String) -> Boolean) {
     var query by remember { mutableStateOf("") }
+    var creating by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
+    var createError by remember { mutableStateOf("") }
     val chosen = remember { mutableStateListOf<String>().also { it.addAll(initial) } }
     val shown = remember(ordered, query) { ordered.filter { it != exclude && matchesQuery(topicLabel(it), query) } }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("上位トピック（いくつでも）") },
         text = { Column {
             OutlinedTextField(query, { query = it }, placeholder = { Text("探す") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            TextButton(onClick = { creating = !creating; createError = "" }) {
+                Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
+                Text("新しいトピックを作る")
+            }
+            if (creating) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(newName, { newName = it; createError = "" }, placeholder = { Text("トピック名") },
+                        singleLine = true, modifier = Modifier.weight(1f))
+                    TextButton(onClick = {
+                        val name = newName.trim()
+                        if (name.isNotEmpty() && onCreate(name)) {
+                            if (name !in chosen) chosen.add(name)
+                            newName = ""; query = ""; creating = false; createError = ""
+                        } else createError = "その名前は使えません"
+                    }) { Text("作る") }
+                }
+                if (createError.isNotEmpty()) Text(createError, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+            }
             LazyColumn(Modifier.heightIn(max = 360.dp)) {
                 items(shown.size) { i ->
                     val n = shown[i]
