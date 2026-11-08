@@ -159,6 +159,9 @@ export function open({ notes, topics, readings = {}, subject = null, onChoose })
     if (go) { navigate(go.dataset.ixKind, go.dataset.ixKey); return; }
     if (e.target.closest('[data-ix-back]')) {
       st.view = st.history.pop() || null;
+      const previous = selectedBase();
+      if (previous && previous.s === 'd' && X.isAssigned(previous)) setMethod('child');
+      else setMethod('direct');
       drawPreview(); drawFooter(); return;
     }
     const method = e.target.closest('[data-ix-method]');
