@@ -2,6 +2,7 @@ package net.yurii.kasten
 
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewConfiguration
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import android.Manifest
 import android.content.ClipData
@@ -19,9 +20,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
@@ -71,7 +74,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(statusBarStyle = androidx.activity.SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = androidx.activity.SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT))
         promptState.value = intent?.getBooleanExtra(Alarm.EXTRA_PROMPT, false) == true
         setContent {
             // 長押しを短めに（標準は約 0.5 秒。メモの長押しが遅く感じるため）
@@ -96,20 +100,21 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/** PC の Gnosis のダーク（既定のテーマ・起動画面と同じ）に合わせた配色。文字は真っ白にせず、背景との差は十分に取る。 */
-private val GnosisColors = darkColorScheme(
-    primary = Color(0xFF6CB6FF), onPrimary = Color(0xFF0D1117),
-    primaryContainer = Color(0xFF2D4F75), onPrimaryContainer = Color(0xFFE6EDF3),
-    secondary = Color(0xFFE5C07B), onSecondary = Color(0xFF22272E),
-    secondaryContainer = Color(0xFF3D3726), onSecondaryContainer = Color(0xFFF2E3C0),
-    tertiary = Color(0xFF83AFE2), onTertiary = Color(0xFF22272E),
-    background = Color(0xFF22272E), onBackground = Color(0xFFCDD5DE),
-    surface = Color(0xFF22272E), onSurface = Color(0xFFCDD5DE),
-    surfaceVariant = Color(0xFF2D333B), onSurfaceVariant = Color(0xFFADBAC7),
-    surfaceContainerLowest = Color(0xFF1C2128), surfaceContainerLow = Color(0xFF262C34),
-    surfaceContainer = Color(0xFF2A3038), surfaceContainerHigh = Color(0xFF30363F),
-    surfaceContainerHighest = Color(0xFF373E47),
-    outline = Color(0xFF909DAB), outlineVariant = Color(0xFF444C56),
+/** ライトテーマ（PC の YuriiKasten と同じ、白地に青）。文字は真っ黒にせず、背景との差は十分に取る。 */
+private val GnosisColors = lightColorScheme(
+    primary = Color(0xFF3B5BDB), onPrimary = Color.White,
+    primaryContainer = Color(0xFFE3E9FF), onPrimaryContainer = Color(0xFF1E2F7A),
+    secondary = Color(0xFFB7791F), onSecondary = Color.White,
+    secondaryContainer = Color(0xFFFFF1D6), onSecondaryContainer = Color(0xFF5A3A00),
+    tertiary = Color(0xFF2F9E44), onTertiary = Color.White,
+    background = Color.White, onBackground = Color(0xFF2B2D33),
+    surface = Color.White, onSurface = Color(0xFF2B2D33),
+    surfaceVariant = Color(0xFFF1F3FA), onSurfaceVariant = Color(0xFF5F6578),
+    surfaceContainerLowest = Color.White, surfaceContainerLow = Color(0xFFF8F9FD),
+    surfaceContainer = Color(0xFFF3F5FB), surfaceContainerHigh = Color(0xFFEEF1F9),
+    surfaceContainerHighest = Color(0xFFE8ECF6),
+    outline = Color(0xFF9AA1B5), outlineVariant = Color(0xFFE0E4F0),
+    error = Color(0xFFC0392B),
 )
 
 private val timeFmt = SimpleDateFormat("HH:mm", Locale.JAPAN)
@@ -460,8 +465,13 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
                         Text(if (selecting) "${selected.size} 件選択" else topicLabel(topic), fontWeight = FontWeight.Bold,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                         val bdSub = backdate?.let { "　日付: " + SimpleDateFormat("M月d日", Locale.JAPAN).format(Date(it)) } ?: ""
-                        Text((if (n == 0) "すべて取り込み済み" else "未取り込み $n 件") + bdSub, fontSize = 12.sp,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val doneN = entries.count { it.id in imported }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text((if (n == 0) "すべて取り込み済み" else "未取り込み $n 件") + bdSub, fontSize = 12.sp,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (doneN > 0 && !selecting) Text("　済み $doneN 件を消す", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium,
+                                modifier = Modifier.clickable { cleanImportedOpen = true })   // PC に取り込んだメモを、まとめてスマホから消す（確認つき）
+                        }
                     }
                 },
                 actions = {
@@ -579,13 +589,13 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
                 // 表示と書き込み先を同時に切り替える。全部表示からは未所属で保存。
                 // 並べるのは 全部・未所属・日記・その他 だけ。その他を押すとトピックの一覧（探す・足す）
                 val other = topic !in listOf(ALL, UNASSIGNED, DIARY)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.horizontalScroll(rememberScrollState()).padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(ALL, UNASSIGNED, DIARY).forEach { t ->
-                        FilterChip(selected = t == topic, onClick = { setTopic(t) }, label = { Text(topicLabel(t)) },
-                            leadingIcon = if (t == DIARY) ({ Icon(Icons.Filled.Book, null, Modifier.size(16.dp)) }) else null)
+                        FilterChip(selected = t == topic, onClick = { setTopic(t) }, shape = RoundedCornerShape(16.dp),
+                            label = { Text((when (t) { ALL -> "🗂 "; UNASSIGNED -> "📥 "; else -> "📔 " }) + topicLabel(t)) })
                     }
-                    FilterChip(selected = other, onClick = { topicListOpen = true },
-                        label = { Text(if (other) topic else "その他", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    FilterChip(selected = other, onClick = { topicListOpen = true }, shape = RoundedCornerShape(16.dp),
+                        label = { Text("🏷 " + if (other) topic else "その他", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp)) })
                 }
                 if (pendingImages.isNotEmpty()) {
@@ -600,26 +610,26 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
                         }
                     }
                 }
-                Row(verticalAlignment = Alignment.Bottom) {
+                // 入力欄: 枠なしのやわらかい面。画像は左、大きくする・戻すは入力欄の右上、送るは丸い青いボタン
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     IconButton(onClick = { pickingImage = true; pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
-                        Icon(Icons.Filled.Image, "画像を付ける")
+                        Icon(Icons.Filled.Image, "画像を付ける", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    OutlinedTextField(
+                    TextField(
                         value = input, onValueChange = { input = it },
                         modifier = Modifier.weight(1f).focusRequester(focus)
                             .then(if (bigInput) Modifier.height((LocalConfiguration.current.screenHeightDp * 0.45f).dp) else Modifier),
-                        placeholder = { Text(if (prompt) "今まで何してた？" else if (topic == DIARY) "日記（時刻は自動で付きます）" else if (writingTopic(topic).isEmpty()) "メモを書く（未所属）" else "$topic に書く") },
-                        maxLines = if (bigInput) Int.MAX_VALUE else 6, shape = RoundedCornerShape(20.dp),
+                        placeholder = { Text(if (prompt) "今まで何してた？" else if (topic == DIARY) "日記（時刻は自動で付きます）" else if (writingTopic(topic).isEmpty()) "メモを書く（未所属）" else "$topic に書く", color = MaterialTheme.colorScheme.outline) },
+                        maxLines = if (bigInput) Int.MAX_VALUE else 6, shape = RoundedCornerShape(24.dp),
+                        colors = TextFieldDefaults.colors(focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant, unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, disabledIndicatorColor = Color.Transparent),
+                        trailingIcon = { IconButton(onClick = { bigInput = !bigInput }) {
+                            Icon(if (bigInput) Icons.Filled.CloseFullscreen else Icons.Filled.OpenInFull, if (bigInput) "入力欄を小さく" else "入力欄を大きく", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.outline)
+                        } },
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, keyboardType = KeyboardType.Text),
                     )
-                    Column {
-                        // 入力欄を大きくする・戻す
-                        IconButton(onClick = { bigInput = !bigInput }) {
-                            Icon(if (bigInput) Icons.Filled.CloseFullscreen else Icons.Filled.OpenInFull, if (bigInput) "入力欄を小さく" else "入力欄を大きく")
-                        }
-                        IconButton(onClick = { send() }, enabled = input.isNotBlank() || pendingImages.isNotEmpty()) {
-                            Icon(Icons.AutoMirrored.Filled.Send, "送る")
-                        }
+                    FilledIconButton(onClick = { send() }, enabled = input.isNotBlank() || pendingImages.isNotEmpty(), modifier = Modifier.size(46.dp)) {
+                        Icon(Icons.AutoMirrored.Filled.Send, "送る")
                     }
                 }
             }
@@ -1185,13 +1195,14 @@ private fun Bubble(e: Entry, done: Boolean, byId: Map<String, Entry>, store: Sto
                    open: Boolean, onToggleOpen: (() -> Unit)?, onTap: () -> Unit, onLong: () -> Unit, onJump: (String) -> Unit,
                    alignStart: Boolean = false) {
     // 日記も他のメモと同じ色（トピックは右下の小さな文字で分かる）
-    val colors = if (selected) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-    else CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (alignStart) Arrangement.Start else Arrangement.End) {
-        Card(colors = colors, shape = RoundedCornerShape(14.dp),
-            border = if (selecting) CardDefaults.outlinedCardBorder() else null,
-            modifier = Modifier.widthIn(max = 340.dp).combinedClickable(onClick = onTap, onLongClick = onLong)) {   // 長押しの時間は MainActivity で短くしてある
-            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+    // 吹き出し: やわらかい青、角は丸く（話している側の下の角だけ小さく）。取り込み済みは薄くして、目立たせない
+    val colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else Color(0xFFEDF1FF))
+    val shape = if (alignStart) RoundedCornerShape(18.dp, 18.dp, 18.dp, 4.dp) else RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp)
+    Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), horizontalArrangement = if (alignStart) Arrangement.Start else Arrangement.End) {
+        Card(colors = colors, shape = shape, elevation = CardDefaults.cardElevation(0.dp),
+            border = if (selected) androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else if (selecting) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
+            modifier = Modifier.widthIn(max = 340.dp).alpha(if (done && !selected) 0.58f else 1f).combinedClickable(onClick = onTap, onLongClick = onLong)) {   // 長押しの時間は MainActivity で短くしてある
+            Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 7.dp)) {
                 if (selectionMode) Checkbox(checked = selected, onCheckedChange = { onTap() })
                 // 押すとそのメモへ飛ぶ
                 e.parent?.let { p ->
@@ -1229,7 +1240,7 @@ private fun Bubble(e: Entry, done: Boolean, byId: Map<String, Entry>, store: Sto
                             if (head) pop()
                         }
                     } }
-                    Text(annotated, fontSize = 16.sp, maxLines = if (open) Int.MAX_VALUE else 8, overflow = TextOverflow.Ellipsis,
+                    Text(annotated, fontSize = 16.sp, lineHeight = 24.sp, maxLines = if (open) Int.MAX_VALUE else 8, overflow = TextOverflow.Ellipsis,
                         onTextLayout = { if (!open) overflow = it.hasVisualOverflow })
                     // 長いメモは途中まで。「続きを見る」で開く（全部展開する設定なら最初から全部）
                     if (onToggleOpen != null && (overflow || open)) {
@@ -1243,11 +1254,15 @@ private fun Bubble(e: Entry, done: Boolean, byId: Map<String, Entry>, store: Sto
                             modifier = if (id in byId) Modifier.clickable { onJump(id) }.padding(vertical = 2.dp) else Modifier)
                     }
                 }
-                Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
-                    Text(topicLabel(e.topic), fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
-                    Spacer(Modifier.width(6.dp))
+                Row(Modifier.align(Alignment.End).padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (e.topic.isNotEmpty() && e.topic != ALL) {   // トピックは、小さな色つきのラベル
+                        val hue = (e.topic.fold(7) { h, c -> (h * 31 + c.code) and 0xffff } % 360).toFloat()
+                        Text(topicLabel(e.topic), fontSize = 10.sp, color = Color.hsv(hue, .55f, .55f),
+                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color.hsv(hue, .12f, 1f)).padding(horizontal = 6.dp, vertical = 1.dp))
+                        Spacer(Modifier.width(6.dp))
+                    }
                     Text(timeFmt.format(Date(e.created)) + if (e.edited > 0) "（編集）" else "", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
-                    if (done) { Spacer(Modifier.width(4.dp)); Icon(Icons.Filled.DoneAll, "PC に取り込み済み", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary) }
+                    if (done) { Spacer(Modifier.width(6.dp)); Text("✓ PCへ", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Medium) }
                 }
             }
         }

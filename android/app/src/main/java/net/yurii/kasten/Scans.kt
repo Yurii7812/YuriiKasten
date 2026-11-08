@@ -27,6 +27,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -213,42 +214,43 @@ fun ScanScreen(onClose: () -> Unit) {
 
     val blank = scans.count { it.id.isEmpty() && !it.imported }
     val waiting = scans.count { !it.imported }
-    val tabNames = listOf("全部 ${scans.size}", "未取り込み $waiting", "取り込み済み ${scans.size - waiting}")
+    val tabNames = listOf("📚 全部 ${scans.size}", "⏳ 未取り込み $waiting", "✓ 済み ${scans.size - waiting}")
     Scaffold(topBar = {
         TopAppBar(title = { Text("紙のスキャン") }, navigationIcon = {
             IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "戻る") }
         })
     }, bottomBar = {
-        Button(onClick = { startScan() }, shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp).heightIn(min = 64.dp)) {
-            Icon(Icons.Filled.CameraAlt, null); Spacer(Modifier.width(10.dp)); Text("スキャンする（まとめて）", fontSize = 20.sp)
+        Button(onClick = { startScan() }, shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp).heightIn(min = 56.dp)) {
+            Icon(Icons.Filled.CameraAlt, null); Spacer(Modifier.width(10.dp)); Text("スキャンする（まとめて）", fontSize = 18.sp)
         }
     }) { pad ->
         Column(Modifier.fillMaxSize().padding(pad)) {
             Text(
                 if (scans.isEmpty()) "まだスキャンがありません。下のボタンで、紙を続けて撮れます。"
-                else "未取り込み $waiting 枚（うち番号なし $blank 枚）・ 取り込み済み ${scans.size - waiting} 枚（USB で PC に取り込むと、番号なしは \\F に出ます）",
-                Modifier.padding(horizontal = 16.dp, vertical = 8.dp), fontSize = 15.sp, color = MaterialTheme.colorScheme.outline)
+                else "未取り込み $waiting 枚" + (if (blank > 0) "（うち番号なし $blank 枚。番号を付けると PC に取り込めます）" else "") + "・ 済み ${scans.size - waiting} 枚",
+                Modifier.padding(horizontal = 16.dp, vertical = 8.dp), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             error?.let { Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error) }
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 tabNames.forEachIndexed { i, n ->
-                    FilterChip(tab == i, { tab = i }, { Text(n, fontSize = 17.sp, maxLines = 1) }, modifier = Modifier.weight(1f).heightIn(min = 52.dp))
+                    FilterChip(tab == i, { tab = i }, { Text(n, fontSize = 15.sp, maxLines = 1) }, shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f).heightIn(min = 44.dp))
                 }
             }
             if (sorted.isNotEmpty()) TextButton(onClick = { confirmAll = true }, modifier = Modifier.padding(horizontal = 8.dp)) {
                 Icon(Icons.Filled.Delete, null); Spacer(Modifier.width(8.dp))
-                Text("この一覧を全部消す（${sorted.size} 枚）", fontSize = 17.sp)
+                Text("この一覧を全部消す（${sorted.size} 枚）", fontSize = 14.sp)
             }
             LazyVerticalGrid(GridCells.Adaptive(150.dp), contentPadding = PaddingValues(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(sorted, key = { it.name }) { s ->
-                    Box(Modifier.aspectRatio(0.75f).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
-                        .clickable { openName = s.name }) {
+                    Box(Modifier.aspectRatio(0.75f).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
+                        .alpha(if (s.imported) 0.55f else 1f).clickable { openName = s.name }) {
                         AsyncImage(File(store.dir, s.name), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                        Text(if (s.id.isEmpty()) "番号なし" else s.id + (if (s.imported) "（済）" else ""), Modifier.align(Alignment.BottomStart).padding(6.dp)
-                            .clip(RoundedCornerShape(8.dp)).background(if (s.id.isEmpty()) MaterialTheme.colorScheme.error else if (s.imported) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary)
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
-                            fontSize = 18.sp, color = if (s.id.isEmpty()) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary)
+                        // 番号なしは目立つ色（琥珀）、番号つきは青、済みは薄く「✓」
+                        Text(if (s.id.isEmpty()) "番号なし" else (if (s.imported) "✓ " else "") + s.id, Modifier.align(Alignment.BottomStart).padding(6.dp)
+                            .clip(RoundedCornerShape(10.dp)).background(if (s.id.isEmpty()) MaterialTheme.colorScheme.secondary else if (s.imported) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary)
+                            .padding(horizontal = 10.dp, vertical = 3.dp),
+                            fontSize = 16.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, color = androidx.compose.ui.graphics.Color.White)
                     }
                 }
             }

@@ -6,9 +6,9 @@
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
-        android:label="YuriiKasten メモ"
-        android:icon="@drawable/ic_launcher"
-        android:roundIcon="@drawable/ic_launcher"
+        android:label="YuriiKasten"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:theme="@style/Theme.YuriiKastenMemo">
         <activity
