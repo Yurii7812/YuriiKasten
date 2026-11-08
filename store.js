@@ -498,6 +498,7 @@ function openVault(vault) {
       if (!L.isDate(date)) return false;
       const d = ensureDiary(date, kind);
       if (kind === DIARY) for (const n of notes.values()) if (n.s === 'd' && L.dayOf(n.created) === date) linkNote(n);
+      const nb = L.normDay(d.body); if (nb !== d.body) { d.body = nb; d.updated = L.now(); }   // 前に、リンクの下に入った文章も、上へ
       rebuild(); return pubDiary(d);
     },
     saveDiary({ date, kind = DIARY, title, body, parent }) {
@@ -510,7 +511,7 @@ function openVault(vault) {
     deleteDiary(date, kind = DIARY) { const d = diaries.get(dk(kind, date)); if (!d) return false; removeFile(diaryFile(d)); diaries.delete(dk(kind, date)); rebuild(); return true; },
     // その日のノートに 1 段落を足す（USB で取り込んだスマホのメモなど）。無ければ作る
     appendToDay(kind, date, text) {
-      const d = ensureDiary(date, kind || DIARY); d.body = d.body.trim() ? d.body.replace(/\s+$/, '') + '\n\n' + text : text; d.updated = L.now();
+      const d = ensureDiary(date, kind || DIARY); d.body = L.normDay(d.body.trim() ? d.body.replace(/\s+$/, '') + '\n\n' + text : text); d.updated = L.now();   // メモは「今日のノート」の上へ
       rebuild(); return pubDiary(d);
     },
     // 紙の日記（「日記」だけ）: スキャン画像を P_<日付>.jpg（2枚目以降 _2 _3 …）に保存し、日記の最後の「紙の日記」に挿入する

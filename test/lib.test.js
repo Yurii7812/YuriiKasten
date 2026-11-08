@@ -150,3 +150,9 @@ test('トピックIndex: 1 つの文字に、印つきで。入口が紙なら�
   assert.strictEqual(L.removeFromTopic('x 1 2(p)', [{ s: 'p', id: '2' }], 'd'), 'x 1'); assert.strictEqual(L.addToTopic('x 1', 'x', '2(p)'), 'x 1 2(p)');
   assert.strictEqual(L.legacyTopicText({ entry: { s: 'd', id: '1' }, d: 'PKM 1', p: 'PKM *2' }), 'PKM 1\nPKM *2(p)');
 });
+
+test('日のノート: 書いた文章は「今日のノート」（リンクの並び）の上に', () => {
+  const L = require('../lib');
+  assert.strictEqual(L.normDay('## 今日のノート\n\n- :1e\n- :1c6\n\n06:38 腹下し\n\n15:11 なんか'), '06:38 腹下し\n\n15:11 なんか\n\n## 今日のノート\n\n- :1e\n- :1c6');
+  assert.strictEqual(L.normDay('text\n\n## 今日のノート\n\n- :1\n\n## 紙の日記\n\n![](a.jpg)'), 'text\n\n## 今日のノート\n\n- :1\n\n## 紙の日記\n\n![](a.jpg)');
+});

@@ -287,6 +287,15 @@ function addToSection(body, heading, line) {
   let k = j; while (k > i + 1 && !lines[k - 1].trim()) k--;
   lines.splice(k, 0, line); return lines.join('\n');
 }
+// 日のノートの「## 今日のノート」（その日に作ったノートへのリンクの並び）を、メモ・本文の下（紙の日記の上）へ。書いた文章は、いつも上
+function normDay(body) {
+  const lines = (body || '').split('\n'), i = lines.findIndex(l => l.trim() === '## 今日のノート');
+  if (i < 0) return body;
+  let j = i + 1; while (j < lines.length && (!lines[j].trim() || /^\s*-\s+(\[[^\]]*\]\([^)]*\)|:[0-9a-z]+)/.test(lines[j]))) j++;
+  const sec = lines.slice(i, j), rest = lines.slice(j), pre = lines.slice(0, i), paper = rest.findIndex(l => l.trim() === '## 紙の日記');
+  const mid = paper < 0 ? rest : rest.slice(0, paper), tail = paper < 0 ? [] : rest.slice(paper);
+  return [...pre, ...mid, '', ...sec, '', ...tail].join('\n').replace(/\n{3,}/g, '\n\n').replace(/^\n+/, '').replace(/\s+$/, '');
+}
 // 年・月・日の階層（Gnosis 同様: 月はいつも、年は2つ以上の年にまたがってから）
 function diaryTree(dates) {
   const sorted = [...dates].sort().reverse(), years = new Set(sorted.map(d => d.slice(0, 4)));
@@ -357,5 +366,5 @@ const parseTime = c => { const m = (c || '').match(/^(\d{4})-(\d{2})-(\d{2})(?: 
 module.exports = {
   MDLINK, ID, isId, splitAnchor, tok, cmpId, sibling, child, parentIn, root,
   tokens, anchorPos, selfTarget, bodyToMd, mdToBody,
-  fzRange, fzSubtree, exportMd, defOf, topicText, legacyTopicText, parseIdTok, isNoid, noidStem, isStem, STEM, fmParse, fmDump, parseTime, KINDS, deriveBody, setDayStart, todayStr, dayOf, weekday, isDate, addToSection, diaryTree, topicLine, mergeTopic, addToTopic, removeFromTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
+  fzRange, fzSubtree, exportMd, defOf, topicText, legacyTopicText, parseIdTok, isNoid, noidStem, isStem, STEM, fmParse, fmDump, parseTime, KINDS, deriveBody, setDayStart, todayStr, dayOf, weekday, isDate, addToSection, normDay, diaryTree, topicLine, mergeTopic, addToTopic, removeFromTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
 };
