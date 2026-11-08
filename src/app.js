@@ -1444,7 +1444,7 @@ async function openDiary(date, keep, kind) {
     const r = await api.openDiary(date, kind); if (!r) return;
     d = upsertDiary(r);
   }
-  setKind(kind);
+  setKind(kind); Chat.dayBaseline(kind, date, d.body);
   cur = place({ k: 'diary', date, kind }, keep); mode = 'diary';
   const mine = diaries.filter(x => (x.kind || '日記') === kind).map(x => x.date).sort(), idx = mine.indexOf(date);
   const lower = (d.lower || []).map(k => `<span class="chip t" data-dkind="${esc(k)}">${esc(k)}</span>`).join('');
@@ -1462,7 +1462,7 @@ async function openDiary(date, keep, kind) {
     ${lower ? `<div class="row"><span class="sub">DailyNotes</span>${lower}</div>` : ''}
     <div class="ed" id="ed"></div>`;
   const key = kind + date;
-  const view = editor($('#ed'), d.body, 'note', 'd', v => { d.body = v; later('dy' + key, () => api.saveDiary({ date, kind, body: d.body })); },
+  const view = editor($('#ed'), d.body, 'note', 'd', v => { d.body = v; later('dy' + key, () => api.saveDiary({ date, kind, body: d.body }).then(() => Chat.dayEdited(kind, date, d.body))); },
     kind === '日記' ? '今日のこと。書いたノートのリンクは、下の「今日のノート」に自動で入ります' : `今日の${kind}`);
   $('#d-title').oninput = e => { d.title = e.target.value; later('dt' + key, () => api.saveDiary({ date, kind, title: d.title, body: d.body }).then(() => { renderList(); renderTabs(); })); renderList(); };
   const par = $('#d-par'); if (par) par.onchange = async () => { await flush(); const r = await api.recordOp('setDayParent', kind, date, par.value); if (r) { upsertDiary(r); const st = await api.state(); applyState(st); diaries = st.diaries; openDiary(date, true, kind); } else alert('その上位にはできません（輪になります）'); };

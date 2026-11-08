@@ -13,11 +13,36 @@ let lastSel = null;
 let draft = '';
 const DIARY = '日記';
 const recKinds = () => (ctx.records ? ctx.records() : []).map(r => r.name).filter(n => n !== DIARY);   // 夢などの時系列記録の種類（日記と同じように使える）
+// ===== 日のノート ⇄ チャットメモ =====
+// 日のノートを空行で区切った塊（段落）。日のノートに直接書いた塊は、書いたときに、新しいチャットメモにもなる（時刻はその時）。
+// 直した塊は、対応するチャットメモの本文も直す。時刻は、チャットメモから来た行にだけ付く（直接書く文章には付けない）
+const AUTO = /^(#{1,6}\s.*|[-*]\s+:?[0-9a-z]+.*|\d{2}:\d{2}\s*)$/;   // 自動で入る行（見出し・ノートへのリンクの並び・時刻だけ）はメモにしない
+const blocks = b => (b || '').split(/\n{2,}/).map(x => x.trim()).filter(x => x && x.split('\n').some(l => !AUTO.test(l.trim())));
+export function dayBaseline(kind, date, body) {   // 日のノートを開いたとき: いまの中身を「同期済み」とする（古い日の中身を、まとめてメモにしない）
+  if (!isRec(kind)) return; const k = kind + '|' + date, mr = doc.mirror[k] || (doc.mirror[k] = { blocks: [], map: [] });
+  const b = blocks(body); if (b.join('\n\n') !== mr.blocks.join('\n\n')) { mr.blocks = b; save(); }
+}
+export function dayEdited(kind, date, body) {
+  if (!isRec(kind)) return; const k = kind + '|' + date, mr = doc.mirror[k];
+  if (!mr) return dayBaseline(kind, date, body);
+  const now = blocks(body), prev = new Set(mr.blocks), cur = new Set(now);
+  const added = now.filter(b => !prev.has(b)), removed = mr.blocks.filter(b => !cur.has(b));
+  if (!added.length && !removed.length) return;
+  const t0 = Date.now(); let touched = false;
+  added.forEach((b, i) => {
+    const ent = removed[i] && mr.map.find(x => x.blk === removed[i]), memo = ent && msg(ent.memo);
+    if (memo) { const stamped = /^\d{2}:\d{2}\s/.test(ent.blk); memo.text = stamped ? b.replace(/^\d{2}:\d{2}\s+/, '') : b; memo.edited = t0; ent.blk = b; }
+    else { const m = { id: uid(), topic: kind, t: t0 + i, text: b, src: 'day' }; doc.messages.push(m); mr.map.push({ blk: b, memo: m.id }); }
+    touched = true;
+  });
+  mr.blocks = now; save();
+  if (touched) { if (view === kind || view === '*') paint(); ctx.renderList(); }
+}
 const isRec = n => n === DIARY || recKinds().includes(n);
 
 export function init(docs) {
   const d = docs['C_チャット'] || {};
-  doc = { topics: d.topics || [], messages: d.messages || [], converted: d.converted || {}, trash: d.trash || [], noted: d.noted || {}, viewMode: d.viewMode === 'day' ? 'day' : 'all' };
+  doc = { topics: d.topics || [], messages: d.messages || [], converted: d.converted || {}, trash: d.trash || [], noted: d.noted || {}, mirror: d.mirror || {}, viewMode: d.viewMode === 'day' ? 'day' : 'all' };
   viewMode = doc.viewMode;
 }
 const save = () => ctx.later('doc:C', () => ctx.api.saveDoc('C_チャット', doc));
@@ -118,7 +143,7 @@ function paint() {
 }
 function selbar() {
   const b = $('#c-selbar'); if (!b) return;
-  b.innerHTML = sel ? `<span>${sel.size} 件を選択</span><span class="grow"></span><button data-c="selall">全部</button><button class="p" data-c="tonote" ${sel.size ? '' : 'disabled'}>ノートにする</button><button data-c="toquote" ${sel.size ? '' : 'disabled'}>ノートに引用…</button><button data-c="selno">やめる</button>` : '';
+  b.innerHTML = sel ? `<span>${sel.size} 件を選択</span><span class="grow"></span><button data-c="selall">全部</button><button data-c="selclear" ${sel.size ? '' : 'disabled'}>選択解除</button><button data-c="selcopy" ${sel.size ? '' : 'disabled'}>コピー</button><button class="p" data-c="tonote" ${sel.size ? '' : 'disabled'}>ノートにする</button><button data-c="toquote" ${sel.size ? '' : 'disabled'}>ノートに引用…</button><button data-c="selno">やめる</button>` : '';
   b.style.display = sel ? 'flex' : 'none';
 }
 
@@ -131,7 +156,10 @@ function send() {
   } else {
     const m = { id: uid(), topic: view === '*' ? '' : view, t: now, text };
     doc.messages.push(m); save();
-    if (isRec(m.topic)) ctx.api.appendToDay(m.topic, L.dayOf(L.now(new Date(now))), `${hm(now)} ${text.replace(/\n{2,}/g, '\n')}`).then(() => ctx.refreshDiaries());   // 日記の行にも（片方向。あとで日記を直しても、メモは変わらない）
+    if (isRec(m.topic)) {   // 日記・時系列記録の、その日のノートにも（時刻つきの行）。同じ内容が両方に残る
+      const date = L.dayOf(L.now(new Date(now))), line = `${hm(now)} ${text.replace(/\n{2,}/g, '\n')}`;
+      ctx.api.appendToDay(m.topic, date, line).then(d => { const k = m.topic + '|' + date, mr = doc.mirror[k] || (doc.mirror[k] = { blocks: [], map: [] }); mr.blocks = blocks(d && d.body != null ? d.body : line); mr.map.push({ blk: line, memo: m.id }); save(); ctx.refreshDiaries(); });
+    }   // 日記の行にも（片方向。あとで日記を直しても、メモは変わらない）
   }
   inp.value = ''; draft = ''; fit(inp); mentionOff(); paint(); ctx.renderList();
 }
@@ -337,6 +365,8 @@ document.addEventListener('click', e => {
     if (a === 'openbe') backend().open();
     if (a === 'select') { sel = sel ? null : new Set(); lastSel = null; paint(); selbar(); }
     if (a === 'selno') { sel = null; paint(); selbar(); }
+    if (a === 'selclear') { sel = new Set(); lastSel = null; paint(); selbar(); }   // 選択を全部外す（選ぶ状態は続く）
+    if (a === 'selcopy') { const text = entries().filter(x => x.kind === 'msg' && sel.has(x.m.id)).map(x => x.m.text).join('\n\n'); navigator.clipboard.writeText(text).then(() => toast(`${sel.size} 件をコピーしました`)); }
     if (a === 'selall') { sel = new Set(entries().filter(x => x.kind === 'msg').map(x => x.m.id)); paint(); selbar(); }
     if (a === 'tonote') toNoteDialog();
     if (a === 'toquote') quoteDialog(chosen());
@@ -353,6 +383,7 @@ document.addEventListener('click', e => {
     const box = $('#c-msgs'), top = box.scrollTop; paint(); box.scrollTop = top; selbar();
   }
 });
+document.addEventListener('mousedown', e => { if (sel && e.shiftKey && e.target.closest && e.target.closest('#c-msgs')) { e.preventDefault(); const g = window.getSelection(); if (g) g.removeAllRanges(); } });   // Shift+クリックで、文字が青く選択されない
 document.addEventListener('change', e => {
   if (e.target.id === 'c-day' && e.target.value) { day = e.target.value; render(); }
   if (e.target.id === 'c-jump' && e.target.value) { // その日へ（全部表示の中で）

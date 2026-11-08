@@ -199,6 +199,7 @@ const EN = {
 };
 EN['Ctrl+クリックで新しいタブに開きます。'] = 'Ctrl+click opens in a new tab.';
 EN['全部'] = 'All';
+EN['今日の日記'] = "Today's diary"; EN['今日のノート'] = "Today's notes"; EN['この日の日記'] = 'This day\'s diary';
 const TABLES = { en: EN };
 const SKIP = '.cm-editor,.nt,.mt,.mhead b,textarea,input,[data-user],.msg-text,.mc,.snip,.kc-body,.kc-title,.title,.bubble .tx';
 let lang = 'ja', obs = null, keys = [];
