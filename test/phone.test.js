@@ -110,3 +110,10 @@ test('スマホにアプリが無い・つながっていないときは、や�
   const d = tmp(); process.env.ADB = fakeAdb(d, ''); const r = await load().pull();
   assert.ok(!r.ok && /USBデバッグ/.test(r.message));
 });
+
+test('自動取り込み用: つながっているスマホの一覧と、APK の指紋', async () => {
+  const d = tmp(); process.env.ADB = fakeAdb(d, 'ABC123\tdevice');
+  const P = load();
+  assert.deepStrictEqual(await P.listDevices(), [{ serial: 'ABC123', state: 'device' }]);
+  const sha = P.apkSha(); assert.ok(sha === null || /^[0-9a-f]{64}$/.test(sha));
+});

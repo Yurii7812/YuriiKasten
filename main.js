@@ -54,15 +54,39 @@ let mainWin = null;
 // ===== スマホ（USB・adb）=====
 ipcMain.handle('phoneInstall', async () => require('./phone').install({}, m => { if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('phoneMsg', m); }));
 // スマホのメモを取り込む（Gnosis の \M と同じ）。取り込んだら、スマホへ「取り込み済み」の印を返す
-ipcMain.handle('phoneImport', async () => {
+// 取り込み（手動・自動 共通）
+async function runPhoneImport() {
   const P = require('./phone'), C = require('./capture');
   const r = await P.pull(); if (!r.ok) return { ok: false, message: r.message };
   const out = C.importCapture(v, r.data);
   const m = await P.mark(C.importedEntries(v), out.scansDone);
   await P.sendPcMemos(C.pcMemos(v));   // メモ・日のノートを、スマホにも（共有）
   await P.sendRecords(v.records().map(x => x.name), (((v.state().docs || {})['C_チャット'] || {}).topics || []).filter(t => t.type !== 'whole').map(t => t.name));   // 時系列記録と、チャットメモのトピックを、スマホへ
-  return { ok: true, state: v.state(), message: C.summaryText(out.sum) + (m.ok ? '\nスマホには「取り込み済み」の印を返しました。もう要らないメモは、スマホの中から消せます（PC のノートは消えません）。' : '\n（取り込み済みの印は、スマホへ返せませんでした: ' + m.message + '）') };
-});
+  return { ok: true, state: v.state(), sum: out.sum, message: C.summaryText(out.sum) + (m.ok ? '\nスマホには「取り込み済み」の印を返しました。もう要らないメモは、スマホの中から消せます（PC のノートは消えません）。' : '\n（取り込み済みの印は、スマホへ返せませんでした。もう一度、USB でつないでみてください）') };
+}
+ipcMain.handle('phoneImport', () => runPhoneImport());
+// スマホが USB でつながったら、自動で: アプリが古ければ更新 → メモを取り込む（設定の「スマホ」でオフにできる）
+let phoneBusy = false, phoneSeen = null;
+async function phoneTick() {
+  if (phoneBusy || !mainWin || mainWin.isDestroyed() || !v) return;
+  const st = (v.state().docs || {})['K_settings'] || {}; if (st.autoPhone === false) return;
+  const P = require('./phone'), devs = await P.listDevices(), dev = devs.find(d => d.state === 'device');
+  if (!dev) { phoneSeen = null; return; }
+  if (phoneSeen === dev.serial) return;   // つないだままの間は、1 回だけ（外して、また挿すと、もう一度）
+  phoneBusy = true; phoneSeen = dev.serial;
+  const send = x => { if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('phoneAuto', x); };
+  try {
+    send({ say: 'スマホがつながりました。自動で取り込みます…' });
+    let updated = false; const sha = P.apkSha(), cfg = readCfg();
+    if (sha && (cfg.phoneSha || {})[dev.serial] !== sha) {   // アプリを更新（新しい APK が、まだ入っていない）
+      const r = await P.install({ open: false }); if (r.ok) { writeCfg({ ...readCfg(), phoneSha: { ...(readCfg().phoneSha || {}), [dev.serial]: sha } }); updated = true; }
+    }
+    const r = await runPhoneImport();
+    const got = r.ok && r.sum && (r.sum.chats || r.sum.days || r.sum.scans || r.sum.updated || r.sum.removed);
+    send({ ok: r.ok, state: r.ok ? r.state : null, message: [updated ? 'スマホのアプリを更新しました。' : '', r.ok ? (got ? r.message.split('\n')[0] : '') : ''].filter(Boolean).join(' '), quiet: !updated && !got });
+  } catch (e) { send({ ok: false, message: 'スマホの自動取り込みでエラー: ' + e.message }); }
+  finally { phoneBusy = false; }
+}
 ipcMain.handle('saveNote', (_e, n) => v.saveNote(n));
 ipcMain.handle('createNote', (_e, x) => v.createNote(x));
 ipcMain.handle('addPaperIndex', (_e, x) => v.addPaperIndex(x));
@@ -176,6 +200,6 @@ if (!argv.some(a => ['--version', '--update', '--check', '--install'].includes(a
     width: 1200, height: 800, title: 'YuriiNote', backgroundColor: '#ffffff', show: false,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
   });
-  mainWin = w; w.maximize(); w.once('ready-to-show', () => w.show()); w.loadFile('index.html');
+  mainWin = w; setInterval(phoneTick, 6000); setTimeout(phoneTick, 3000); w.maximize(); w.once('ready-to-show', () => w.show()); w.loadFile('index.html');
 });
 app.on('window-all-closed', () => app.quit());

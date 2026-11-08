@@ -1655,7 +1655,7 @@ $('#more').onclick = () => {   // 「⋯」: USB での取り込みと、設定�
 };
 
 // ===== 設定（vault の中の K_settings.json に。vault を別の PC に写しても、同じ見た目・同じ設定）=====
-const DEFAULT_SETTINGS = { lang: 'en', theme: 'light', accent: '#3b5bdb', scale: 100, bodySize: 16, uiFont: '', bodyFont: 'default', bodyFontCustom: '', dayStart: 5 };
+const DEFAULT_SETTINGS = { autoPhone: true, lang: 'en', theme: 'light', accent: '#3b5bdb', scale: 100, bodySize: 16, uiFont: '', bodyFont: 'default', bodyFontCustom: '', dayStart: 5 };
 let settings = { ...DEFAULT_SETTINGS };
 const ACCENTS = ['#3b5bdb', '#0b7285', '#2f9e44', '#e67700', '#c0392b', '#a61e4d', '#7048e8', '#495057'];
 const BODY_FONTS = { default: '', serif: '"Noto Serif JP","Hiragino Mincho ProN","Yu Mincho",serif', mono: 'ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace' };
@@ -1690,7 +1690,7 @@ function settingsDialog() {
       <div class="srow"><span>本文の文字の大きさ</span><input type="range" id="s-body" min="12" max="28" step="1" value="${sw.bodySize}"><output id="s-body-o">${sw.bodySize}px</output></div>
       <div class="srow"><span>画面の文字（フォント）</span><input type="text" id="s-uifont" placeholder="空なら OS の標準。例: Noto Sans JP" value="${esc(sw.uiFont)}" style="flex:1"></div>
       <div class="srow"><span>本文のフォント</span><select id="s-bf"><option value="default"${sw.bodyFont === 'default' ? ' selected' : ''}>画面と同じ</option><option value="serif"${sw.bodyFont === 'serif' ? ' selected' : ''}>明朝</option><option value="mono"${sw.bodyFont === 'mono' ? ' selected' : ''}>等幅</option><option value="custom"${sw.bodyFont === 'custom' ? ' selected' : ''}>好きな名前</option></select><input type="text" id="s-bfc" placeholder="フォント名" value="${esc(sw.bodyFontCustom)}" style="flex:1"></div></div>
-    <div class="sec"><b>スマホ</b><div class="srow"><button id="s-phone">スマホにアプリを入れる…（USB）</button></div></div>
+    <div class="sec"><b>スマホ</b><div class="srow"><span>つないだら、自動で取り込む・アプリを更新する</span><label class="nm-sw"><input type="checkbox" id="s-autophone" ${sw.autoPhone !== false ? 'checked' : ''}><i></i></label></div><div class="srow"><button id="s-phone">スマホにアプリを入れる…（USB）</button></div></div>
     <div class="sec"><b>アプリ</b><div class="srow"><span id="s-ver" class="sub"></span><button id="s-upd">更新を確認</button><button id="s-short">ショートカットを作る</button><button id="s-gh">GitHub を開く</button></div></div>
     <div class="row"><span class="grow"></span><button class="p" id="s-close">閉じる</button></div></div>`, close => {
     const set = (k, v) => { settings[k] = v; saveSettings(); };
@@ -1706,6 +1706,7 @@ function settingsDialog() {
     $('#s-body').oninput = e => { $('#s-body-o').textContent = e.target.value + 'px'; set('bodySize', +e.target.value); };
     $('#s-uifont').onchange = e => set('uiFont', e.target.value.trim());
     $('#s-bf').onchange = e => set('bodyFont', e.target.value); $('#s-bfc').onchange = e => { settings.bodyFont = 'custom'; $('#s-bf').value = 'custom'; set('bodyFontCustom', e.target.value.trim()); };
+    $('#s-autophone').onchange = e => set('autoPhone', e.target.checked);
     $('#s-phone').onclick = phoneInstall; $('#s-gh').onclick = () => api.openUrl('https://github.com/Yurii7812/YuriiNote');
     $('#s-short').onclick = async () => toast(await api.installShortcuts());
   });
@@ -1719,6 +1720,11 @@ async function phoneInstall() {
   alert(r.message);
 }
 // スマホのメモを取り込む（USB）。メモは「未整理」へ。日記・記録のトピックは、その日のノートへ。番号つきのスキャンは、紙のノートへ
+api.onPhoneAuto(m => {   // スマホがつながったら、自動で取り込み・更新（main.js の phoneTick）
+  if (m.say) return toast(m.say);
+  if (m.ok && m.state) { Chat.init(m.state.docs || {}); applyState(m.state); diaries = m.state.diaries; records = m.state.records || records; refreshFiles(); if (mode === 'diary' || mode === 'chat') renderList(); if (cur && cur.k === 'chat') Chat.render && Chat.render(); }
+  if (m.message && !m.quiet) toast(m.message);
+});
 async function phoneImport() {
   toast('スマホのメモを読んでいます…');
   const r = await api.phoneImport();

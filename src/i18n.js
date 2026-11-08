@@ -202,6 +202,7 @@ EN['Ctrl+クリックで新しいタブに開きます。'] = 'Ctrl+click opens 
 EN['全部'] = 'All';
 EN['今日の日記'] = "Today's diary"; EN['今日のノート'] = "Today's notes"; EN['この日の日記'] = 'This day\'s diary';
 EN['紙のノート'] = 'Paper notes'; EN['つながりの無いノート'] = 'Notes without links'; EN['フィルター'] = 'Filters'; EN['グループ（検索で色分け）'] = 'Groups (color by search)'; EN['新しいグループ'] = 'New group'; EN['表示'] = 'Display'; EN['力'] = 'Forces'; EN['矢印'] = 'Arrows'; EN['文字の消える閾値'] = 'Text fade threshold'; EN['ノードの大きさ'] = 'Node size'; EN['線の太さ'] = 'Link thickness'; EN['中心へ引く力'] = 'Center force'; EN['反発する力'] = 'Repel force'; EN['線で引く力'] = 'Link force'; EN['線の長さ'] = 'Link distance'; EN['設定'] = 'Settings'; EN['ノート'] = 'Notes';
+EN['つないだら、自動で取り込む・アプリを更新する'] = 'When connected, import and update the app automatically';
 const TABLES = { en: EN };
 const SKIP = '.cm-editor,.nt,.mt,.mhead b,textarea,input,[data-user],.msg-text,.mc,.snip,.kc-body,.kc-title,.title,.bubble .tx';
 let lang = 'ja', obs = null, keys = [];

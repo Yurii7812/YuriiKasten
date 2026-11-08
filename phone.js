@@ -139,4 +139,11 @@ async function sendPcMemos(data) {
   let ok = true; for (const pkg of r.pkgs) ok = (await putFile(r, 'files/pc_memos.json', JSON.stringify(data), pkg)) && ok;
   return { ok };
 }
-module.exports = { sendPcMemos, install, findAdb, apkPath, parseDevices, PKG, pull, mark, sendRecords };
+// つながっているスマホ（adb devices の一覧）。adb が無ければ空
+async function listDevices() {
+  const adb = findAdb(); if (!adb) return [];
+  return parseDevices((await run(adb, ['devices'], { timeout: 8000 })).out);
+}
+// 入れようとしている APK の指紋。前に入れたものと違えば、更新が必要（バージョン番号を上げ忘れても、分かる）
+function apkSha() { const f = apkPath(); if (!f) return null; try { return require('crypto').createHash('sha256').update(fs.readFileSync(f)).digest('hex'); } catch { return null; } }
+module.exports = { listDevices, apkSha, sendPcMemos, install, findAdb, apkPath, parseDevices, PKG, pull, mark, sendRecords };

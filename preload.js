@@ -38,5 +38,6 @@ contextBridge.exposeInMainWorld('api', {
   useVault: p => r.invoke('useVault', p),
   phoneInstall: () => r.invoke('phoneInstall'),
   phoneImport: () => r.invoke('phoneImport'),
-  onPhoneMsg: cb => r.on('phoneMsg', (_e, m) => cb(m))
+  onPhoneMsg: cb => r.on('phoneMsg', (_e, m) => cb(m)),
+  onPhoneAuto: cb => r.on('phoneAuto', (_e, m) => cb(m))
 });
