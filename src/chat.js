@@ -517,10 +517,12 @@ function toNoteDialog(explicitMemos) {
     <label class="rad"><input type="radio" name="as" value="noid" checked> IDなし（あとで付ける）</label>
     <label class="rad"><input type="radio" name="as" value="id"> IDを付ける <input id="as-id" style="width:100px" value="${esc(rootFree())}"></label>
     <label class="rad"><input type="radio" name="as" value="parent"> 親ノートのID（分岐として付ける） <input id="as-parent" style="width:100px" placeholder="例: 1a"></label>
+    <button type="button" id="as-explore">索引・本文を検索してIDを探す</button>
     <div class="row"><button class="p" id="as-ok">ノート化</button><button id="as-no">やめる</button></div>`, close => {
     $('#as-id').onfocus = () => { document.querySelector('input[name=as][value=id]').checked = true; };
     $('#as-parent').onfocus = () => { document.querySelector('input[name=as][value=parent]').checked = true; };
     $('#as-no').onclick = close;
+    $('#as-explore').onclick = () => ctx.exploreId(id => { $('#as-id').value = id; document.querySelector('input[name=as][value=id]').checked = true; });
     $('#as-ok').onclick = async () => {
       const kind = document.querySelector('input[name=as]:checked').value; let id = null;
       if (kind === 'parent') {
@@ -529,7 +531,7 @@ function toNoteDialog(explicitMemos) {
         id = ctx.free('d', L.child(p));
       } else if (kind === 'id') {
         id = $('#as-id').value.trim().toLowerCase();
-        if (!L.isId(id)) return alert('IDの形が違います（例: 12 や 3a）');
+        if (!L.isId(id) || /^\\d{8,}$/.test(id)) return alert('IDの形が違います（例: 12 や 3a）');
         if (ctx.get('d', id)) return alert(`ノート ${id} は既にあります`);
       }
       const title = $('#as-title').value.trim();
