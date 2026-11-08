@@ -644,7 +644,7 @@ function openNote(s, id, n, keep, mid) {
   cur = place({ k: 'note', s, id }, keep); mode = 'notes'; lastNote = { s, id };
   if (!inPreview) decided = { k: 'note', s, id };
   if (!$('#q').value) tab = note.noid ? 'u' : s;
-  const kind = note.kind || 'text', noid = !!note.noid, text = kind === 'text', cp = '<svg class="ico" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15V6a1 1 0 011-1h9"/></svg>';
+  const kind = note.kind || 'text', noid = !!note.noid, text = kind === 'text', memoGroup = kind === 'memo-group', cp = '<svg class="ico" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15V6a1 1 0 011-1h9"/></svg>';
   $('#pane').innerHTML = `
     <div class="stage"><div class="col${s === 'p' || !text ? ' wide' : ''}">
       <div class="idline">
@@ -662,7 +662,7 @@ function openNote(s, id, n, keep, mid) {
   renderMeta(note);
   $('#f-title').oninput = e => { // タイトル: 打ったらすぐ一覧とタブに反映し、少し待って保存
     note.title = e.target.value; if (note.data) note.data.title = note.title || note.data.title;
-    if (!text) note.body = L.deriveBody(kind, note.data);
+    if (!text && !memoGroup) note.body = L.deriveBody(kind, note.data);
     saveNote(note); renderList(); renderTabs();
   };
   $('#f-title').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing && lastView) { e.preventDefault(); lastView.focus(); lastView.dispatch({ selection: { anchor: 0 } }); } };
@@ -675,7 +675,7 @@ function openNote(s, id, n, keep, mid) {
   };
   renderTabs(); renderList(); if (!$('#q').value) centerOn();   // タブの移動・リンクで開いたときも、見ているノートが一覧の真ん中に（同じタブにあるとき。検索中は動かさない）
   if (!text) { // なりきりチャット・キャンバス: ノートの中に、それぞれの画面
-    if (kind === 'rp') RP.render($('#nbody'), note, mid); else CV.render($('#nbody'), note);
+    if (kind === 'rp') RP.render($('#nbody'), note, mid); else if (kind === 'canvas') CV.render($('#nbody'), note); else if (memoGroup) Chat.renderMemoGroup($('#nbody'), note);
     return;
   }
   const view = editor($('#ed'), note.body, 'note', s, v => { note.body = v; saveNote(note); renderList(); },
