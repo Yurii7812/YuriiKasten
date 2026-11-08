@@ -111,14 +111,14 @@ export function loadNotesAndRelations(notes, titleOf, mapType, opt = {}) {
     if (opt.showChat && ch) {
       const MEN = /\(memo:([^)\s]+)\)/g, memoById = new Map(ch.messages.map(m => [m.id, m]));
       const quoted = new Set(), quoting = new Set(), noted = new Set(Object.keys(ch.noted || {}).filter(k => (ch.noted[k] || []).length));
-      for (const m of ch.messages) { let x; MEN.lastIndex = 0; while ((x = MEN.exec(m.text || ''))) if (memoById.has(x[1])) { quoted.add(x[1]); quoting.add(m.id); } if (m.reply && memoById.has(m.reply)) { quoted.add(m.reply); quoting.add(m.id); } }
+      for (const m of ch.messages) { let x; MEN.lastIndex = 0; while ((x = MEN.exec(m.text || ''))) if (memoById.has(x[1])) { quoted.add(x[1]); quoting.add(m.id); } for (const rid of (m.replies || (m.reply ? [m.reply] : []))) if (memoById.has(rid)) { quoted.add(rid); quoting.add(m.id); } }
       const inc = new Set([...quoted, ...quoting, ...noted]), topicId = name => 'C:' + name;
       for (const t of ch.topics) { add(topicId(t.name), 'chat', t.name); if (t.parent) links.push({ id: topicId(t.parent) + '-' + topicId(t.name), source: topicId(t.parent), target: topicId(t.name), name: '' }); }
       for (const m of ch.messages) if (inc.has(m.id)) {
         const id = 'M:' + m.id; add(id, 'memo', (m.text || '').split('\n')[0].replace(/\[@[^\]]*\]\(memo:[^)]*\)\s*/g, '').slice(0, 24) || '（メモ）');
         const tn = m.topic && ch.topics.find(t => t.name === m.topic); if (tn) links.push({ id: topicId(tn.name) + '-' + id, source: topicId(tn.name), target: id, name: '' });
         let x; MEN.lastIndex = 0; while ((x = MEN.exec(m.text || ''))) if (inc.has(x[1])) links.push({ id: id + '-M:' + x[1], source: id, target: 'M:' + x[1], name: '' });
-        if (m.reply && inc.has(m.reply)) links.push({ id: id + '-M:' + m.reply + '-r', source: id, target: 'M:' + m.reply, name: '' });
+        for (const rid of (m.replies || (m.reply ? [m.reply] : []))) if (inc.has(rid)) links.push({ id: id + '-M:' + rid + '-r', source: id, target: 'M:' + rid, name: '' });
         for (const stem of ch.noted[m.id] || []) { const k = byStem.get(stem); if (k && keep.has(k)) links.push({ id: id + '-' + k, source: id, target: k, name: '' }); }
         if (opt.showFiles) for (const f of fileOf(m.text)) links.push({ id: id + '-F:' + f.name, source: id, target: addFile(f), name: '' });
       }

@@ -11,7 +11,9 @@ let day = '';          // day のときの日付
 let sel = null;        // 選んでいるメモの id（ノートにする・引用する）。null = 選択中ではない
 let lastSel = null;
 let cq = '', tq = '';
-let replyTo = null;
+let replyTos = [];            // 返信しているメモの id（いくつでも。WhatsApp のように、入力欄の上に引用を出す）
+let editCtx = null;          // 編集中のメモ { m, reps, redraw }（↩ を押すと、そのメモの返信先に足される）
+let redit = null;            // 「返信先を編集」中のメモの id（押さなくても、返信先を足す・外す）
 let pickReply = null;        // 編集中に「返信先を選ぶ」ときの、選んだ id を受け取る関数          // 返信しているメモの id（WhatsApp のように、入力欄の上に引用を出す）         // チャットメモの中の検索・トピックの検索
 const collapsed = new Set();
 let draft = '';
@@ -148,6 +150,7 @@ function render() {
       </div>
       <div id="c-msgs"></div>
       <div id="c-selbar"></div>
+      <div id="c-redit" class="c-redit" style="display:none"></div>
       <div id="c-reply" class="c-reply" style="display:none"></div>
       <div class="c-compose"><div id="c-mention" class="rp-mention" style="display:none"></div><button data-c="attach" title="ファイルや画像を付ける">📎</button>
         <textarea id="c-in" rows="1" placeholder="書く（Enter で送る、Shift+Enter で改行。@ で、別のメモやノートを入れる）"></textarea><button class="p" data-c="send">送る</button></div>
@@ -162,14 +165,32 @@ const noteLabel = stem => { const n = ctx.notes().find(x => x.stem === stem); re
 const body = text => renderMd(text);
 const firstLine = t => (t || '').replace(/\[@[^\]]*\]\(memo:[^)]*\)\s*/g, '').split('\n').find(x => x.trim()) || '';
 // 返信のメモに、元のメモを引用として出す（押すと、元のメモへ）
-const quoteHtml = m => { if (!m.reply) return ''; const o = msg(m.reply); return o ? `<div class="b-quote" data-qm="${esc(o.id)}"><b>${esc(o.topic ? o.topic + ' ・ ' : '')}${hm(o.t)}</b><span>${esc(firstLine(o.text).slice(0, 80))}</span></div>` : '<div class="b-quote gone"><span>（消されたメモ）</span></div>'; };
+export const repliesOf = m => m.replies || (m.reply ? [m.reply] : []);   // 返信先（いくつでも。昔の 1 つだけの形も読む）
+const quoteHtml = m => repliesOf(m).map(id => { const o = msg(id); return o ? `<div class="b-quote" data-qm="${esc(o.id)}"><b>${esc(o.topic ? o.topic + ' ・ ' : '')}${hm(o.t)}</b><span>${esc(firstLine(o.text).slice(0, 80))}</span></div>` : '<div class="b-quote gone"><span>（消されたメモ）</span></div>'; }).join('');
 // 入力欄の上の「返信先」
 function showReply() {
-  const el = $('#c-reply'); if (!el) return; const o = replyTo && msg(replyTo);
-  if (!o) { el.style.display = 'none'; el.innerHTML = ''; return; }
-  el.style.display = ''; el.innerHTML = `<div class="rq"><b>${esc(o.topic ? o.topic + ' ・ ' : '')}${hm(o.t)}</b><span>${esc(firstLine(o.text).slice(0, 120))}</span></div><button data-c="rcancel" title="返信をやめる (Esc)">×</button>`;
+  const el = $('#c-reply'); if (!el) return; const os = replyTos.map(id => msg(id)).filter(Boolean); replyTos = os.map(o => o.id);
+  if (!os.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = ''; el.innerHTML = `<div class="rq-list">${os.map(o => `<div class="rq"><b>${esc(o.topic ? o.topic + ' ・ ' : '')}${hm(o.t)}</b><span>${esc(firstLine(o.text).slice(0, 120))}</span><button data-c="rcancel" data-id="${esc(o.id)}" title="この返信先を外す">×</button></div>`).join('')}</div>`;
 }
-export function startReply(id) { replyTo = id; showReply(); const i = $('#c-in'); if (i) i.focus(); }
+// ↩ を押したとき: 編集中のメモがあれば、その返信先に。「返信先を編集」中なら、そのメモに。なければ、送るメモの返信先に（いくつでも）
+export function startReply(id) {
+  if (editCtx) { if (id !== editCtx.m.id && !editCtx.reps.includes(id)) editCtx.reps.push(id); editCtx.redraw(); return; }
+  if (redit) { toggleReplyOf(redit, id); return; }
+  if (!replyTos.includes(id)) replyTos.push(id); showReply(); const i = $('#c-in'); if (i) i.focus();
+}
+function toggleReplyOf(mid, id) {
+  const m = msg(mid); if (!m || id === mid) return; const reps = repliesOf(m).slice(), at = reps.indexOf(id);
+  if (at >= 0) reps.splice(at, 1); else reps.push(id);
+  m.replies = reps; delete m.reply; m.edited = Date.now(); save(); showRedit(); paint();
+}
+function showRedit() {
+  const el = $('#c-redit'); if (!el) return; const m = redit && msg(redit);
+  if (!m) { el.style.display = 'none'; el.innerHTML = ''; redit = null; return; }
+  const os = repliesOf(m);
+  el.style.display = ''; el.innerHTML = `<b>返信先の編集</b>　「${esc(firstLine(m.text).slice(0, 16))}」: ${os.map(id => { const o = msg(id); return `<span class="b-chip" data-rdel="${esc(id)}" title="外す">↩ ${esc(o ? firstLine(o.text).slice(0, 16) : '（消されたメモ）')} ×</span>`; }).join('') || '<span class="sub">なし</span>'}　<span class="sub">返信先にするメモの ↩ か、メモそのものを押すと足せます（もう一度で外れます）</span><button class="p" data-c="rdone">完了</button>`;
+}
+export function startReplyEdit(id) { redit = id; showRedit(); }
 function paint(toBottom) {
   const box = $('#c-msgs'); if (!box) return; const keepTop = box.scrollTop;
   const list = entries(), showTopic = view === '*'; let lastDay = '';
@@ -181,7 +202,7 @@ function paint(toBottom) {
     const dayLink = isRec(m.topic) ? `<span class="gday" data-gday="${esc(m.topic)}|${dayOfMsg_(m)}" title="その日のノートを開く">📔 ${esc(m.topic === DIARY ? '日記' : m.topic)}</span>` : '';
     return `${head}<div class="bub${sel ? ' pick' : ''}${picked ? ' picked' : ''}" data-m="${m.id}">
       ${quoteHtml(m)}<div class="b-body md">${body(m.text)}</div>
-      <div class="b-foot"><span class="b-left">${sel ? `<input type="checkbox" class="bck" ${picked ? 'checked' : ''}> ` : ''}${showTopic && m.topic && !dayLink ? esc(m.topic) + ' ' : ''}${dayLink}${tags ? ' ' + tags : ''}</span><span class="b-time">${hm(m.t)}</span></div><span class="b-rep" data-rep="${m.id}" title="返信">↩</span></div>`;
+      <div class="b-foot"><span class="b-left">${sel ? `<input type="checkbox" class="bck" ${picked ? 'checked' : ''}> ` : ''}${showTopic && m.topic && !dayLink ? esc(m.topic) + ' ' : ''}${dayLink}${tags ? ' ' + tags : ''}</span><span class="b-time">${hm(m.t)}</span></div><span class="b-rep" data-rep="${m.id}" title="返信">↩</span><span class="b-rep b-rep-e" data-redit-btn="${m.id}" title="返信先を編集（足す・外す）">⇆</span></div>`;
   }).join('') : '<div class="none">まだありません。下の欄に書くと、ここに並びます</div>';
   box.scrollTop = toBottom ? box.scrollHeight : keepTop;   // 編集・選択をやめても、見ていた場所にとどまる（開いたとき・送ったときだけ、いちばん下へ）
 }
@@ -199,7 +220,7 @@ function send() {
     const list = parts(be.get()); list.push((be.stamp !== false ? hm(now) + ' ' : '') + text.replace(/\n{2,}/g, '\n')); be.set(list.join('\n\n'));
   } else {
     const m = { id: uid(), topic: view === '*' ? '' : view, t: now, text };
-    if (replyTo && msg(replyTo)) m.reply = replyTo; replyTo = null;
+    const rs = replyTos.filter(id => msg(id)); if (rs.length) m.replies = rs; replyTos = [];
     doc.messages.push(m); save();
     if (isRec(m.topic)) {   // 日記・時系列記録の、その日のノートにも（時刻つきの行）。同じ内容が両方に残る
       const date = L.dayOf(L.now(new Date(now))), line = `${hm(now)} ${text.replace(/\n{2,}/g, '\n')}`;
@@ -239,6 +260,7 @@ function menuFor(e, bub) {
     const m = msg(bub.dataset.m);
     popMenu(e, [
       ['返信', () => startReply(m.id)],
+      ['返信先を編集', () => startReplyEdit(m.id)],
       ['選択', () => { sel = new Set([m.id]); lastSel = m.id; paint(); selbar(); }],
       ['ノートに引用…', () => quoteDialog([m])],
       ['編集', () => editMsg(bub, m)],
@@ -255,25 +277,26 @@ function editBox(bub, text, onSave, m) {
   const b = bub.querySelector('.b-body');
   b.innerHTML = `<div class="b-chips"></div><textarea class="b-edit"></textarea><div class="rp-mention b-emn" style="display:none"></div><div class="row"><button class="p" data-ok>保存</button><button data-no>やめる</button></div>`;
   const ta = b.querySelector('textarea'), chips = b.querySelector('.b-chips'), mbox = b.querySelector('.b-emn'); ta.value = text; ta.style.height = Math.max(60, ta.scrollHeight) + 'px'; ta.focus();
-  let rep = m ? m.reply : null;
+  const reps = m ? repliesOf(m).slice() : [];
   const MEN = /\[@([^\]]*)\]\(memo:([^)\s]+)\)/g;
-  const drawChips = () => {   // 返信先・メンションを、×で外せる印にする（@ を打つと、候補が出て足せる）
-    const ms = [...ta.value.matchAll(MEN)], o = rep && msg(rep);
-    chips.innerHTML = (o ? `<span class="b-chip b-rep2" data-crep title="返信先を外す">↩ ${esc(firstLine(o.text).slice(0, 18))} ×</span><span class="b-chip" data-cpick>返信先を変える</span>` : '<span class="b-chip" data-cpick>↩ ＋ 返信先を選ぶ</span>') + (pickReply ? '<span class="b-chip on">返信先にするメモを押してください（Esc でやめる）</span>' : '') + ms.map((x, i) => `<span class="b-chip" data-cm="${i}" title="このメンションを外す">@${esc(x[1])} ×</span>`).join('');
+  const drawChips = () => {   // 返信先（いくつでも）・メンションを、×で外せる印にする（返信先は、別のメモの ↩ や「＋ 返信先を追加」で足せる）
+    const ms = [...ta.value.matchAll(MEN)];
+    chips.innerHTML = reps.map(id => { const o = msg(id); return `<span class="b-chip b-rep2" data-crep="${esc(id)}" title="返信先を外す">↩ ${esc(o ? firstLine(o.text).slice(0, 18) : '（消されたメモ）')} ×</span>`; }).join('') + '<span class="b-chip" data-cpick>↩ ＋ 返信先を追加</span>' + (pickReply ? '<span class="b-chip on">返信先にするメモを押してください（Esc でやめる）</span>' : '') + ms.map((x, i) => `<span class="b-chip" data-cm="${i}" title="このメンションを外す">@${esc(x[1])} ×</span>`).join('');
   };
+  if (m) editCtx = { m, reps, redraw: drawChips };
   b.addEventListener('click', e => {
-    if (e.target.closest('[data-crep]')) { rep = null; drawChips(); return; }
-    if (e.target.closest('[data-cpick]')) { pickReply = id => { if (id !== (m && m.id)) { rep = id; } pickReply = null; drawChips(); }; drawChips(); return; }
+    const cr = e.target.closest('[data-crep]'); if (cr) { const i = reps.indexOf(cr.dataset.crep); if (i >= 0) reps.splice(i, 1); drawChips(); return; }
+    if (e.target.closest('[data-cpick]')) { pickReply = id => { if (id !== (m && m.id) && !reps.includes(id)) reps.push(id); pickReply = null; drawChips(); }; drawChips(); return; }
     const c = e.target.closest('[data-cm]'); if (c) { let k = 0; ta.value = ta.value.replace(MEN, t => (k++ === +c.dataset.cm ? '' : t)).replace(/ {2,}/g, ' '); drawChips(); ta.focus(); }
   });
   ta.addEventListener('input', () => { drawChips(); mentionList(ta, mbox); });
   ta.addEventListener('keydown', e => { if (e.key === 'Escape' && mn.length) { e.stopPropagation(); mentionOff(); } if (e.key === 'Enter' && mn.length && !e.isComposing) { e.preventDefault(); pickMention(0); } });
   mbox.addEventListener('mousedown', e => { const it = e.target.closest('[data-mn]'); if (it) { e.preventDefault(); pickMention(+it.dataset.mn); } });
   drawChips();
-  b.querySelector('[data-ok]').onclick = () => { mentionOff(); pickReply = null; onSave(ta.value.trim(), rep); };
-  b.querySelector('[data-no]').onclick = () => { mentionOff(); pickReply = null; paint(); };
+  b.querySelector('[data-ok]').onclick = () => { mentionOff(); pickReply = null; editCtx = null; onSave(ta.value.trim(), reps); };
+  b.querySelector('[data-no]').onclick = () => { mentionOff(); pickReply = null; editCtx = null; paint(); };
 }
-function editMsg(bub, m) { editBox(bub, m.text, (v, rep) => { if (v) { const old = m.text; m.text = v; if (rep) m.reply = rep; else delete m.reply; m.edited = Date.now(); save(); memoToDay(m, old, false); } paint(); }, m); }   // edited: スマホと共有するとき、新しい方が勝つ
+function editMsg(bub, m) { editBox(bub, m.text, (v, reps) => { if (v) { const old = m.text; m.text = v; if (reps && reps.length) m.replies = reps; else delete m.replies; delete m.reply; m.edited = Date.now(); save(); memoToDay(m, old, false); } paint(); }, m); }   // edited: スマホと共有するとき、新しい方が勝つ
 function editLine(bub, i) {
   const be = backend(), list = parts(be.get()), e = entries()[i];
   editBox(bub, e.text, v => { if (v) list[i] = (e.time ? e.time + ' ' : '') + v.replace(/\n{2,}/g, '\n'); else list.splice(i, 1); be.set(list.join('\n\n')); paint(); });
@@ -431,7 +454,8 @@ document.addEventListener('click', e => {
     if (a === 'conf') confDialog();
     if (a === 'openbe') backend().open();
     if (a === 'select') { sel = sel ? null : new Set(); lastSel = null; paint(); selbar(); }
-    if (a === 'rcancel') { replyTo = null; showReply(); }
+    if (a === 'rcancel') { const id = e.target.closest('[data-id]') && e.target.closest('[data-id]').dataset.id; replyTos = id ? replyTos.filter(x => x !== id) : []; showReply(); }
+    if (a === 'rdone') { redit = null; showRedit(); }
     if (a === 'selno') { sel = null; paint(); selbar(); }
     if (a === 'selclear') { sel = new Set(); lastSel = null; paint(); selbar(); }   // 選択を全部外す（選ぶ状態は続く）
     if (a === 'selcopy') { const text = entries().filter(x => x.kind === 'msg' && sel.has(x.m.id)).map(x => x.m.text).join('\n\n'); navigator.clipboard.writeText(text).then(() => toast(`${sel.size} 件をコピーしました`)); }
@@ -440,7 +464,10 @@ document.addEventListener('click', e => {
     if (a === 'toquote') quoteDialog(chosen());
     return;
   }
+  const rdel = e.target.closest('[data-rdel]'); if (rdel && redit) { toggleReplyOf(redit, rdel.dataset.rdel); return; }
+  if (redit) { const bb = e.target.closest('.bub[data-m]'); if (bb && bb.dataset.m !== redit) { e.preventDefault(); e.stopPropagation(); toggleReplyOf(redit, bb.dataset.m); return; } }
   if (pickReply) { const bb = e.target.closest('.bub[data-m]'); if (bb && !bb.querySelector('.b-edit')) { e.preventDefault(); e.stopPropagation(); pickReply(bb.dataset.m); return; } }
+  const reb = e.target.closest('[data-redit-btn]'); if (reb) { startReplyEdit(reb.dataset.reditBtn); return; }
   const rp = e.target.closest('[data-rep]'); if (rp) { startReply(rp.dataset.rep); return; }
   const qm = e.target.closest('[data-qm]'); if (qm) { const id = qm.dataset.qm, el = document.querySelector(`#c-msgs [data-m="${id}"]`); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1800); } else gotoMemo(id); return; }
   const gd = e.target.closest('[data-gday]'); if (gd) { const [kind, date] = gd.dataset.gday.split('|'); ctx.setMode('diary'); ctx.openDiary(date, false, kind); return; }
@@ -477,7 +504,7 @@ document.addEventListener('keydown', e => {
   if (e.target.id === 'c-in' && !e.target.closest('.rp')) {
     if (mn.length && (e.key === 'Tab' || (e.key === 'Enter' && !e.isComposing))) { e.preventDefault(); return pickMention(0); }
     if (e.key === 'Escape' && mn.length) { mentionOff(); return; }
-    if (e.key === 'Escape' && replyTo) { e.preventDefault(); replyTo = null; showReply(); }
+    if (e.key === 'Escape' && replyTos.length) { e.preventDefault(); replyTos = []; showReply(); }
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
   }
 });
