@@ -679,6 +679,17 @@ function openNote(s, id, n, keep, mid) {
   else if (s === 'd' && !note.body && !note.title) $('#f-title').focus();
   else if (s === 'd' && !note.body) view.focus();
 }
+// グラフの横に、ふつうのノートと同じ表示（題・本文のエディタ。直すと、そのまま保存）を入れる
+function mountNoteIn(el, s, id) {
+  const note = get(s, id); if (!note) return false;
+  if ((note.kind || 'text') !== 'text') return false;
+  el.innerHTML = `<div class="stage"><div class="col${s === 'p' ? ' wide' : ''}"><div class="idline"><span class="dt">${s === 'p' ? '紙 ' : ''}${esc(id)}</span><span class="grow"></span><button class="nb" data-gopen title="ノートの画面で開く">↗ 開く</button></div>
+    <input class="ntitle" value="${esc(note.title || '')}" placeholder="タイトル"><div class="ed"></div></div></div>`;
+  el.querySelector('.ntitle').oninput = e => { note.title = e.target.value; saveNote(note); renderList(); renderTabs(); };
+  el.querySelector('[data-gopen]').onclick = () => openNote(s, id);
+  editor(el.querySelector('.ed'), note.body, 'note', s, v => { note.body = v; saveNote(note); renderList(); }, s === 'p' ? '紙の内容を文字で（テキスト化）' : '本文');
+  return true;
+}
 // ノートにIDを付ける・変える（ファイル名が変わり、日記のリンクなども直る）
 async function changeId(note, v) {
   if (!L.isId(v) || get(note.s, v)) return false;
@@ -1330,7 +1341,7 @@ function openGraph(keep) {
   cur = place({ k: 'graph' }, keep); mode = 'notes';
   cur.gs = cur.gs || {};   // Link map / Tree map・線の長さ・固定（タブに覚える）
   const rootKey = lastNote ? lastNote.s + ':' + lastNote.id : null;
-  GR.mount($('#pane'), { notes, titleOf, rootKey, topics, mergeTopic: L.mergeTopic, get, renderMd, state: cur.gs, onOpen: (s, id, e, topic) => topic ? openTopic(topic) : openNote(s, id),
+  GR.mount($('#pane'), { notes, titleOf, rootKey, mountNote: mountNoteIn, topics, mergeTopic: L.mergeTopic, get, renderMd, state: cur.gs, onOpen: (s, id, e, topic) => topic ? openTopic(topic) : openNote(s, id),
     onMenu: (node, e) => popMenu(e, [['開く', () => openNote(node.s, node.nid)], ['新しいタブで開く', () => { bgOpen = true; try { openNote(node.s, node.nid); } finally { bgOpen = false; } }]]) });
   renderTabs(); renderList();
 }
