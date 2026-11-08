@@ -59,7 +59,7 @@ ipcMain.handle('phoneImport', async () => {
   const r = await P.pull(); if (!r.ok) return { ok: false, message: r.message };
   const out = C.importCapture(v, r.data);
   const m = await P.mark(C.importedEntries(v), out.scansDone);
-  await P.sendRecords(v.records().map(x => x.name));
+  await P.sendRecords(v.records().map(x => x.name), (((v.state().docs || {})['C_チャット'] || {}).topics || []).filter(t => t.type !== 'whole').map(t => t.name));   // 時系列記録と、チャットメモのトピックを、スマホへ
   return { ok: true, state: v.state(), message: C.summaryText(out.sum) + (m.ok ? '\nスマホには「取り込み済み」の印を返しました。もう要らないメモは、スマホの中から消せます（PC のノートは消えません）。' : '\n（取り込み済みの印は、スマホへ返せませんでした: ' + m.message + '）') };
 });
 ipcMain.handle('saveNote', (_e, n) => v.saveNote(n));

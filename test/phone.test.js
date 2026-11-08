@@ -103,7 +103,7 @@ test('スマホのメモを USB で取り込む: 未整理・日記・記録・�
   assert.strictEqual(openVault(vdir).state().docs['C_チャット'].messages.length, 5);
   // チャットメモを消して、ごみ箱からも無くなったら、そのメモは「取り込み済み」に含めない
   const cd = v.state().docs['C_チャット']; cd.messages = cd.messages.filter(x => x.id !== ma.id); cd.trash = []; v.saveDoc('C_チャット', cd); assert.strictEqual(C.importedEntries(v).length, 4);
-  await P.sendRecords(['夢']); assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(ph.data, 'files/records.json'), 'utf8')).records, ['夢']);
+  await P.sendRecords(['夢'], ['アイデア', '夢']); assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(ph.data, 'files/records.json'), 'utf8')).records, ['夢']); assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(ph.data, 'files/records.json'), 'utf8')).topics, ['アイデア']);
 });
 
 test('スマホにアプリが無い・つながっていないときは、やることを案内する（取り込み）', async () => {

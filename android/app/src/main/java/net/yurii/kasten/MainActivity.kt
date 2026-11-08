@@ -178,9 +178,10 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
     var settings by remember { mutableStateOf(store.loadSettings()) }
     var topic by remember { mutableStateOf(settings.lastTopic) }
     var pcRecords by remember { mutableStateOf(store.loadRecords()) }   // PC にある時系列記録の名前
+    var pcTopics by remember { mutableStateOf(store.loadPcTopics()) }   // PC のチャットメモのトピック名
     val entrySnapshot = entries.toList()
-    val topics = remember(settings.topics, entrySnapshot, pcRecords) {
-        (settings.topics + entrySnapshot.map { it.topic } + pcRecords).filter { it.isNotEmpty() && it != ALL }.distinct()
+    val topics = remember(settings.topics, entrySnapshot, pcRecords, pcTopics) {
+        (settings.topics + entrySnapshot.map { it.topic } + pcRecords + pcTopics).filter { it.isNotEmpty() && it != ALL }.distinct()
     }
     val topicCounts = remember(entrySnapshot) { entrySnapshot.groupingBy { it.topic }.eachCount() }
     val selected = remember { mutableStateListOf<String>() }
@@ -256,7 +257,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
     LifecycleResumeEffect(Unit) {
         imported = store.importedIds()
         // PC の時系列記録の名前は、スマホでも時系列記録として扱う（PC の取り込みは settings.json の topicModes を見る）
-        pcRecords = store.loadRecords()
+        pcRecords = store.loadRecords(); pcTopics = store.loadPcTopics()
         val add = pcRecords.filter { settings.topicModes[it]?.record != true }
         if (add.isNotEmpty()) { settings = settings.copy(topicModes = settings.topicModes + add.associateWith { TopicMode(record = true) }); store.saveSettings(settings) }
         notificationsEnabled = Alarm.notificationsEnabled(ctx)
@@ -414,7 +415,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
 
     fun deleteEntries(ids: Set<String>) {
         // 消して空になった通常のトピックは、トピックの一覧からも消す（日記・時系列記録は残す）
-        val cleaned = settingsAfterImportedRemoval(entries.toList(), settings, ids, pcRecords.toSet())
+        val cleaned = settingsAfterImportedRemoval(entries.toList(), settings, ids, (pcRecords + pcTopics).toSet())
         entries.filter { it.id in ids }.flatMap { it.images }.forEach { File(store.imageDir, it).delete() }
         entries.removeAll { it.id in ids }
         if (cleaned != settings) { settings = cleaned; store.saveSettings(settings) }

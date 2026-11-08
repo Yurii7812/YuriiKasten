@@ -126,10 +126,10 @@ async function mark(importedEntries, scansDone) {
   }
   return { ok: true };
 }
-// PC の記録の種類の名前を、スマホへ渡す（スマホでは選ぶだけにして、表記揺れを防ぐ）
-async function sendRecords(names) {
+// PC の記録の種類と、チャットメモのトピック名を、スマホへ渡す（スマホでは選ぶだけにして、表記揺れを防ぐ）
+async function sendRecords(names, topics = []) {
   const r = await ready(); if (r.error) return { ok: false, message: r.error };
-  let ok = true; for (const pkg of r.pkgs) ok = (await putFile(r, 'files/records.json', JSON.stringify({ version: 1, records: names.filter(n => n && n !== '日記') }), pkg)) && ok;
+  let ok = true; for (const pkg of r.pkgs) ok = (await putFile(r, 'files/records.json', JSON.stringify({ version: 2, records: names.filter(n => n && n !== '日記'), topics: [...new Set(topics)].filter(n => n && n !== '日記' && !names.includes(n)) }), pkg)) && ok;
   return { ok };
 }
 module.exports = { install, findAdb, apkPath, parseDevices, PKG, pull, mark, sendRecords };

@@ -249,6 +249,16 @@ class Store(private val ctx: Context) {
         } catch (e: Exception) { emptyList() }
     }
 
+    /** PC のチャットメモにあるトピック名（USB で取り込むたびに、PC が records.json の topics へ書く）。スマホにも同じトピックが並ぶ。 */
+    fun loadPcTopics(): List<String> {
+        val f = File(ctx.filesDir, "records.json")
+        if (!f.exists()) return emptyList()
+        return try {
+            val a = JSONObject(f.readText()).optJSONArray("topics") ?: return emptyList()
+            (0 until a.length()).map { a.getString(it) }.filter { it.isNotBlank() && it != DIARY }.distinct()
+        } catch (e: Exception) { emptyList() }
+    }
+
     fun saveSettings(s: Settings) {
         val o = JSONObject()
         o.put("alarmOn", s.alarmOn); o.put("alarmMinutes", s.alarmMinutes)
