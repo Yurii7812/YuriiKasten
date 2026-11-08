@@ -105,7 +105,7 @@ function pcMemos(v) {
   const s = v.state(), chat = (s.docs || {})['C_チャット'] || {};
   return {
     version: 1,
-    memos: (chat.messages || []).filter(m => !String(m.src || '').startsWith('phone:')).map(m => ({ id: m.id, topic: m.topic || '', t: m.t, text: m.text || '', edited: m.edited || 0 })),
+    memos: (chat.messages || []).filter(m => !String(m.src || '').startsWith('phone:')).map(m => { const o = m.reply && (chat.messages || []).find(x => x.id === m.reply); return { id: m.id, topic: m.topic || '', t: m.t, text: (o ? '↩ ' + String(o.text || '').split('\n')[0].slice(0, 40) + '\n' : '') + (m.text || ''), edited: m.edited || 0 }; }),
     days: (s.diaries || []).map(d => ({ kind: d.kind || '日記', date: d.date, body: d.body || '' })),
   };
 }

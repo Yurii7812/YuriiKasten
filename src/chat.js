@@ -10,7 +10,8 @@ let viewMode = 'all';  // all（日付の見出しで区切って、続けて）
 let day = '';          // day のときの日付
 let sel = null;        // 選んでいるメモの id（ノートにする・引用する）。null = 選択中ではない
 let lastSel = null;
-let cq = '', tq = '';         // チャットメモの中の検索・トピックの検索
+let cq = '', tq = '';
+let replyTo = null;          // 返信しているメモの id（WhatsApp のように、入力欄の上に引用を出す）         // チャットメモの中の検索・トピックの検索
 const collapsed = new Set();
 let draft = '';
 const DIARY = '日記';
@@ -140,16 +141,17 @@ function render() {
         <input id="c-search" class="csearch" placeholder="このチャットメモの中を検索" value="${esc(cq)}">
         ${be ? '' : `<span class="vseg"><button data-c="vall" class="${viewMode === 'all' ? 'on' : ''}">全部</button><button data-c="vday" class="${viewMode === 'day' ? 'on' : ''}">日ごと</button></span>
           ${viewMode === 'day' ? `<button data-c="dprev" title="前の日">←</button><input type="date" id="c-day" value="${esc(day || L.todayStr())}"><button data-c="dnext" title="次の日">→</button>` : '<input type="date" id="c-jump" title="日付を入れると、その日へ">'}
-          <button data-c="select" title="メモを選んで、ノートにする・引用する">☑ 選ぶ</button>`}
+`}
         ${be ? '<button data-c="openbe">ノートを開く</button>' : ''}
         ${t || (isRec(view) && view !== DIARY) ? '<button data-c="conf">⚙ 設定</button>' : ''}
       </div>
       <div id="c-msgs"></div>
       <div id="c-selbar"></div>
+      <div id="c-reply" class="c-reply" style="display:none"></div>
       <div class="c-compose"><div id="c-mention" class="rp-mention" style="display:none"></div><button data-c="attach" title="ファイルや画像を付ける">📎</button>
         <textarea id="c-in" rows="1" placeholder="書く（Enter で送る、Shift+Enter で改行。@ で、別のメモやノートを入れる）"></textarea><button class="p" data-c="send">送る</button></div>
     </div>`;
-  paint(); selbar();
+  paint(true); selbar(); showReply();
   const inp = $('#c-in'); inp.value = draft; fit(inp); inp.focus();
 }
 function fit(inp) { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 180) + 'px'; inp.style.overflowY = inp.scrollHeight > 180 ? 'auto' : 'hidden'; }
@@ -157,8 +159,18 @@ const wk = d => `${d}（${L.weekday(d)}）`;
 const noteLabel = stem => { const n = ctx.notes().find(x => x.stem === stem); return n ? (n.noid ? 'IDなし' : n.id) : null; };
 // 本文: メンション（[@…](memo:ID)）は、押すとそのメモへ
 const body = text => renderMd(text);
-function paint() {
-  const box = $('#c-msgs'); if (!box) return;
+const firstLine = t => (t || '').replace(/\[@[^\]]*\]\(memo:[^)]*\)\s*/g, '').split('\n').find(x => x.trim()) || '';
+// 返信のメモに、元のメモを引用として出す（押すと、元のメモへ）
+const quoteHtml = m => { if (!m.reply) return ''; const o = msg(m.reply); return o ? `<div class="b-quote" data-qm="${esc(o.id)}"><b>${esc(o.topic ? o.topic + ' ・ ' : '')}${hm(o.t)}</b><span>${esc(firstLine(o.text).slice(0, 80))}</span></div>` : '<div class="b-quote gone"><span>（消されたメモ）</span></div>'; };
+// 入力欄の上の「返信先」
+function showReply() {
+  const el = $('#c-reply'); if (!el) return; const o = replyTo && msg(replyTo);
+  if (!o) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = ''; el.innerHTML = `<div class="rq"><b>${esc(o.topic ? o.topic + ' ・ ' : '')}${hm(o.t)}</b><span>${esc(firstLine(o.text).slice(0, 120))}</span></div><button data-c="rcancel" title="返信をやめる (Esc)">×</button>`;
+}
+export function startReply(id) { replyTo = id; showReply(); const i = $('#c-in'); if (i) i.focus(); }
+function paint(toBottom) {
+  const box = $('#c-msgs'); if (!box) return; const keepTop = box.scrollTop;
   const list = entries(), showTopic = view === '*'; let lastDay = '';
   box.innerHTML = list.length ? list.map(e => {
     if (e.kind === 'line') return `<div class="bub" data-i="${e.i}"><div class="b-body md">${body(e.text)}</div><div class="b-foot"><span class="b-left"></span><span class="b-time">${e.time}</span></div></div>`;
@@ -167,10 +179,10 @@ function paint() {
     const picked = sel && sel.has(m.id);
     const dayLink = isRec(m.topic) ? `<span class="gday" data-gday="${esc(m.topic)}|${dayOfMsg_(m)}" title="その日のノートを開く">📔 ${esc(m.topic === DIARY ? '日記' : m.topic)}</span>` : '';
     return `${head}<div class="bub${sel ? ' pick' : ''}${picked ? ' picked' : ''}" data-m="${m.id}">
-      <div class="b-body md">${body(m.text)}</div>
-      <div class="b-foot"><span class="b-left">${sel ? `<input type="checkbox" class="bck" ${picked ? 'checked' : ''}> ` : ''}${showTopic && m.topic && !dayLink ? esc(m.topic) + ' ' : ''}${dayLink}${tags ? ' ' + tags : ''}</span><span class="b-time">${hm(m.t)}</span></div></div>`;
+      ${quoteHtml(m)}<div class="b-body md">${body(m.text)}</div>
+      <div class="b-foot"><span class="b-left">${sel ? `<input type="checkbox" class="bck" ${picked ? 'checked' : ''}> ` : ''}${showTopic && m.topic && !dayLink ? esc(m.topic) + ' ' : ''}${dayLink}${tags ? ' ' + tags : ''}</span><span class="b-time">${hm(m.t)}</span></div><span class="b-rep" data-rep="${m.id}" title="返信">↩</span></div>`;
   }).join('') : '<div class="none">まだありません。下の欄に書くと、ここに並びます</div>';
-  box.scrollTop = box.scrollHeight;
+  box.scrollTop = toBottom ? box.scrollHeight : keepTop;   // 編集・選択をやめても、見ていた場所にとどまる（開いたとき・送ったときだけ、いちばん下へ）
 }
 function selbar() {
   const b = $('#c-selbar'); if (!b) return;
@@ -186,13 +198,14 @@ function send() {
     const list = parts(be.get()); list.push((be.stamp !== false ? hm(now) + ' ' : '') + text.replace(/\n{2,}/g, '\n')); be.set(list.join('\n\n'));
   } else {
     const m = { id: uid(), topic: view === '*' ? '' : view, t: now, text };
+    if (replyTo && msg(replyTo)) m.reply = replyTo; replyTo = null;
     doc.messages.push(m); save();
     if (isRec(m.topic)) {   // 日記・時系列記録の、その日のノートにも（時刻つきの行）。同じ内容が両方に残る
       const date = L.dayOf(L.now(new Date(now))), line = `${hm(now)} ${text.replace(/\n{2,}/g, '\n')}`;
       ctx.api.appendToDay(m.topic, date, line).then(d => { const k = m.topic + '|' + date, mr = doc.mirror[k] || (doc.mirror[k] = { blocks: [], map: [] }); mr.blocks = blocks(d && d.body != null ? d.body : line); mr.map.push({ blk: line, part: text.replace(/\n{2,}/g, '\n'), memo: m.id }); save(); ctx.refreshDiaries(); });
     }   // 日記の行にも（片方向。あとで日記を直しても、メモは変わらない）
   }
-  inp.value = ''; draft = ''; fit(inp); mentionOff(); paint(); ctx.renderList();
+  inp.value = ''; draft = ''; fit(inp); mentionOff(); showReply(); paint(true); ctx.renderList();
 }
 
 // ===== @ で、別のメモ・ノートを入れる =====
@@ -222,8 +235,8 @@ function menuFor(e, bub) {
   if (bub.dataset.m) {
     const m = msg(bub.dataset.m);
     popMenu(e, [
-      ['返信（@ で入れる）', () => { const inp = $('#c-in'); inp.value += (inp.value && !/\s$/.test(inp.value) ? ' ' : '') + `[@${(m.text.split('\n')[0] || '').replace(/[\[\]()]/g, '').slice(0, 14)}](memo:${m.id}) `; draft = inp.value; fit(inp); inp.focus(); }],
-      ['選んで、ノートにする', () => { sel = new Set([m.id]); lastSel = m.id; paint(); selbar(); }],
+      ['返信', () => startReply(m.id)],
+      ['選択', () => { sel = new Set([m.id]); lastSel = m.id; paint(); selbar(); }],
       ['ノートに引用…', () => quoteDialog([m])],
       ['書き直す', () => editMsg(bub, m)],
       ['トピックを変える', () => moveDialog(m)],
@@ -400,6 +413,7 @@ document.addEventListener('click', e => {
     if (a === 'conf') confDialog();
     if (a === 'openbe') backend().open();
     if (a === 'select') { sel = sel ? null : new Set(); lastSel = null; paint(); selbar(); }
+    if (a === 'rcancel') { replyTo = null; showReply(); }
     if (a === 'selno') { sel = null; paint(); selbar(); }
     if (a === 'selclear') { sel = new Set(); lastSel = null; paint(); selbar(); }   // 選択を全部外す（選ぶ状態は続く）
     if (a === 'selcopy') { const text = entries().filter(x => x.kind === 'msg' && sel.has(x.m.id)).map(x => x.m.text).join('\n\n'); navigator.clipboard.writeText(text).then(() => toast(`${sel.size} 件をコピーしました`)); }
@@ -408,6 +422,8 @@ document.addEventListener('click', e => {
     if (a === 'toquote') quoteDialog(chosen());
     return;
   }
+  const rp = e.target.closest('[data-rep]'); if (rp) { startReply(rp.dataset.rep); return; }
+  const qm = e.target.closest('[data-qm]'); if (qm) { const id = qm.dataset.qm, el = document.querySelector(`#c-msgs [data-m="${id}"]`); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1800); } else gotoMemo(id); return; }
   const gd = e.target.closest('[data-gday]'); if (gd) { const [kind, date] = gd.dataset.gday.split('|'); ctx.setMode('diary'); ctx.openDiary(date, false, kind); return; }
   const nt = e.target.closest('.ntag'); if (nt) { const n = ctx.notes().find(x => x.stem === nt.dataset.stem); if (n) ctx.openNote(n.s, n.id); return; }
   const ment = e.target.closest('a[data-file^="memo:"]'); if (ment) { e.preventDefault(); const el = document.querySelector(`[data-m="${ment.dataset.file.slice(5)}"]`); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1800); } else toast('そのメモは、いまの表示にありません（「全部表示」で探せます）'); return; }
@@ -442,6 +458,7 @@ document.addEventListener('keydown', e => {
   if (e.target.id === 'c-in' && !e.target.closest('.rp')) {
     if (mn.length && (e.key === 'Tab' || (e.key === 'Enter' && !e.isComposing))) { e.preventDefault(); return pickMention(0); }
     if (e.key === 'Escape' && mn.length) { mentionOff(); return; }
+    if (e.key === 'Escape' && replyTo) { e.preventDefault(); replyTo = null; showReply(); }
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
   }
 });
