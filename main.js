@@ -43,6 +43,8 @@ const open = () => { v = store.openVault(vault); return v.state(); };
 
 ipcMain.handle('load', () => open());
 ipcMain.handle('state', () => v.state());
+ipcMain.handle('trashList', () => v.trashList());
+ipcMain.handle('trashRestore', (_e, f) => { const ok = v.trashRestore(f); if (ok) v = store.openVault(vault); return ok ? v.state() : false; });
 
 // ===== 同期（ラズパイの同期サーバーと。設定が無ければ何もしない）=====
 let mainWin = null;

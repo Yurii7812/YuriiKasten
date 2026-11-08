@@ -51,7 +51,7 @@ function drawRoot() {
       <div class="c-compose"><button data-r="quote" title="ノートや、ほかの会話を引用する">❝ 引用</button><button data-r="attach" title="画像などを付ける">📎</button>
         <textarea id="c-in" rows="1" placeholder="発言を書く（Enter で送る、Shift+Enter で改行、Tab で話す役を切り替え）"></textarea><button class="p" data-r="send">送る</button></div>`;
   paint(); speakers(); quoteBar();
-  const inp = $('#c-in'); inp.value = draft; fit(inp); inp.focus();
+  const inp = $('#c-in'); inp.value = draft; fit(inp);   // 開いただけでは入力欄に入らない（一覧のキー操作を邪魔しない）。クリックか i キーで入る
 }
 function fit(inp) { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 180) + 'px'; inp.style.overflowY = inp.scrollHeight > 180 ? 'auto' : 'hidden'; }
 function speakers() {

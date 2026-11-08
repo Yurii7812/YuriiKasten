@@ -190,7 +190,7 @@ function openVault(vault) {
   const noteHref = (s, id) => stemOf(s, id) ? enc(noteFile(s, id)) : '#';
   // ノートの名前（日時 YYYYMMDDHHmmss。同じ秒なら1秒ずつずらす）
   const freeStem = (date = new Date()) => free14(used, date);
-  const fmOf = n => L.fmDump({ folgezettel: L.isNoid(n.id) ? undefined : n.id, source: n.s === 'p' ? 'paper' : 'digital', created: n.created, updated: n.updated || n.created, kind: n.kind && n.kind !== 'text' ? n.kind : undefined, title: n.title || undefined, keywords: n.keywords && n.keywords.length ? n.keywords : undefined });
+  const fmOf = n => L.fmDump({ folgezettel: L.isNoid(n.id) ? undefined : n.id, source: n.s === 'p' ? 'paper' : 'digital', created: n.created, updated: n.updated || n.created, kind: n.kind && n.kind !== 'text' ? n.kind : undefined, title: n.title || undefined, keywords: n.keywords && n.keywords.length ? n.keywords : undefined, pinned: n.pinned ? true : undefined, color: n.color || undefined, archived: n.archived ? true : undefined });
   const DIARY = '日記', dk = (kind, date) => kind + '\n' + date;
   const diaryFile = d => `${d.stem}.md`;
   const diaryHref = d => enc(diaryFile(d));
@@ -246,7 +246,7 @@ function openVault(vault) {
     const y = r.fm, sp = y.source === 'paper' ? 'p' : 'd', fz = y.folgezettel !== undefined ? String(y.folgezettel) : '';
     const id = validId(fz) && !get(sp, fz) ? fz : r.stem;   // IDが無い・重なったものは IDなし として残す（消えない）
     const text = r.text, i = text.indexOf(BODY), j = text.indexOf(NAV), kind = y.kind || 'text';
-    const created = y.created || L.now(r.mtime || new Date()), n = { s: sp, id, stem: r.stem, created, updated: y.updated || created, keywords: Array.isArray(y.keywords) ? y.keywords : [], kind, title: y.title || '', body: '', img: r.img, data: null };
+    const created = y.created || L.now(r.mtime || new Date()), n = { s: sp, id, stem: r.stem, created, updated: y.updated || created, keywords: Array.isArray(y.keywords) ? y.keywords : [], kind, title: y.title || '', body: '', img: r.img, data: null, pinned: !!y.pinned, color: y.color || '', archived: !!y.archived };
     if (kind !== 'text') { n.data = meta(text, 'pkm-data') || {}; if (!n.title) n.title = n.data.title || ''; n.data.title = n.title; n.body = L.deriveBody(kind, n.data); }
     else n.body = L.mdToBody(i >= 0 ? text.slice(i + BODY.length, j > i ? j : undefined) : L.fmParse(text).rest);
     notes.set(key(sp, id), n);
@@ -462,7 +462,7 @@ function openVault(vault) {
 
   // ===== 画面とのやりとり =====
   const url = n => n.img ? 'file://' + abs(n.img).split('/').map(enc).join('/') + '?' + fs.statSync(abs(n.img)).mtimeMs : null;
-  const pub = n => ({ s: n.s, id: n.id, stem: n.stem, created: n.created, updated: n.updated || n.created, keywords: n.keywords, body: n.body, image: url(n), kind: n.kind || 'text', data: n.data || null, noid: L.isNoid(n.id), title: n.title || '' });
+  const pub = n => ({ pinned: !!n.pinned, color: n.color || '', archived: !!n.archived, s: n.s, id: n.id, stem: n.stem, created: n.created, updated: n.updated || n.created, keywords: n.keywords, body: n.body, image: url(n), kind: n.kind || 'text', data: n.data || null, noid: L.isNoid(n.id), title: n.title || '' });
 
   const pubDiary = d => ({ kind: d.kind, date: d.date, title: d.title, body: d.body, parent: d.parent || '', stem: d.stem, pages: d.kind === DIARY ? pages.get(d.date) || [] : [], lower: lowerOf(d).map(o => o.kind) });
   const ensureDiary = (date, kind = DIARY) => {
@@ -578,13 +578,14 @@ function openVault(vault) {
     setReading(k, r) { if (r) readings[k] = r; else delete readings[k]; rebuild(); return true; },
     saveNote(x) {
       const n = get(x.s, x.id) || blank(x.s, x.id, x.created);
-      const fresh = !get(x.s, x.id), before = JSON.stringify([n.keywords, n.body, n.title, n.data, n.kind]);
+      const fresh = !get(x.s, x.id), before = JSON.stringify([n.keywords, n.body, n.title, n.data, n.kind, n.pinned, n.color, n.archived]);
+      if (x.pinned !== undefined) n.pinned = !!x.pinned; if (x.color !== undefined) n.color = x.color || ''; if (x.archived !== undefined) n.archived = !!x.archived;
       n.keywords = x.keywords || []; n.body = x.body || '';
       if (x.kind) n.kind = x.kind;
       if (x.data !== undefined) n.data = x.data;
       if (x.title !== undefined) n.title = (x.title || '').trim();
       if (n.kind && n.kind !== 'text') { if (n.data) n.data.title = n.title || n.data.title; n.body = L.deriveBody(n.kind, n.data); }
-      if (before !== JSON.stringify([n.keywords, n.body, n.title, n.data, n.kind])) n.updated = L.now();
+      if (before !== JSON.stringify([n.keywords, n.body, n.title, n.data, n.kind, n.pinned, n.color, n.archived])) n.updated = L.now();
       notes.set(key(x.s, x.id), n);
       if (n.s === 'd' && (fresh || n.pending)) linkNote(n); // 作った日の日記に載る（空のノートは、書いてから）
       rebuild(); return pub(n);
@@ -657,6 +658,20 @@ function openVault(vault) {
       if (!fs.existsSync(abs(name)) || path.basename(name) !== name) return false;
       const d = docs.get(FILES) || { files: {} }; d.files[name] = { orig: name, added: L.now(), ...(d.files[name] || {}), title: (title || '').trim(), desc: (desc || '').trim() };
       docs.set(FILES, d); fs.writeFileSync(abs(FILES + '.json'), JSON.stringify(d, null, 1)); return true;
+    },
+    // ごみ箱（.trash）のノート。戻す: ファイルを vault に戻す（同じ名前があれば、新しい日時の名前で）
+    trashList() {
+      const dir = abs('.trash'); if (!fs.existsSync(dir)) return [];
+      return fs.readdirSync(dir).map(f => { const m = f.match(/^(\d+)-(\d{14}(?:-\d+)?)\.md$/); if (!m) return null;
+        const text = fs.readFileSync(path.join(dir, f), 'utf8'), fm = L.fmParse(text), y = fm.meta || {}; if (y.record !== undefined) return null;
+        const i = text.indexOf(BODY), j = text.indexOf(NAV), body = L.mdToBody(i >= 0 ? text.slice(i + BODY.length, j > i ? j : undefined) : fm.rest);
+        return { file: f, deleted: L.now(new Date(+m[1])), title: y.title || '', id: y.folgezettel !== undefined ? String(y.folgezettel) : '', body: body.slice(0, 600), keywords: Array.isArray(y.keywords) ? y.keywords : [] };
+      }).filter(Boolean).sort((a, b) => b.file.localeCompare(a.file, 'en', { numeric: true }));
+    },
+    trashRestore(file) {
+      const from = path.join(abs('.trash'), path.basename(file)), m = path.basename(file).match(/^\d+-(\d{14}(?:-\d+)?)\.md$/); if (!m || !fs.existsSync(from)) return false;
+      let stem = m[1]; if (fs.existsSync(abs(stem + '.md')) || used.has(stem)) stem = freeStem();
+      fs.renameSync(from, abs(stem + '.md')); return true;
     },
     // oldName があれば名前の変更
     saveTopic(t, oldName) {

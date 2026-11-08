@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer: r } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   load: () => r.invoke('load'),
   state: () => r.invoke('state'),
+  trashList: () => r.invoke('trashList'),
+  trashRestore: f => r.invoke('trashRestore', f),
   saveNote: n => r.invoke('saveNote', n),
   createNote: x => r.invoke('createNote', x),
   addPaperIndex: x => r.invoke('addPaperIndex', x),
