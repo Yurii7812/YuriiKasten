@@ -11,7 +11,7 @@ import * as GR from './graph.js';
 import * as MD from './mandala.js';
 import * as SM from './similar.js';
 import * as CV from './canvas.js';
-import { dialog, popMenu, toast } from './shared.js';
+import { dialog, popMenu, toast, renderMd } from './shared.js';
 import { setLang } from './i18n.js';
 let pendingLang = null;
 
@@ -1311,8 +1311,9 @@ document.addEventListener('click', e => {
 }, true);
 function openGraph(keep) {
   cur = place({ k: 'graph' }, keep); mode = 'notes';
-  $('#pane').innerHTML = GR.html(notes, titleOf, topics, L.mergeTopic, topicLabel);
-  GR.attach($('#gsvg'), (s, id, e, topic) => topic ? openTopic(topic) : openNote(s, id), cur.vb, (g => v => { g.vb = v; })(cur));
+  cur.gs = cur.gs || {};   // 絞り込み・ハイライト・ローカルなどの状態（タブに覚える）
+  GR.mount($('#pane'), { notes, titleOf, topics, mergeTopic: L.mergeTopic, topicLabel, get, renderMd, state: cur.gs,
+    onOpen: (s, id, e, topic) => topic ? openTopic(topic) : openNote(s, id), onChat: name => { mode = 'chat'; Chat.open(name); } });
   renderTabs(); renderList();
 }
 function openTopic(name, tmode = 'view', keep) {
