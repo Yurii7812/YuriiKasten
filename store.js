@@ -387,9 +387,10 @@ function openVault(vault) {
       const out = lines.filter(l => {
         if (/^##\s/.test(l)) inSec = l.trim() === '## 今日のノート';
         if (!inSec) return true;
-        const m = l.match(/^\s*-\s+:(\S+)\s*$/), f = l.match(/^\s*-\s+\[[^\]]*\]\(D_([^)\s]+)\.md\)\s*$/);
+        const m = l.match(/^\s*-\s+:(\S+)\s*$/), f = l.match(/^\s*-\s+\[[^\]]*\]\(D_([^)\s]+)\.md\)\s*$/), g = l.match(/^\s*-\s+\[[^\]]*\]\((\d{14}(?:-\d+)?)\.md\)\s*$/);
         const id = m ? m[1] : f ? decodeURIComponent(f[1]) : null;
         if (id && !exists(id)) { changed = true; return false; }
+        if (g && ![...notes.values()].some(n => n.stem === g[1])) { changed = true; return false; }   // IDなしのノート（日時の名前）へのリンク。ノートが無ければ外す
         return true;
       });
       if (changed) {

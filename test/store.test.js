@@ -349,3 +349,17 @@ test('トピックIndex・紙のIndex: 1a(1) のように (番号) もつけら�
   const s = v.addPaperIndex({ kw: 'GUI', ids: ['3a(1)', 'x'] });
   assert.deepStrictEqual(s.docs.K_paperindex.entries[0].ids, ['3a(1)']);     // 形の違うものは入らない
 });
+
+test('日記の「今日のノート」: 無いノート（IDなしの日時の名前を含む）へのリンクは出さない', () => {
+  const dir = tmp(), v = openVault(dir);
+  v.saveNote({ s: 'd', id: '1', created: '2026-10-10 11:12:00', keywords: [], body: 'あ' });
+  const n = v.createNote({ created: '2026-10-10 11:13:00', body: 'IDなし' });
+  assert.match(v.diaryState().find(x => x.date === '2026-10-10').body, new RegExp(n.id + '\\.md'));
+  v.deleteNotes([{ s: 'd', id: n.id }]);
+  const d = openVault(dir).diaryState().find(x => x.date === '2026-10-10');
+  assert.doesNotMatch(d.body, new RegExp(n.id)); assert.match(d.body, /:1/);
+  // ファイルを直接消されたとき（同期で消えたとき）も、開き直すと外れる
+  const m = v.createNote({ created: '2026-10-10 11:14:00', body: 'もう1つ' });
+  fs.rmSync(path.join(dir, m.id + '.md'));
+  assert.doesNotMatch(openVault(dir).diaryState().find(x => x.date === '2026-10-10').body, new RegExp(m.id));
+});
