@@ -1579,7 +1579,7 @@ $('#more').onclick = async () => {
     ['スマホのメモを取り込む…（USB）', phoneImport],
     ['スマホにアプリを入れる…（USB）', phoneInstall],
     ['保存フォルダを変える…', () => $('#vault').click()],
-    ['GitHub を開く', () => api.openUrl('https://github.com/Yurii7812/YuriiKasten')]
+    ['GitHub を開く', () => api.openUrl('https://github.com/Yurii7812/YuriiNote')]
   ]);
 };
 // スマホにアプリを入れる（USB でつないだスマホに、adb で）

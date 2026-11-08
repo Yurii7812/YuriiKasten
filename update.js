@@ -9,7 +9,7 @@ const path = require('path');
 const os = require('os');
 const cp = require('child_process');
 
-const REPO = 'Yurii7812/YuriiKasten';
+const REPO = 'Yurii7812/YuriiNote';
 const PAGE = `https://github.com/${REPO}/releases/latest`;
 
 const num = v => String(v || '').replace(/^v/, '').split('.').map(x => parseInt(x, 10) || 0);

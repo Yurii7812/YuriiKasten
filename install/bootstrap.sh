@@ -1,10 +1,10 @@
 #!/bin/sh
 # YuriiNote 導入（Linux / macOS）。リリースは使わず、GitHub から取ってきて、その場で組み立てる
-#   curl -fsSL https://raw.githubusercontent.com/Yurii7812/YuriiKasten/master/install/bootstrap.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Yurii7812/YuriiNote/master/install/bootstrap.sh | sh
 # やること: git と Node.js が無ければ用意 → ~/.local/share/YuriiKasten-src に取得 → npm install → ビルド → ショートカットと YuriiKasten コマンド
 # もう一度実行すると、最新に更新します（YuriiNote --update でも同じ）
 set -e
-REPO="${YURIIKASTEN_REPO:-https://github.com/Yurii7812/YuriiKasten.git}"
+REPO="${YURIIKASTEN_REPO:-https://github.com/Yurii7812/YuriiNote.git}"
 SRC="${YURIIKASTEN_SRC:-$HOME/.local/share/YuriiKasten-src}"
 NODEDIR="$HOME/.local/share/YuriiKasten-node"
 say() { printf '%s\n' "$*"; }

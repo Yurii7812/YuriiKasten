@@ -6,8 +6,8 @@
 ## インストール（コマンド1行・リリース不要）
 | OS | ターミナルに貼る |
 |---|---|
-| **Linux / macOS** | `curl -fsSL https://raw.githubusercontent.com/Yurii7812/YuriiKasten/master/install/bootstrap.sh \| sh` |
-| **Windows**（PowerShell） | `irm https://raw.githubusercontent.com/Yurii7812/YuriiKasten/master/install/bootstrap.ps1 \| iex` |
+| **Linux / macOS** | `curl -fsSL https://raw.githubusercontent.com/Yurii7812/YuriiNote/master/install/bootstrap.sh \| sh` |
+| **Windows**（PowerShell） | `irm https://raw.githubusercontent.com/Yurii7812/YuriiNote/master/install/bootstrap.ps1 \| iex` |
 
 GitHub からソースを取ってきて、その場で組み立てます（git と Node.js 18 以上が無ければ、自動で用意します。初回は数分）。デスクトップとアプリ一覧にショートカットができ、端末では `YuriiKasten` で開きます。もう一度同じ1行を実行すると最新になります。インストーラー（AppImage / exe / dmg）を自分で作りたいときは `npm run dist:linux` など（`release/` にできます）。
 

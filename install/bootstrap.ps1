@@ -1,9 +1,9 @@
 # YuriiNote 導入（Windows）。リリースは使わず、GitHub から取ってきて、その場で組み立てる
-#   irm https://raw.githubusercontent.com/Yurii7812/YuriiKasten/master/install/bootstrap.ps1 | iex
+#   irm https://raw.githubusercontent.com/Yurii7812/YuriiNote/master/install/bootstrap.ps1 | iex
 # やること: git と Node.js が無ければ winget で入れる → 取得 → npm install → ビルド → デスクトップとスタートメニューにショートカット
 # もう一度実行すると、最新に更新します
 $ErrorActionPreference = 'Stop'
-$repo = 'https://github.com/Yurii7812/YuriiKasten.git'
+$repo = 'https://github.com/Yurii7812/YuriiNote.git'
 $src = Join-Path $env:LOCALAPPDATA 'YuriiKasten-src'
 function Have($c) { [bool](Get-Command $c -ErrorAction SilentlyContinue) }
 function Refresh { $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') }

@@ -27,7 +27,7 @@
     "kuromoji": "^0.1.2"
   },
   "productName": "YuriiNote",
-  "homepage": "https://github.com/Yurii7812/YuriiKasten",
+  "homepage": "https://github.com/Yurii7812/YuriiNote",
   "author": "Yurii7812",
   "build": {
     "appId": "jp.yurii.yuriinote",
