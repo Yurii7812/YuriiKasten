@@ -171,7 +171,10 @@ export function open(name, keep, savedSourceIds) {
   render(); ctx.renderTabs(); ctx.renderList();
 }
 // ノート化した元メモのIDを、日時順で返す（旧リンクの救済用）
-export const memosForNote = stem => doc.messages.filter(m => (doc.noted[m.id] || []).includes(stem)).sort((a, b) => a.t - b.t).map(m => m.id);
+export const memosForNote = stem => {
+  const timeOf = id => { const m = msg(id) || doc.trash.find(x => x.id === id); return m ? m.t : 0; };
+  return Object.keys(doc.noted).filter(id => (doc.noted[id] || []).includes(stem)).sort((a, b) => timeOf(a) - timeOf(b));
+};
 // 出典として選ばれたメモだけを表示する。間にあった未選択のメモは表示しない。
 export function gotoSource(ids) {
   sourceIds = new Set(ids.filter(Boolean));
