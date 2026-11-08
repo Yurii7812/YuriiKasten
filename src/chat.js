@@ -46,7 +46,7 @@ export function dayEdited(kind, date, body) {
   if (!added.length && !removed.length) return;
   const t0 = Date.now(); let touched = false;
   added.forEach((b, i) => {
-    if (mr.map.some(x => x.part && b.includes(x.part))) return;   // チャットメモから入れた行を含む塊は、同期済み（同じ時刻の行をつないだ塊など）
+    if (mr.map.some(x => x.blk === b)) return;   // すでに同期済みの同一メモだけを除外。文章に追記した場合は編集として扱う
     const ent = removed[i] && mr.map.find(x => x.blk === removed[i]), memo = ent && msg(ent.memo);
     if (memo) { const stamped = /^\d{2}:\d{2}\s/.test(ent.blk); memo.text = stamped ? b.replace(/^\d{2}:\d{2}\s+/, '') : b; memo.edited = t0; ent.blk = b; }
     else { const m = { id: uid(), topic: kind, t: t0 + i, text: b, src: 'day' }; doc.messages.push(m); mr.map.push({ blk: b, memo: m.id }); }
