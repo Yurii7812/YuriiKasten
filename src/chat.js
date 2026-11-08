@@ -116,8 +116,14 @@ export function init(docs) {
   doc = { topics: d.topics || [], messages: d.messages || [], converted: d.converted || {}, trash: d.trash || [], noted: d.noted || {}, mirror: d.mirror || {}, upperByTopic: d.upperByTopic || {}, target: { topic: (d.target && d.target.topic) || '', ups: (d.target && d.target.ups) || [] }, viewMode: d.viewMode === 'day' ? 'day' : 'all' };
   TopicPrefs.init(doc);
   viewMode = doc.viewMode;
+  refreshMemoNotePreviews();
 }
-const save = () => ctx.later('doc:C', () => ctx.api.saveDoc('C_チャット', doc));
+const refreshMemoNotePreviews = () => {
+  // 本文の正本を複製しない。検索用の表示文字列のみ元メモの最新状態に同期する。
+  if (!ctx.notes) return;
+  for (const n of ctx.notes()) if (n.kind === 'memo-group') n.body = MemoGroup.body(n.data, doc);
+};
+const save = () => { refreshMemoNotePreviews(); ctx.later('doc:C', () => ctx.api.saveDoc('C_チャット', doc)); };
 const topic = name => doc.topics.find(t => t.name === name);
 const msg = id => doc.messages.find(m => m.id === id);
 // トピックは並列（フォルダではない）。メモは所属トピック1つと、複数の上位トピックを持てる。保存形式は topic / ups のまま。
@@ -534,6 +540,7 @@ function toNoteDialog() {
 }
 async function makeMemoGroup(ms, id, title) {
   const data = { memoIds: ms.map(m => m.id) };
+  await ctx.flush(); // 生成時点で元のメモの保存を先に完了させる
   const note = await ctx.api.createNote({ kind: 'memo-group', ...(id ? { id } : {}), data,
     title, created: L.now(), keywords: [] });
   if (!note || !note.stem) { alert('ノート化できませんでした'); return null; }
