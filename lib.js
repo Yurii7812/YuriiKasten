@@ -257,7 +257,9 @@ function removeFromTopic(text, items, def = 'd') {
 
 // ===== 日記 =====
 // 日付が変わる時刻は朝5時（Gnosis と同じ）。夜中の3時のメモは前の日の日記に入る
-const DAY_START = 5, pad2 = x => String(x).padStart(2, '0');
+let DAY_START = 5;   // 日付が変わる時刻（設定で変えられる）
+const setDayStart = h => { DAY_START = Math.max(0, Math.min(12, Math.floor(+h) || 0)); };
+const pad2 = x => String(x).padStart(2, '0');
 const ymd = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 const todayStr = (now = new Date()) => { const d = new Date(now); d.setHours(d.getHours() - DAY_START); return ymd(d); };
 function dayOf(created) { // 'YYYY-MM-DD HH:MM' → 日記の日付
@@ -352,5 +354,5 @@ const parseTime = c => { const m = (c || '').match(/^(\d{4})-(\d{2})-(\d{2})(?: 
 module.exports = {
   MDLINK, ID, isId, splitAnchor, tok, cmpId, sibling, child, parentIn, root,
   tokens, anchorPos, selfTarget, bodyToMd, mdToBody,
-  fzRange, fzSubtree, exportMd, defOf, topicText, legacyTopicText, parseIdTok, isNoid, noidStem, isStem, STEM, fmParse, fmDump, parseTime, KINDS, deriveBody, DAY_START, todayStr, dayOf, weekday, isDate, addToSection, diaryTree, topicLine, mergeTopic, addToTopic, removeFromTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
+  fzRange, fzSubtree, exportMd, defOf, topicText, legacyTopicText, parseIdTok, isNoid, noidStem, isStem, STEM, fmParse, fmDump, parseTime, KINDS, deriveBody, setDayStart, todayStr, dayOf, weekday, isDate, addToSection, diaryTree, topicLine, mergeTopic, addToTopic, removeFromTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
 };

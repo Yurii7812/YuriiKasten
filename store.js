@@ -252,6 +252,7 @@ function openVault(vault) {
     else n.body = L.mdToBody(i >= 0 ? text.slice(i + BODY.length, j > i ? j : undefined) : L.fmParse(text).rest);
     notes.set(key(sp, id), n);
   }
+  { const sd = docs.get('K_settings'); if (sd && sd.dayStart !== undefined) L.setDayStart(sd.dayStart); }   // 日付が変わる時刻
   for (const l of pages.values()) l.sort((x, y) => (+((x.match(/_(\d+)\./) || [])[1]) || 1) - (+((y.match(/_(\d+)\./) || [])[1]) || 1));
   for (const f of [KEYWORDS, 'Index.md']) if (fs.existsSync(abs(f))) {   // 読みは キーワード.md に（昔は Index.md）
     const text = fs.readFileSync(abs(f), 'utf8'); cache.set(f, text); const r = (meta(text, 'pkm-index') || {}).readings;
@@ -573,7 +574,7 @@ function openVault(vault) {
     // ===== JSON の文書（チャット・なりきり・役・キャンバス）=====
     saveDoc(name, obj) {
       if (!/^(C|K)_[^\\/]+$/.test(name)) return false;
-      docs.set(name, obj); fs.writeFileSync(abs(name + '.json'), JSON.stringify(obj, null, 1)); if (name === 'C_チャット') rebuild(); return true;
+      docs.set(name, obj); fs.writeFileSync(abs(name + '.json'), JSON.stringify(obj, null, 1)); if (name === 'C_チャット') rebuild(); if (name === 'K_settings' && obj && obj.dayStart !== undefined) L.setDayStart(obj.dayStart); return true;
     },
     deleteDoc(name) { if (!docs.has(name)) return false; docs.delete(name); removeFile(name + '.json'); return true; },
     setReading(k, r) { if (r) readings[k] = r; else delete readings[k]; rebuild(); return true; },

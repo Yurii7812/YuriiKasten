@@ -12,6 +12,8 @@ import * as MD from './mandala.js';
 import * as SM from './similar.js';
 import * as CV from './canvas.js';
 import { dialog, popMenu, toast } from './shared.js';
+import { setLang } from './i18n.js';
+let pendingLang = null;
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -253,7 +255,7 @@ const noteRow = (n, label = false, q = '') =>
   `<div class="nt">${label && n.s === 'p' ? `<span class="sp ${n.s}">${SP[n.s]}</span>` : ''}${icon(n) ? icon(n) + ' ' : ''}${n.image ? '📷 ' : ''}${mk(titleOf(n), q)}</div>` +
   `<div class="ns">${n.noid ? `IDなし · ${shortTime(n.created)}` : `${n.s === 'p' ? '紙 ' : ''}${mk(n.id, q)}`}${n.keywords.length ? ` · ${n.keywords.map(k => mk(k, q)).join('・')}` : ''}</div>${q && snippet(n.body, q) ? `<div class="sn">${snippet(n.body, q)}</div>` : ''}</div></div>`;
 // トピックIndex の行（その入口のノートの手前に出す）
-const topicRow = t => `<div class="item topicrow${cur && cur.k === 'topic' && cur.name === t.name ? ' on' : ''}${decided && decided.k === 'topic' && decided.name === t.name ? ' decided' : ''}" data-topic="${esc(t.name)}"><div class="nrow"><div class="nt">${esc(topicLabel(t))}</div></div></div>`;
+const topicRow = t => `<div class="item topicrow${listView === 'card' ? ' tc' : ''}${cur && cur.k === 'topic' && cur.name === t.name ? ' on' : ''}${decided && decided.k === 'topic' && decided.name === t.name ? ' decided' : ''}" data-topic="${esc(t.name)}"><div class="nrow"><div class="nt">${esc(topicLabel(t))}</div></div></div>`;
 
 // ===== 取り込んだファイル（画像・html・csv など）。タイトルと説明を付けて、探せるようにする =====
 let filesCache = [], fileFilter = 'all', filesBusy = false;
@@ -380,7 +382,7 @@ function onOpenClick(e) {
   }
 }
 document.addEventListener('click', onOpenClick);
-$('#rail').onclick = e => { const b = e.target.closest('button'); if (b && b.dataset.mode === 'graph') return openGraph(); if (b && b.dataset.mode === 'mandala') return openMandala(); if (b && b.dataset.mode === 'cards') return openCards(); if (b) { mode = b.dataset.mode; $('#q').value = ''; renderList(); } };
+$('#rail').onclick = e => { const b = e.target.closest('button'); if (b && b.id === 'settings-btn') return settingsDialog(); if (b && b.dataset.mode === 'graph') return openGraph(); if (b && b.dataset.mode === 'mandala') return openMandala(); if (b && b.dataset.mode === 'cards') return openCards(); if (b) { mode = b.dataset.mode; $('#q').value = ''; renderList(); } };
 document.addEventListener('auxclick', e => { if (e.button === 1 && !e.target.closest('#tabbar')) { bgOpen = true; try { onOpenClick(e); } finally { setTimeout(() => { bgOpen = false; renderTabs(); }, 0); } } });
 // 一覧からトピックIndexの欄へドラッグすると ID が入る
 $('#list').addEventListener('click', e => {
@@ -1563,15 +1565,19 @@ function firstRun(st) {
   dialog(`<h3>ようこそ。YuriiNote の保存先を選びます</h3>
     <div class="sub">ノートは、普通のフォルダ（vault）に、md ファイルとして入ります。あとで、右上の 📁 からも変えられます。フォルダごと別の PC にコピーしても、全部そのまま使えます。</div>
     ${st.found.length ? `<div class="sub">見つかった vault（押すと、これを開きます）</div>${st.found.map(p => `<div class="row"><button data-vp="${esc(p)}" style="flex:1;text-align:left">📁 ${esc(p)}</button></div>`).join('')}` : ''}
+    <div class="row"><span>言語 / Language</span><select id="fr-lang"><option value="en">English</option><option value="ja">日本語</option></select></div>
     <div class="row"><button class="p" data-vp="${esc(st.suggest)}" style="flex:1">✨ 新しく作る（${esc(st.suggest)}）</button></div>
     <div class="row"><button id="vp-pick" style="flex:1">📂 フォルダを選ぶ（既存の vault を開く・新しい場所に作る）</button></div>`, close => {
     $('#modal').onkeydown = null;
+    $('#fr-lang').onchange = e => { pendingLang = e.target.value; setLang(pendingLang); };
     $('#modal .box').onclick = async e => { const b = e.target.closest('[data-vp]'); if (!b) return; const r = await api.useVault(b.dataset.vp); if (r) { close(); loaded(r); } };
     $('#vp-pick').onclick = async () => { const r = await api.chooseVault(); if (r) { close(); loaded(r); } };
   });
 }
 function loaded(st) {
   if (st && st.firstRun) return firstRun(st);
+  loadSettings(st);
+  if (pendingLang) { settings.lang = pendingLang; pendingLang = null; saveSettings(); }
   ({ notes, topics, vault } = st); readings = st.readings || {}; diaries = st.diaries || []; records = st.records || records; Chat.init(st.docs || {}); RP.init(st.docs || {}); PI.init(st.docs || {}); cur = null; tabs = []; active = -1; refreshFiles();
   $('#vault').textContent = '📁 ' + vault.split('/').pop(); $('#vault').title = vault + '\n（Brave では Index.md を開くと全部たどれます）';
   try {
@@ -1585,18 +1591,70 @@ function loaded(st) {
   show(active);
 }
 // 右上の「⋯」: 更新を確認（押したときだけ。自動では確認も更新もしない）・ショートカット・バージョン
-$('#more').onclick = async () => {
-  const info = await api.appInfo(), r = $('#more').getBoundingClientRect();
+$('#more').onclick = () => {   // 「⋯」: USB での取り込みと、設定だけ。ほかは、全部、設定に
+  const r = $('#more').getBoundingClientRect();
   popMenu({ clientX: r.right - 190, clientY: r.bottom + 4 }, [
-    [`YuriiKasten ${info.version}`, () => { }],
-    ['更新を確認', () => checkUpdate(info)],
-    ...(info.platform !== 'win32' ? [[info.platform === 'darwin' ? 'デスクトップにショートカットを作る' : 'ショートカットを作る（デスクトップ・アプリ一覧）', async () => toast(await api.installShortcuts())]] : []),
     ['スマホのメモを取り込む…（USB）', phoneImport],
-    ['スマホにアプリを入れる…（USB）', phoneInstall],
-    ['保存フォルダを変える…', () => $('#vault').click()],
-    ['GitHub を開く', () => api.openUrl('https://github.com/Yurii7812/YuriiNote')]
+    ['設定…', settingsDialog]
   ]);
 };
+
+// ===== 設定（vault の中の K_settings.json に。vault を別の PC に写しても、同じ見た目・同じ設定）=====
+const DEFAULT_SETTINGS = { lang: 'en', theme: 'light', accent: '#3b5bdb', scale: 100, bodySize: 16, uiFont: '', bodyFont: 'default', bodyFontCustom: '', dayStart: 5 };
+let settings = { ...DEFAULT_SETTINGS };
+const ACCENTS = ['#3b5bdb', '#0b7285', '#2f9e44', '#e67700', '#c0392b', '#a61e4d', '#7048e8', '#495057'];
+const BODY_FONTS = { default: '', serif: '"Noto Serif JP","Hiragino Mincho ProN","Yu Mincho",serif', mono: 'ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace' };
+const darkMq = window.matchMedia('(prefers-color-scheme: dark)');
+function applySettings() {
+  const r = document.documentElement, s = settings;
+  r.style.setProperty('--acc', s.accent);
+  document.body.style.zoom = String((s.scale || 100) / 100);
+  r.style.setProperty('--bodysize', (s.bodySize || 16) + 'px');
+  if (s.uiFont) r.style.setProperty('--uifont', s.uiFont); else r.style.removeProperty('--uifont');
+  const bf = s.bodyFont === 'custom' ? s.bodyFontCustom : BODY_FONTS[s.bodyFont] || '';
+  if (bf) r.style.setProperty('--bodyfont', bf); else r.style.removeProperty('--bodyfont');
+  r.classList.toggle('dark', s.theme === 'dark' || (s.theme === 'auto' && darkMq.matches));
+  if (applyLang) applyLang(s.lang);
+}
+darkMq.addEventListener('change', () => { if (settings.theme === 'auto') applySettings(); });
+const applyLang = setLang;   // 言語の切り替え（src/i18n.js）
+setLang('en');
+const saveSettings = () => { applySettings(); api.saveDoc('K_settings', settings); };
+function loadSettings(st) { settings = { ...DEFAULT_SETTINGS, ...((st.docs || {})['K_settings'] || {}) }; applySettings(); }
+function settingsDialog() {
+  const sw = settings;
+  dialog(`<div class="sdlg"><h3>⚙ 設定</h3>
+    <div class="sec"><b>言語・保存先</b>
+      <div class="srow"><span>言語</span><select id="s-lang"><option value="en"${sw.lang === 'en' ? ' selected' : ''}>English</option><option value="ja"${sw.lang === 'ja' ? ' selected' : ''}>日本語</option></select></div>
+      <div class="srow"><span>保存先（vault）</span><code style="flex:1;word-break:break-all">${esc(vault)}</code><button id="s-vault">変える…</button></div>
+      <div class="srow"><span>日付が変わる時刻</span><input type="number" id="s-day" min="0" max="12" value="${sw.dayStart}" style="width:60px"> 時</div></div>
+    <div class="sec"><b>見た目</b>
+      <div class="srow"><span>テーマ</span>${[['light', '明るい'], ['dark', '暗い'], ['auto', 'OS に合わせる']].map(([k, l]) => `<label><input type="radio" name="s-theme" value="${k}"${sw.theme === k ? ' checked' : ''}> ${l}</label>`).join('')}</div>
+      <div class="srow"><span>アクセントの色</span>${ACCENTS.map(c => `<i class="sw${sw.accent.toLowerCase() === c ? ' on' : ''}" data-sw="${c}" style="background:${c}"></i>`).join('')}<input type="color" id="s-acc" value="${esc(sw.accent)}" title="好きな色"></div>
+      <div class="srow"><span>画面全体の大きさ</span><input type="range" id="s-scale" min="80" max="150" step="5" value="${sw.scale}"><output id="s-scale-o">${sw.scale}%</output></div>
+      <div class="srow"><span>本文の文字の大きさ</span><input type="range" id="s-body" min="12" max="28" step="1" value="${sw.bodySize}"><output id="s-body-o">${sw.bodySize}px</output></div>
+      <div class="srow"><span>画面の文字（フォント）</span><input type="text" id="s-uifont" placeholder="空なら OS の標準。例: Noto Sans JP" value="${esc(sw.uiFont)}" style="flex:1"></div>
+      <div class="srow"><span>本文のフォント</span><select id="s-bf"><option value="default"${sw.bodyFont === 'default' ? ' selected' : ''}>画面と同じ</option><option value="serif"${sw.bodyFont === 'serif' ? ' selected' : ''}>明朝</option><option value="mono"${sw.bodyFont === 'mono' ? ' selected' : ''}>等幅</option><option value="custom"${sw.bodyFont === 'custom' ? ' selected' : ''}>好きな名前</option></select><input type="text" id="s-bfc" placeholder="フォント名" value="${esc(sw.bodyFontCustom)}" style="flex:1"></div></div>
+    <div class="sec"><b>スマホ</b><div class="srow"><button id="s-phone">スマホにアプリを入れる…（USB）</button></div></div>
+    <div class="sec"><b>アプリ</b><div class="srow"><span id="s-ver" class="sub"></span><button id="s-upd">更新を確認</button><button id="s-short">ショートカットを作る</button><button id="s-gh">GitHub を開く</button></div></div>
+    <div class="row"><span class="grow"></span><button class="p" id="s-close">閉じる</button></div></div>`, close => {
+    const set = (k, v) => { settings[k] = v; saveSettings(); };
+    api.appInfo().then(i => { $('#s-ver').textContent = 'YuriiNote ' + i.version; $('#s-upd').onclick = () => checkUpdate(i); $('#s-short').style.display = i.platform === 'win32' ? 'none' : ''; });
+    $('#s-close').onclick = close; $('#modal').onkeydown = e => { if (e.key === 'Escape') close(); };
+    $('#s-lang').onchange = e => { set('lang', e.target.value); close(); settingsDialog(); };
+    $('#s-vault').onclick = async () => { const st = await api.chooseVault(); if (st) { close(); loaded(st); } };
+    $('#s-day').onchange = e => set('dayStart', Math.max(0, Math.min(12, +e.target.value || 0)));
+    document.querySelectorAll('input[name=s-theme]').forEach(r => r.onchange = () => set('theme', r.value));
+    document.querySelectorAll('[data-sw]').forEach(i => i.onclick = () => { set('accent', i.dataset.sw); document.querySelectorAll('[data-sw]').forEach(x => x.classList.toggle('on', x === i)); $('#s-acc').value = i.dataset.sw; });
+    $('#s-acc').oninput = e => { set('accent', e.target.value); document.querySelectorAll('[data-sw]').forEach(x => x.classList.remove('on')); };
+    $('#s-scale').oninput = e => { $('#s-scale-o').textContent = e.target.value + '%'; set('scale', +e.target.value); };
+    $('#s-body').oninput = e => { $('#s-body-o').textContent = e.target.value + 'px'; set('bodySize', +e.target.value); };
+    $('#s-uifont').onchange = e => set('uiFont', e.target.value.trim());
+    $('#s-bf').onchange = e => set('bodyFont', e.target.value); $('#s-bfc').onchange = e => { settings.bodyFont = 'custom'; $('#s-bf').value = 'custom'; set('bodyFontCustom', e.target.value.trim()); };
+    $('#s-phone').onclick = phoneInstall; $('#s-gh').onclick = () => api.openUrl('https://github.com/Yurii7812/YuriiNote');
+    $('#s-short').onclick = async () => toast(await api.installShortcuts());
+  });
+}
 // スマホにアプリを入れる（USB でつないだスマホに、adb で）
 api.onPhoneMsg(m => toast(m));
 async function phoneInstall() {
