@@ -3,6 +3,7 @@
 //   Link map = リンク（:ID）の図 ／ Tree map = 番号の親子（1 → 1a → 1a1）の図。
 import ForceGraph from 'force-graph';
 import L from '../lib.js';
+import Folgezettel from '../folgezettel.js';
 
 // ----- Trilium の rendering.ts の定数 -----
 const TICKS_UNTIL_DAMPED = 60, LONE_NOTE_ZOOM = 4, ZOOM_ANIMATION_MS = 250, NODE_RADIUS_RATIO = 0.8, DAMPING_MAX_NOTES = 30, ANCHOR_RING_PX = 2;
@@ -59,7 +60,7 @@ function createFade(elements, getTarget) {
 const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // ----- 検索（Obsidian の検索窓に近い書き方）-----
-//   空白 = かつ ／ OR ／ -除外 ／ "語句" ／ id:1a（番号の頭）・kw:キーワード・topic:トピックIndex名・tag:（= kw:）・path:（= id:）・line:（本文のみ）・file:（題のみ）
+//   空白 = かつ ／ OR ／ -除外 ／ "語句" ／ id:1a（番号の頭）・folgezettel:1（1とその子孫）・folgezettel:d:1 / folgezettel:p:1（側の指定）・kw:キーワード・topic:トピックIndex名・tag:（= kw:）・path:（= id:）・line:（本文のみ）・file:（題のみ）
 export function parseQuery(q) {
   const toks = []; const re = /(-?)(?:(\w+):)?(?:"([^"]*)"|(\S+))/g; let m;
   while ((m = re.exec(q || ''))) { const word = m[3] ?? m[4]; if (word === 'OR' && !m[1] && !m[2]) { toks.push({ or: true }); continue; } toks.push({ neg: !!m[1], key: (m[2] || '').toLowerCase(), word: word.toLowerCase() }); }
@@ -72,6 +73,7 @@ function tokMatch(n, t) {
   let r;
   switch (t.key) {
     case 'id': case 'path': r = String(n.nid || '').toLowerCase().startsWith(t.word) || (n.s === 'p' ? 'p' : 'd') + ':' + String(n.nid || '').toLowerCase() === t.word; break;
+    case 'folgezettel': case 'fz': r = Folgezettel.contains(n.fzLineage, t.word); break;
     case 'kw': case 'tag': r = kws.some(k => has1(k, t.word.replace(/^#/, ''))); break;
     case 'topic': case 'index': r = tops.some(k => has1(k, t.word)); break;
     case 'file': r = has1(n.name, t.word); break;
@@ -87,8 +89,9 @@ export const matches = (n, groups) => !groups.length || groups.some(g => g.every
 // notes: [{s,id,keywords,body,noid,color}]  link map の辺 = :ID のリンク（紙とデジタルの間も）／ tree map の辺 = 番号の親子
 export function loadNotesAndRelations(notes, titleOf, mapType, opt = {}) {
   const real = notes.slice(), has = new Set(real.map(n => n.s + ':' + n.id)), byKey = new Map(real.map(n => [n.s + ':' + n.id, n])), byStem = new Map(real.filter(n => n.stem).map(n => [n.stem, n.s + ':' + n.id]));
+  const fzLineages = Folgezettel.lineages(real);
   const topicsOf = new Map(); for (const t of opt.topics || []) { const add = k => { if (!topicsOf.has(k)) topicsOf.set(k, []); if (!topicsOf.get(k).includes(t.name)) topicsOf.get(k).push(t.name); }; if (t.entry) add(t.entry.s + ':' + t.entry.id); for (const r of opt.mergeTopic(t).rows) for (const sp of ['d', 'p']) for (const id of r[sp]) add(sp + ':' + L.splitAnchor(id).id); }
-  let nodes = real.filter(n => opt.paper !== false || n.s !== 'p').map(n => { const k = n.s + ':' + n.id; return { id: k, s: n.s, nid: n.id, kind: 'note', name: (n.s === 'p' ? '紙 ' : n.noid ? '' : '') + (n.noid ? '' : n.id + ' ') + titleOf(n), glyph: n.kind === 'rp' ? '🎭' : n.kind === 'canvas' ? '🗺' : '', color: n.color || null, body: n.body || '', kws: n.keywords || [], tops: topicsOf.get(k) || [] }; });
+  let nodes = real.filter(n => opt.paper !== false || n.s !== 'p').map(n => { const k = n.s + ':' + n.id; return { id: k, s: n.s, nid: n.id, kind: 'note', name: (n.s === 'p' ? '紙 ' : n.noid ? '' : '') + (n.noid ? '' : n.id + ' ') + titleOf(n), glyph: n.kind === 'rp' ? '🎭' : n.kind === 'canvas' ? '🗺' : '', color: n.color || null, body: n.body || '', kws: n.keywords || [], tops: topicsOf.get(k) || [], fzLineage: fzLineages.get(k) || [k] }; });
   const keep = new Set(nodes.map(n => n.id)); let links = [];
   const addLink = (a, b) => { if (keep.has(a) && keep.has(b)) links.push({ id: a + '-' + b, source: a, target: b, name: '' }); };
   if (mapType === 'tree') { for (const n of real) { const p = n.parentStem ? null : L.parentIn(n.id, x => has.has(n.s + ':' + x)); if (p) addLink(n.s + ':' + p, n.s + ':' + n.id); else if (n.parentStem && byStem.get(n.parentStem)) addLink(byStem.get(n.parentStem), n.s + ':' + n.id); } }
@@ -125,7 +128,7 @@ export function loadNotesAndRelations(notes, titleOf, mapType, opt = {}) {
       }
     }
   }
-  if (opt.orphans === false) { const used = new Set(links.flatMap(l => [l.source, l.target])); nodes = nodes.filter(n => used.has(n.id)); }
+  if (opt.orphans === false && !qg.some(g => g.some(t => !t.neg && (t.key === 'folgezettel' || t.key === 'fz')))) { const used = new Set(links.flatMap(l => [l.source, l.target])); nodes = nodes.filter(n => used.has(n.id)); }
   // 大きさ（Trilium）
   const sizes = {};
   if (mapType === 'tree') { const kids = new Map(); for (const l of links) (kids.get(l.source) || kids.set(l.source, []).get(l.source)).push(l.target); const desc = k => (kids.get(k) || []).reduce((a, c) => a + 1 + desc(c), 0); for (const n of nodes) { sizes[n.id] = 4; const c = desc(n.id); if (c > 0) sizes[n.id] += 1 + Math.round(Math.log(c) / Math.log(1.5)); } }
@@ -277,7 +280,7 @@ export function mount(box, o) {
   const sec = (k, title, body) => `<details data-sec="${k}" ${st.open[k] ? 'open' : ''}><summary>${title}</summary>${body}</details>`;
   const presets = gdoc.presets || [];
   const panel = document.createElement('div'); panel.className = 'nm-panel';
-  panel.innerHTML = sec('p', '保存した設定（リンク・ツリーで共有）', `<div class="nm-row"><select data-preset>${presets.map((p, i) => `<option value="${i}">${esc(p.name)}</option>`).join('') || '<option value="">（まだありません）</option>'}</select></div><div class="nm-row"><button data-pa>この設定にする</button><button data-pdel>消す</button></div><div class="nm-row"><input class="nm-q" data-pname placeholder="名前をつけて、今の設定を保存" style="margin:0"><button data-psave>保存</button></div><button class="nm-add" data-reset>このマップを、規定の設定に戻す</button>`) + sec('f', 'フィルター', `<input class="nm-q" data-q placeholder="ノートを検索（例: id:1a  kw:GUI  -下書き  topic:PKM）" value="${esc(st.f.q)}">${tog('f.kw', 'キーワード', st.f.kw)}${tog('f.topics', 'トピックIndex', st.f.topics)}${tog('f.paper', '紙のノート', st.f.paper)}${tog('f.chat', 'チャットメモ', st.f.chat)}${tog('f.files', '添付ファイル', st.f.files)}${tog('f.orphans', 'つながりの無いノート', st.f.orphans)}`)
+  panel.innerHTML = sec('p', '保存した設定（リンク・ツリーで共有）', `<div class="nm-row"><select data-preset>${presets.map((p, i) => `<option value="${i}">${esc(p.name)}</option>`).join('') || '<option value="">（まだありません）</option>'}</select></div><div class="nm-row"><button data-pa>この設定にする</button><button data-pdel>消す</button></div><div class="nm-row"><input class="nm-q" data-pname placeholder="名前をつけて、今の設定を保存" style="margin:0"><button data-psave>保存</button></div><button class="nm-add" data-reset>このマップを、規定の設定に戻す</button>`) + sec('f', 'フィルター', `<input class="nm-q" data-q placeholder="ノートを検索（例: folgezettel:1  id:1a  kw:GUI）" value="${esc(st.f.q)}">${tog('f.kw', 'キーワード', st.f.kw)}${tog('f.topics', 'トピックIndex', st.f.topics)}${tog('f.paper', '紙のノート', st.f.paper)}${tog('f.chat', 'チャットメモ', st.f.chat)}${tog('f.files', '添付ファイル', st.f.files)}${tog('f.orphans', 'つながりの無いノート', st.f.orphans)}`)
     + sec('g', 'グループ（検索で色分け）', `<div data-groups>${st.groups.map((g, i) => `<div class="nm-g"><input type="color" data-gc="${i}" value="${g.color}"><input data-gq="${i}" value="${esc(g.query)}" placeholder="検索（例: kw:GUI）"><button data-gx="${i}" title="消す">×</button></div>`).join('')}</div><button class="nm-add" data-gadd>新しいグループ</button>`)
     + sec('d', '表示', `${tog('d.arrows', '矢印', st.d.arrows)}${slider('d.fade', '文字の消える閾値', 0, 1, .05, st.d.fade)}${slider('d.nodeSize', 'ノードの大きさ', .3, 3, .1, st.d.nodeSize)}${slider('d.linkW', '線の太さ', .3, 4, .1, st.d.linkW)}`)
     + sec('c', '力', `${slider('force.center', '中心へ引く力', 0, 1, .005, st.force.center)}${slider('force.repel', '反発する力', 0, 60, .5, st.force.repel)}${slider('force.link', '線で引く力', 0, 1, .01, st.force.link ?? .5)}${slider('force.dist', '線の長さ', 1, 200, 1, st.force.dist)}`);
