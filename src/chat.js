@@ -3,6 +3,7 @@
 // 返信・引用は @（メンション）。チャットメモの中に、別のメモ・ノートを入れる。ノートからチャットメモへは、出典のリンク（C_日付.md#m-メモID）
 import { ctx, $, esc, pad, hm, uid, renderMd, mdClick, popMenu, toast, dialog } from './shared.js';
 import L from '../lib.js';
+import Relations from '../chat-relations.js';
 
 let doc = { topics: [], messages: [], converted: {}, trash: [], noted: {} };
 let view = '*';        // '*' 全部表示 / '' 未選択 / 日記 / トピック名
@@ -11,6 +12,7 @@ let day = '';          // day のときの日付
 let sel = null;        // 選んでいるメモの id（ノートにする・引用する）。null = 選択中ではない
 let lastSel = null;
 let cq = '', tq = '';
+let childFilter = new Set(); // 空なら全部。複数選択は OR
 let sourceIds = null; // 出典リンクを開いている間だけ、ノートにしたメモIDだけを表示する
 let replyTos = [];            // 返信しているメモの id（いくつでも。WhatsApp のように、入力欄の上に引用を出す）
 let editCtx = null;          // 編集中のメモ { m, reps, redraw }（↩ を押すと、そのメモの返信先に足される）
@@ -115,7 +117,7 @@ const topic = name => doc.topics.find(t => t.name === name);
 const msg = id => doc.messages.find(m => m.id === id);
 // トピックは並列（フォルダにしない）。メモは、トピック（下）を 1 つと、上（別のトピック）を いくつでも 持てる
 const upsOf = m => m.ups || [];
-const inView = (m, name) => name === '*' || m.topic === name || (name !== '' && upsOf(m).includes(name));
+const inView = Relations.inTopic;
 const countOf = name => name === '*' ? doc.messages.length : doc.messages.filter(m => inView(m, name)).length;
 // 最近使った順（トピックとしても、上としても）。「過去にそこで使った上」を、先に
 function lastUseMap() { const mp = new Map(); for (const m of doc.messages) for (const n of new Set([m.topic, ...upsOf(m)])) if (n && (mp.get(n) || 0) < m.t) mp.set(n, m.t); return mp; }
@@ -154,17 +156,24 @@ const parts = body => (body || '').split(/\n{2,}/).map(s => s.replace(/^\n+|\n+$
 const stampRe = /^(\d{2}:\d{2}) ([\s\S]*)$/;
 const dayOfMsg_ = m => L.dayOf(L.now(new Date(m.t)));
 
+function filteredMessages() {
+  let list = doc.messages.filter(m => inView(m, view) && (!sourceIds || sourceIds.has(m.id))).sort((a, b) => a.t - b.t);
+  if (childFilter.size) list = list.filter(m => childFilter.has(Relations.childOf(m, view)));
+  if (cq) { const q = cq.toLowerCase(); list = list.filter(m => (m.text || '').toLowerCase().includes(q)); }   // チャットメモの中の検索
+  return list;
+}
+
 function entries() {
   const be = backend();
   if (be) return parts(be.get()).map((text, i) => { const m = text.match(stampRe); return { kind: 'line', i, time: m ? m[1] : '', text: m ? m[2] : text }; });
-  let list = doc.messages.filter(m => inView(m, view) && (!sourceIds || sourceIds.has(m.id))).sort((a, b) => a.t - b.t);
-  if (cq) { const q = cq.toLowerCase(); list = list.filter(m => (m.text || '').toLowerCase().includes(q)); }   // チャットメモの中の検索
+  let list = filteredMessages();
   if (viewMode === 'day') { if (!day) day = list.length ? dayOfMsg_(list[list.length - 1]) : L.todayStr(); list = list.filter(m => dayOfMsg_(m) === day); }
   return list.map(m => ({ kind: 'msg', m }));
 }
 
 // ===== 画面 =====
 export function open(name, keep, savedSourceIds) {
+  childFilter = new Set();
   view = name; sourceIds = keep && Array.isArray(savedSourceIds) ? new Set(savedSourceIds) : null; sel = null; draft = '';
   if (name !== '*') { doc.target.topic = name; doc.target.ups = doc.target.ups.filter(u => u !== name); save(); }   // 書き込み先は、見ているトピックに。設定（トピック・上）は、変えない限り引き継ぐ
   ctx.setCur(ctx.place({ k: 'chat', topic: name }, keep)); ctx.setMode('chat');
@@ -177,6 +186,7 @@ export const memosForNote = stem => {
 };
 // 出典として選ばれたメモだけを表示する。間にあった未選択のメモは表示しない。
 export function gotoSource(ids) {
+  childFilter = new Set();
   sourceIds = new Set(ids.filter(Boolean));
   if (!sourceIds.size) return toast('元のチャットメモが指定されていません');
   view = '*'; viewMode = 'all'; day = ''; cq = ''; sel = null;
@@ -190,6 +200,7 @@ export const graphData = () => ({ topics: doc.topics, messages: doc.messages, no
 export const searchMemos = q => doc.messages.filter(m => (m.text || '').toLowerCase().includes(q)).sort((a, b) => b.t - a.t);   // 検索結果に出す
 export function gotoMemo(id) {
   const m = msg(id); if (!m) return toast('そのチャットメモは、もうありません');
+  childFilter = new Set(); cq = '';
   sourceIds = null; view = '*'; viewMode = 'all'; day = '';
   ctx.setCur(ctx.place({ k: 'chat', topic: '*' }, false)); ctx.setMode('chat'); render(); ctx.renderTabs(); ctx.renderList();
   const el = document.querySelector(`[data-m="${id}"]`); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1800); }
@@ -212,6 +223,7 @@ function render() {
         ${be ? '<button data-c="openbe">ノートを開く</button>' : ''}
         ${t || (isRec(view) && view !== DIARY) ? '<button data-c="conf">⚙ 設定</button>' : ''}
       </div>
+      <div id="c-children" class="c-children"></div>
       <div id="c-msgs"></div>
       <div id="c-selbar"></div>
       <div id="c-redit" class="c-redit" style="display:none"></div>
@@ -230,7 +242,7 @@ const noteLabel = stem => { const n = ctx.notes().find(x => x.stem === stem); re
 const body = text => renderMd(text);
 const firstLine = t => (t || '').replace(/\[@[^\]]*\]\(memo:[^)]*\)\s*/g, '').split('\n').find(x => x.trim()) || '';
 // 返信のメモに、元のメモを引用として出す（押すと、元のメモへ）
-export const repliesOf = m => m.replies || (m.reply ? [m.reply] : []);   // 返信先（いくつでも。昔の 1 つだけの形も読む）
+export const repliesOf = Relations.repliesOf;   // 返信先（いくつでも。昔の 1 つだけの形も読む）
 const quoteHtml = m => repliesOf(m).map(id => { const o = msg(id); return o ? `<div class="b-quote" data-qm="${esc(o.id)}"><b>${esc(o.topic ? o.topic + ' ・ ' : '')}${hm(o.t)}</b><span>${esc(firstLine(o.text).slice(0, 80))}</span></div>` : '<div class="b-quote gone"><span>（消されたメモ）</span></div>'; }).join('');
 // 入力欄の上の「返信先」
 // 書き込み先: トピック（下）と、上（いくつでも）。変えない限り、次に書くメモも同じ
@@ -276,7 +288,19 @@ function showRedit() {
   el.style.display = ''; el.innerHTML = `<b>返信先の編集</b>　「${esc(firstLine(m.text).slice(0, 16))}」: ${os.map(id => { const o = msg(id); return `<span class="b-chip" data-rdel="${esc(id)}" title="外す">↩ ${esc(o ? firstLine(o.text).slice(0, 16) : '（消されたメモ）')} ×</span>`; }).join('') || '<span class="sub">なし</span>'}　<span class="sub">返信先にするメモの ↩ か、メモそのものを押すと足せます（もう一度で外れます）</span><button class="p" data-c="rdone">完了</button>`;
 }
 export function startReplyEdit(id) { redit = id; showRedit(); }
+function showChildren() {
+  const box = $('#c-children'); if (!box) return;
+  const rows = Relations.childCounts(doc.messages, view);
+  box.hidden = !!sourceIds || !!backend() || view === '*' || view === '' || !rows.some(r => r.name);
+  if (box.hidden) { childFilter.clear(); box.innerHTML = ''; return; }
+  const available = new Set(rows.map(r => r.name));
+  for (const n of childFilter) if (!available.has(n)) childFilter.delete(n);
+  const total = rows.reduce((n, r) => n + r.count, 0);
+  box.innerHTML = `<span class="sub">下位トピック</span><button data-child-all class="${childFilter.size ? '' : 'on'}" aria-pressed="${!childFilter.size}">すべて ${total}</button>`
+    + rows.map(r => `<button data-child="${esc(r.name)}" class="${childFilter.has(r.name) ? 'on' : ''}" aria-pressed="${childFilter.has(r.name)}">${esc(r.name || '下位トピックなし')} ${r.count}</button>`).join('');
+}
 function paint(toBottom) {
+  showChildren();
   const box = $('#c-msgs'); if (!box) return; const keepTop = box.scrollTop;
   const list = entries(), showTopic = view === '*'; let lastDay = '';
   box.innerHTML = list.length ? list.map(e => {
@@ -358,7 +382,7 @@ function menuFor(e, bub) {
 }
 function editBox(bub, text, onSave, m) {
   const b = bub.querySelector('.b-body');
-  b.innerHTML = `<div class="b-chips"></div><textarea class="b-edit"></textarea><div class="rp-mention b-emn" style="display:none"></div><div class="row"><button class="p" data-ok>保存</button><button data-no>やめる</button></div>`;
+  b.innerHTML = `<div class="b-chips"></div><textarea class="b-edit"></textarea><div class="rp-mention b-emn" style="display:none"></div><div class="row"><button class="p" data-ok>完了</button><button data-no>やめる</button></div>`;
   const ta = b.querySelector('textarea'), chips = b.querySelector('.b-chips'), mbox = b.querySelector('.b-emn'); ta.value = text; ta.style.height = Math.max(60, ta.scrollHeight) + 'px'; ta.focus();
   const reps = m ? repliesOf(m).slice() : [];
   const MEN = /\[@([^\]]*)\]\(memo:([^)\s]+)\)/g;
@@ -373,7 +397,14 @@ function editBox(bub, text, onSave, m) {
     const c = e.target.closest('[data-cm]'); if (c) { let k = 0; ta.value = ta.value.replace(MEN, t => (k++ === +c.dataset.cm ? '' : t)).replace(/ {2,}/g, ' '); drawChips(); ta.focus(); }
   });
   ta.addEventListener('input', () => { drawChips(); mentionList(ta, mbox); });
-  ta.addEventListener('keydown', e => { if (e.key === 'Escape' && mn.length) { e.stopPropagation(); mentionOff(); } if (e.key === 'Enter' && mn.length && !e.isComposing) { e.preventDefault(); pickMention(0); } });
+  ta.addEventListener('keydown', e => {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Escape' && mn.length) { e.stopPropagation(); mentionOff(); return; }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault(); e.stopPropagation();
+      if (mn.length) pickMention(0); else b.querySelector('[data-ok]').click();
+    }
+  });
   mbox.addEventListener('mousedown', e => { const it = e.target.closest('[data-mn]'); if (it) { e.preventDefault(); pickMention(+it.dataset.mn); } });
   drawChips();
   b.querySelector('[data-ok]').onclick = () => { mentionOff(); pickReply = null; editCtx = null; onSave(ta.value.trim(), reps); };
@@ -421,26 +452,28 @@ function toNoteDialog() {
     <label class="rad"><input type="radio" name="as" value="noid" checked> IDなしのノート（あとで整理する）</label>
     <label class="rad"><input type="radio" name="as" value="id"> このノートのID <input id="as-id" style="width:100px" value="${esc(rootFree())}"></label>
     <label class="rad"><input type="radio" name="as" value="parent"> 親のノートのID（分岐として付ける） <input id="as-parent" style="width:100px" placeholder="例: 1a"></label>
+    <label class="rad"><input type="checkbox" id="as-body" checked> 選んだメモの本文を含める（オフなら出典リンクだけ）</label>
     <label class="rad"><input type="checkbox" id="as-time" ${ms.length > 1 ? 'checked' : ''}> ノート本文に各メモの時刻を付ける（オフなら文章だけ）</label>
     <div class="row"><button class="p" id="as-ok">ノートにする</button><button id="as-no">やめる</button></div>`, close => {
     $('#as-id').onfocus = () => { document.querySelector('input[value=id]').checked = true; };
     $('#as-parent').onfocus = () => { document.querySelector('input[value=parent]').checked = true; };
     $('#as-no').onclick = close;
+    $('#as-body').onchange = () => { $('#as-time').disabled = !$('#as-body').checked; };
     $('#as-ok').onclick = async () => {
       const kind = document.querySelector('input[name=as]:checked').value; let id = null;
       if (kind === 'parent') { const p = $('#as-parent').value.trim().toLowerCase(); if (!ctx.get('d', p)) return alert(`デジタルのノート ${p || '（空）'} がありません`); id = ctx.free('d', L.child(p)); }
       else if (kind === 'id') { id = $('#as-id').value.trim().toLowerCase(); if (!L.isId(id)) return alert('IDの形が違います（例: 12 や 3a）'); if (ctx.get('d', id)) return alert(`ノート ${id} は既にあります`); }
-      const withTime = $('#as-time').checked;
-      close(); await makeNote(ms, id, withTime);
+      const withTime = $('#as-time').checked, withBody = $('#as-body').checked;
+      close(); await makeNote(ms, id, withTime, withBody);
     };
   });
 }
-async function makeNote(ms, id, withTime = false) {
+async function makeNote(ms, id, withTime = false, withBody = true) {
   // 本文: 先頭に、元のチャットメモ（日付と時刻の範囲）へのリンク。そのあとに、メモの文章（コピー。あとは別物）
   // 複数選択は全IDをリンクに記録する（間の未選択メモは含めない）
   const anchor = ms.length === 1 ? `m-${ms[0].id}` : `ms-${ms.map(m => m.id).join(',')}`;
   const head = `元のチャットメモ: [${range(ms)}](${dayFile(dayOfMsg_(ms[0]))}#${anchor})`;
-  const bodyText = head + '\n\n' + ms.map(m => (withTime ? `${hm(m.t)} ` : '') + m.text.replace(/\[@([^\]]*)\]\(memo:[^)\s]+\)/g, '@$1')).join('\n');   // メンションは、ノートでは ふつうの文字に。メモ同士に空行は挟まない
+  const bodyText = head + (withBody ? '\n\n' + Relations.noteText(ms, { lookup: msg, source: m => `${dayFile(dayOfMsg_(m))}#m-${m.id}`, stamp: m => withTime ? hm(m.t) : '' }) : '');
   const note = id ? await ctx.api.saveNote({ s: 'd', id, created: L.now(new Date(ms[0].t)), keywords: [], body: bodyText }) : await ctx.api.createNote({ kind: 'text', created: L.now(new Date(ms[0].t)), body: bodyText });
   if (!ctx.get('d', note.id)) ctx.notes().push(note);
   for (const m of ms) doc.noted[m.id] = [...new Set([...(doc.noted[m.id] || []), note.stem])];
@@ -527,13 +560,19 @@ export async function attach(files) {
 // ===== イベント =====
 document.addEventListener('click', e => {
   const pane = e.target.closest('.chat'); if (!pane || pane.classList.contains('rp')) return; // なりきりは roleplay.js
+  const cf = e.target.closest('[data-child], [data-child-all]');
+  if (cf) {
+    if (cf.hasAttribute('data-child-all')) childFilter.clear();
+    else { const n = cf.dataset.child; childFilter.has(n) ? childFilter.delete(n) : childFilter.add(n); }
+    sel = null; lastSel = null; paint(); selbar(); return;
+  }
   const mnx = e.target.closest('[data-mn]'); if (mnx) return pickMention(+mnx.dataset.mn);
   const c = e.target.closest('[data-c]');
   if (c) {
     const a = c.dataset.c;
     if (a === 'send') send();
     if (a === 'vall' || a === 'vday') { viewMode = a === 'vday' ? 'day' : 'all'; doc.viewMode = viewMode; if (viewMode === 'day') day = ''; save(); render(); }
-    if (a === 'dprev' || a === 'dnext') { const ds = [...new Set(doc.messages.filter(m => view === '*' || m.topic === view).map(dayOfMsg_))].sort(), i = ds.indexOf(day || L.todayStr()); const n = ds[a === 'dprev' ? (i < 0 ? ds.length - 1 : i - 1) : i + 1]; if (n) { day = n; render(); } }
+    if (a === 'dprev' || a === 'dnext') { const ds = [...new Set(filteredMessages().map(dayOfMsg_))].sort(), i = ds.indexOf(day || L.todayStr()); const n = ds[a === 'dprev' ? (i < 0 ? ds.length - 1 : i - 1) : i + 1]; if (n) { day = n; render(); } }
     if (a === 'attach') ctx.pick(true, attach, '*');
     if (a === 'conf') confDialog();
     if (a === 'openbe') backend().open();
@@ -569,7 +608,7 @@ document.addEventListener('click', e => {
   const qm = e.target.closest('[data-qm]'); if (qm) { const id = qm.dataset.qm, el = document.querySelector(`#c-msgs [data-m="${id}"]`); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1800); } else gotoMemo(id); return; }
   const gd = e.target.closest('[data-gday]'); if (gd) { const [kind, date] = gd.dataset.gday.split('|'); ctx.setMode('diary'); ctx.openDiary(date, false, kind); return; }
   const nt = e.target.closest('.ntag'); if (nt) { const n = ctx.notes().find(x => x.stem === nt.dataset.stem); if (n) ctx.openNote(n.s, n.id); return; }
-  const ment = e.target.closest('a[data-file^="memo:"]'); if (ment) { e.preventDefault(); const el = document.querySelector(`[data-m="${ment.dataset.file.slice(5)}"]`); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1800); } else toast('そのメモは、いまの表示にありません（「全部表示」で探せます）'); return; }
+  const ment = e.target.closest('a[data-file^="memo:"]'); if (ment) { e.preventDefault(); const el = document.querySelector(`[data-m="${ment.dataset.file.slice(5)}"]`); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1800); } else gotoMemo(ment.dataset.file.slice(5)); return; }
   if (mdClick(e)) return;
   const bub = e.target.closest('.bub[data-m]');
   if (bub && sel) { // 選ぶ: クリックで入れる・外す。Shift+クリックで範囲
@@ -599,10 +638,10 @@ document.addEventListener('input', e => {
 document.addEventListener('input', e => { if (e.target.id === 'c-in' && !e.target.closest('.rp')) { draft = e.target.value; fit(e.target); mentionList(); } });
 document.addEventListener('keydown', e => {
   if (e.target.id === 'c-in' && !e.target.closest('.rp')) {
-    if (mn.length && (e.key === 'Tab' || (e.key === 'Enter' && !e.isComposing))) { e.preventDefault(); return pickMention(0); }
+    if (mn.length && !e.isComposing && e.keyCode !== 229 && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey))) { e.preventDefault(); return pickMention(0); }
     if (e.key === 'Escape' && mn.length) { mentionOff(); return; }
     if (e.key === 'Escape' && replyTos.length) { e.preventDefault(); replyTos = []; showReply(); }
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); send(); }
   }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && pickReply) { pickReply = null; const eb = document.querySelector('.b-edit'); if (eb) eb.dispatchEvent(new Event('input')); } }, true);   // 返信先を選ぶのをやめる
