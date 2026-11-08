@@ -1,10 +1,11 @@
-// チャットメモ（LINE のようにすぐ書ける）。メモはノートにならない。ノートにするのは、選んだもの（範囲・複数）だけ。ノートにしても、メモは残る（「ノート 1a」の印）
+// チャットメモ（LINE のようにすぐ書ける）。1件以上を「ノート化」しても元メモは残る。ノート化は本文コピーではなく、元メモ参照のノート。
 // 保存: C_チャット.json（正）。日ごとの md（C_2026-11-08.md）を、見る用に自動で書き出す（store.js）。日記トピックのメモは、日記にも時刻つきの行で入る
 // 返信・引用は @（メンション）。チャットメモの中に、別のメモ・ノートを入れる。ノートからチャットメモへは、出典のリンク（C_日付.md#m-メモID）
 import { ctx, $, esc, pad, hm, uid, renderMd, mdClick, popMenu, toast, dialog } from './shared.js';
 import L from '../lib.js';
 import Relations from '../chat-relations.js';
 import TopicPrefs from '../chat-topic-preferences.js';
+import MemoGroup from '../memo-group.js';
 import * as TopicGraph from './chat-topic-graph.js';
 
 let doc = { topics: [], messages: [], converted: {}, trash: [], noted: {} };
@@ -343,7 +344,7 @@ function paint(toBottom) {
   box.innerHTML = list.length ? list.map(e => {
     if (e.kind === 'line') return `<div class="bub" data-i="${e.i}"><div class="b-body md">${body(e.text)}</div><div class="b-foot"><span class="b-left"></span><span class="b-time">${e.time}</span></div></div>`;
     const m = e.m, d = dayOfMsg_(m), head = viewMode === 'all' && d !== lastDay ? `<div class="dsep">${wk(d)}</div>` : ''; lastDay = d;
-    const tags = (doc.noted[m.id] || []).map(st => noteLabel(st)).filter(Boolean).map((l, i) => `<span class="ntag" data-stem="${esc(doc.noted[m.id][i])}" title="このメモから作ったノート">📝 ${esc(l)}</span>`).join('');
+    const tags = (doc.noted[m.id] || []).map(st => ({ st, label: noteLabel(st) })).filter(x => x.label).map(x => `<span class="ntag" data-stem="${esc(x.st)}" title="ノート化されたメモを開く">📝 ${esc(x.label)}</span>`).join('');
     const picked = sel && sel.has(m.id);
     const dayLink = isRec(m.topic) ? `<span class="gday" data-gday="${esc(m.topic)}|${dayOfMsg_(m)}" title="その日のノートを開く">📔 ${esc(m.topic === DIARY ? '日記' : m.topic)}</span>` : '';
     return `${head}<div class="bub${sel ? ' pick' : ''}${picked ? ' picked' : ''}" data-m="${m.id}">
@@ -354,7 +355,7 @@ function paint(toBottom) {
 }
 function selbar() {
   const b = $('#c-selbar'); if (!b) return;
-  b.innerHTML = sel ? `<span>${sel.size} 件を選択</span><span class="grow"></span><button data-c="selall">全部</button><button data-c="selclear" ${sel.size ? '' : 'disabled'}>選択解除</button><button data-c="selcopy" ${sel.size ? '' : 'disabled'}>コピー</button><button data-c="selmove" ${sel.size ? '' : 'disabled'}>所属・上位トピック</button><button data-c="seldel" class="danger" ${sel.size ? '' : 'disabled'}>消す</button><button class="p" data-c="tonote" ${sel.size ? '' : 'disabled'}>ノートにする</button><button data-c="selno">やめる</button>` : '';
+  b.innerHTML = sel ? `<span>${sel.size} 件を選択</span><span class="grow"></span><button data-c="selall">全部</button><button data-c="selclear" ${sel.size ? '' : 'disabled'}>選択解除</button><button data-c="selcopy" ${sel.size ? '' : 'disabled'}>コピー</button><button data-c="selmove" ${sel.size ? '' : 'disabled'}>所属・上位トピック</button><button data-c="seldel" class="danger" ${sel.size ? '' : 'disabled'}>消す</button><button class="p" data-c="tonote" ${sel.size ? '' : 'disabled'}>ノート化</button><button data-c="selno">やめる</button>` : '';
   b.style.display = sel ? 'flex' : 'none';
 }
 
@@ -498,41 +499,73 @@ function setTopicsDialog(ms) {
 const chosen = () => [...sel].map(msg).filter(Boolean).sort((a, b) => a.t - b.t);
 const range = ms => { const f = ms[0], l = ms[ms.length - 1], d1 = dayOfMsg_(f), d2 = dayOfMsg_(l); return `${d1} ${hm(f.t)}${ms.length > 1 ? '〜' + (d1 === d2 ? '' : d2 + ' ') + hm(l.t) : ''}`; };
 const source = m => `[${dayOfMsg_(m)} ${hm(m.t)}](${dayFile(dayOfMsg_(m))}#m-${m.id})`;
+// ノート化: チャットメモ1件でも複数件でも、実体は一つのノートとしてID・索引で管理。
+// 元のメモ本文をノートにコピーせず、メモの内部IDだけを記録する。
 function toNoteDialog() {
   const ms = chosen(); if (!ms.length) return;
   const rootFree = () => { const r = ctx.notes().filter(n => n.s === 'd' && /^\d+$/.test(n.id)).map(n => +n.id); return ctx.free('d', String((r.length ? Math.max(...r) : 0) + 1)); };
-  dialog(`<h3>${ms.length} 件を、ノートにする</h3>
-    <div class="sub">選んだメモを、1 つのノートにまとめます。メモは、チャットに残ります（「ノート …」の印が付きます）。</div>
-    <label class="rad"><input type="radio" name="as" value="noid" checked> IDなしのノート（あとで整理する）</label>
-    <label class="rad"><input type="radio" name="as" value="id"> このノートのID <input id="as-id" style="width:100px" value="${esc(rootFree())}"></label>
-    <label class="rad"><input type="radio" name="as" value="parent"> 親のノートのID（分岐として付ける） <input id="as-parent" style="width:100px" placeholder="例: 1a"></label>
-    <label class="rad"><input type="checkbox" id="as-body" checked> 選んだメモの本文を含める（オフなら出典リンクだけ）</label>
-    <label class="rad"><input type="checkbox" id="as-time" ${ms.length > 1 ? 'checked' : ''}> ノート本文に各メモの時刻を付ける（オフなら文章だけ）</label>
-    <div class="row"><button class="p" id="as-ok">ノートにする</button><button id="as-no">やめる</button></div>`, close => {
-    $('#as-id').onfocus = () => { document.querySelector('input[value=id]').checked = true; };
-    $('#as-parent').onfocus = () => { document.querySelector('input[value=parent]').checked = true; };
+  dialog(`<h3>${ms.length} 件のメモをノート化</h3>
+    <div class="sub">元のチャットメモは残り、専用のノート画面にそのまま表示されます。内容のコピーは作りません。</div>
+    <label>タイトル <input id="as-title" style="width:100%" placeholder="例: ヘーゲルの君主制論" value="${esc(firstLine(ms[0].text).slice(0, 45))}"></label>
+    <label class="rad"><input type="radio" name="as" value="noid" checked> IDなし（あとで付ける）</label>
+    <label class="rad"><input type="radio" name="as" value="id"> IDを付ける <input id="as-id" style="width:100px" value="${esc(rootFree())}"></label>
+    <label class="rad"><input type="radio" name="as" value="parent"> 親ノートのID（分岐として付ける） <input id="as-parent" style="width:100px" placeholder="例: 1a"></label>
+    <div class="row"><button class="p" id="as-ok">ノート化</button><button id="as-no">やめる</button></div>`, close => {
+    $('#as-id').onfocus = () => { document.querySelector('input[name=as][value=id]').checked = true; };
+    $('#as-parent').onfocus = () => { document.querySelector('input[name=as][value=parent]').checked = true; };
     $('#as-no').onclick = close;
-    $('#as-body').onchange = () => { $('#as-time').disabled = !$('#as-body').checked; };
     $('#as-ok').onclick = async () => {
       const kind = document.querySelector('input[name=as]:checked').value; let id = null;
-      if (kind === 'parent') { const p = $('#as-parent').value.trim().toLowerCase(); if (!ctx.get('d', p)) return alert(`デジタルのノート ${p || '（空）'} がありません`); id = ctx.free('d', L.child(p)); }
-      else if (kind === 'id') { id = $('#as-id').value.trim().toLowerCase(); if (!L.isId(id)) return alert('IDの形が違います（例: 12 や 3a）'); if (ctx.get('d', id)) return alert(`ノート ${id} は既にあります`); }
-      const withTime = $('#as-time').checked, withBody = $('#as-body').checked;
-      close(); await makeNote(ms, id, withTime, withBody);
+      if (kind === 'parent') {
+        const p = $('#as-parent').value.trim().toLowerCase();
+        if (!ctx.get('d', p)) return alert(`デジタルのノート ${p || '（空）'} がありません`);
+        id = ctx.free('d', L.child(p));
+      } else if (kind === 'id') {
+        id = $('#as-id').value.trim().toLowerCase();
+        if (!L.isId(id)) return alert('IDの形が違います（例: 12 や 3a）');
+        if (ctx.get('d', id)) return alert(`ノート ${id} は既にあります`);
+      }
+      const title = $('#as-title').value.trim();
+      // 失敗したときは画面を閉じずに再試行できるようにする。
+      const note = await makeMemoGroup(ms, id, title);
+      if (note) close();
     };
   });
 }
-async function makeNote(ms, id, withTime = false, withBody = true) {
-  // 本文: 先頭に、元のチャットメモ（日付と時刻の範囲）へのリンク。そのあとに、メモの文章（コピー。あとは別物）
-  // 複数選択は全IDをリンクに記録する（間の未選択メモは含めない）
-  const anchor = ms.length === 1 ? `m-${ms[0].id}` : `ms-${ms.map(m => m.id).join(',')}`;
-  const head = `元のチャットメモ: [${range(ms)}](${dayFile(dayOfMsg_(ms[0]))}#${anchor})`;
-  const bodyText = head + (withBody ? '\n\n' + Relations.noteText(ms, { lookup: msg, source: m => `${dayFile(dayOfMsg_(m))}#m-${m.id}`, stamp: m => withTime ? hm(m.t) : '' }) : '');
-  const note = id ? await ctx.api.saveNote({ s: 'd', id, created: L.now(new Date(ms[0].t)), keywords: [], body: bodyText }) : await ctx.api.createNote({ kind: 'text', created: L.now(new Date(ms[0].t)), body: bodyText });
+async function makeMemoGroup(ms, id, title) {
+  const data = { memoIds: ms.map(m => m.id) };
+  const note = await ctx.api.createNote({ kind: 'memo-group', ...(id ? { id } : {}), data,
+    title, created: L.now(), keywords: [] });
+  if (!note || !note.stem) { alert('ノート化できませんでした'); return null; }
   if (!ctx.get('d', note.id)) ctx.notes().push(note);
   for (const m of ms) doc.noted[m.id] = [...new Set([...(doc.noted[m.id] || []), note.stem])];
-  sel = null; save(); await ctx.refreshDiaries(); paint(); selbar(); ctx.renderList();
-  toast(`${id ? 'ノート ' + id : 'IDなしのノート'} にしました`);
+  sel = null; save(); await ctx.refreshDiaries(); ctx.renderList(); ctx.openNote('d', note.id);
+  toast('ノート化しました（元のチャットメモはそのまま残ります）');
+  return note;
+}
+
+// ノート化されたノートの中央画面。各吹き出しは C_チャット.json の実際のメモを読む。
+// 右側の索引・子・バックリンクは通常のノート画面が描画する。
+export function renderMemoGroup(el, note) {
+  const rows = MemoGroup.entries(note.data, doc);
+  el.innerHTML = `<div class="chat memo memo-note">
+    <div class="memo-note-head">元のチャットメモ ${rows.length} 件 <span class="sub">本文は元のメモと共通です。編集するときは「元のメモ」を開きます。</span></div>
+    <div class="memo-note-messages">${rows.map(({ id, memo: m }) => m
+      ? `<div class="bub" data-source-memo="${esc(id)}">
+          ${quoteHtml(m)}
+          <div class="b-body md">${body(m.text)}</div>
+          <div class="b-foot"><span class="b-left">${m.topic ? esc(m.topic) : '未所属'}${upsOf(m).length ? '　↑ ' + upsOf(m).map(esc).join('、') : ''}</span><span class="b-time">${esc(MemoGroup.at(m.t))}</span></div>
+          <button class="memo-note-source" data-source-memo-open="${esc(id)}">元のメモを開く</button>
+        </div>`
+      : `<div class="bub missing">元のチャットメモ ${esc(id)} は見つかりません</div>`).join('')}</div>
+  </div>`;
+  el.onclick = e => {
+    const q = e.target.closest('[data-qm]');
+    if (q) return gotoMemo(q.dataset.qm);
+    const origin = e.target.closest('[data-source-memo-open]');
+    if (origin) return gotoMemo(origin.dataset.sourceMemoOpen);
+    if (mdClick(e)) return;
+  };
 }
 
 // ===== トピックを作る・設定 =====
