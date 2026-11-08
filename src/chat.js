@@ -208,7 +208,7 @@ function paint(toBottom) {
 }
 function selbar() {
   const b = $('#c-selbar'); if (!b) return;
-  b.innerHTML = sel ? `<span>${sel.size} 件を選択</span><span class="grow"></span><button data-c="selall">全部</button><button data-c="selclear" ${sel.size ? '' : 'disabled'}>選択解除</button><button data-c="selcopy" ${sel.size ? '' : 'disabled'}>コピー</button><button class="p" data-c="tonote" ${sel.size ? '' : 'disabled'}>ノートにする</button><button data-c="toquote" ${sel.size ? '' : 'disabled'}>ノートに引用…</button><button data-c="selno">やめる</button>` : '';
+  b.innerHTML = sel ? `<span>${sel.size} 件を選択</span><span class="grow"></span><button data-c="selall">全部</button><button data-c="selclear" ${sel.size ? '' : 'disabled'}>選択解除</button><button data-c="selcopy" ${sel.size ? '' : 'disabled'}>コピー</button><button class="p" data-c="tonote" ${sel.size ? '' : 'disabled'}>ノートにする</button><button data-c="selno">やめる</button>` : '';
   b.style.display = sel ? 'flex' : 'none';
 }
 
@@ -346,21 +346,6 @@ async function makeNote(ms, id) {
   sel = null; save(); await ctx.refreshDiaries(); paint(); selbar(); ctx.renderList();
   toast(`${id ? 'ノート ' + id : 'IDなしのノート'} にしました`);
 }
-function quoteDialog(ms) {
-  const last = ctx.lastNote && ctx.lastNote();
-  dialog(`<h3>${ms.length} 件を、ノートに引用</h3><div class="sub">${first(ms[0].text)}${ms.length > 1 ? ' ほか' : ''}</div>
-    <div class="row"><select id="qn-s"><option value="d">デジタル</option><option value="p">紙</option></select><input id="qn-id" style="width:110px" value="${esc(last ? last.id : '')}" placeholder="ノートのID"></div>
-    <div class="sub">引用（> …）と、出典のリンク（日付・時刻）が、ノートの最後に入ります</div>
-    <div class="row"><button class="p" id="qn-ok">引用する</button><button id="qn-no">やめる</button></div>`, close => {
-    if (last) $('#qn-s').value = last.s; $('#qn-no').onclick = close; $('#qn-id').focus();
-    $('#qn-ok').onclick = () => {
-      const s = $('#qn-s').value, id = $('#qn-id').value.trim().toLowerCase(), n = ctx.get(s, id);
-      if (!n) return alert('そのノートがありません');
-      const q = ms.map(m => '> ' + m.text.split('\n').join('\n> ') + `\n> 出典: ${source(m)}`).join('\n>\n');
-      n.body = (n.body.trimEnd() ? n.body.trimEnd() + '\n\n' : '') + q + '\n'; ctx.touchNote(n); close(); toast(`ノート ${id} に引用しました`);
-    };
-  });
-}
 
 // ===== トピックを作る・設定 =====
 export function newTopicDialog() {
@@ -458,7 +443,6 @@ document.addEventListener('click', e => {
     if (a === 'selcopy') { const text = entries().filter(x => x.kind === 'msg' && sel.has(x.m.id)).map(x => x.m.text).join('\n\n'); navigator.clipboard.writeText(text).then(() => toast(`${sel.size} 件をコピーしました`)); }
     if (a === 'selall') { sel = new Set(entries().filter(x => x.kind === 'msg').map(x => x.m.id)); paint(); selbar(); }
     if (a === 'tonote') toNoteDialog();
-    if (a === 'toquote') quoteDialog(chosen());
     return;
   }
   const rdel = e.target.closest('[data-rdel]'); if (rdel && redit) { toggleReplyOf(redit, rdel.dataset.rdel); return; }
