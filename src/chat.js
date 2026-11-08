@@ -20,10 +20,20 @@ let draft = '';
 const DIARY = '日記';
 const recKinds = () => (ctx.records ? ctx.records() : []).map(r => r.name).filter(n => n !== DIARY);   // 夢などの時系列記録の種類（日記と同じように使える）
 // ===== 日のノート ⇄ チャットメモ =====
-// 日のノートを空行で区切った塊（段落）。日のノートに直接書いた塊は、書いたときに、新しいチャットメモにもなる（時刻はその時）。
-// 直した塊は、対応するチャットメモの本文も直す。時刻は、チャットメモから来た行にだけ付く（直接書く文章には付けない）
-const AUTO = /^(#{1,6}\s.*|[-*]\s+:?[0-9a-z]+.*|\d{2}:\d{2}\s*)$/;   // 自動で入る行（見出し・ノートへのリンクの並び・時刻だけ）はメモにしない
-const blocks = b => (b || '').split(/\n{2,}/).map(x => x.trim()).filter(x => x && x.split('\n').some(l => !AUTO.test(l.trim())));
+// 日のノートの「時刻 本文」は、空行がなくても時刻ごとに別メモとして扱う。
+// 時刻の後に続く（時刻のない）行は、そのメモの複数行の本文とみなす。
+// それ以外の手書き文章は従来どおり空行ごとに分ける。
+const AUTO = /^(#{1,6}\s.*|[-*]\s+:?[0-9a-z]+.*|\d{2}:\d{2}\s*)$/;
+const blocks = b => {
+  const out = []; let buf = [];
+  const flush = () => { const text = buf.join('\n').trim(); if (text && text.split('\n').some(l => !AUTO.test(l.trim()))) out.push(text); buf = []; };
+  for (const line of (b || '').split('\n')) {
+    if (!line.trim() || AUTO.test(line.trim())) { flush(); continue; }
+    if (/^\d{2}:\d{2}\s+/.test(line)) flush();
+    buf.push(line);
+  }
+  flush(); return out;
+};
 export function dayBaseline(kind, date, body) {   // 日のノートを開いたとき: いまの中身を「同期済み」とする（古い日の中身を、まとめてメモにしない）
   if (!isRec(kind)) return; const k = kind + '|' + date, mr = doc.mirror[k] || (doc.mirror[k] = { blocks: [], map: [] });
   const b = blocks(body); if (b.join('\n\n') !== mr.blocks.join('\n\n')) { mr.blocks = b; save(); }
@@ -45,22 +55,53 @@ export function dayEdited(kind, date, body) {
   mr.blocks = now; save();
   if (touched) { if (view === kind || view === '*') paint(); ctx.renderList(); }
 }
-// チャットメモを直した・消したら、その日のノートの対応する塊も（日記・時系列記録）
+// チャットメモの編集・削除を日記にも反映。前後に空行がなくても該当メモだけを置換する。
 async function memoToDay(m, oldText, del) {
   if (!isRec(m.topic) || !ctx.getDiary) return;
-  let found = null; for (const [k, mr] of Object.entries(doc.mirror)) { const ent = mr.map.find(x => x.memo === m.id); if (ent) { found = { k, mr, ent }; break; } }
-  const date = found ? found.k.split('|')[1] : L.dayOf(L.now(new Date(m.t))), d = ctx.getDiary(date, m.topic); if (!d) return;
-  const flat = t => (t || '').replace(/\n{2,}/g, '\n'), paras = (d.body || '').split(/(\n{2,})/);
-  const cands = found ? [found.ent.blk] : [`${hm(m.t)} ${flat(oldText)}`, (oldText || '').trim()];
-  const at = paras.findIndex((p, i) => i % 2 === 0 && cands.includes(p.trim())); if (at < 0) return;
-  const pre = (paras[at].trim().match(/^\d{2}:\d{2}\s+/) || [''])[0], blk = pre + flat(m.text).trim();
-  if (del) paras.splice(at, at + 1 < paras.length ? 2 : 1); else paras[at] = blk;
-  const body = paras.join('').replace(/^\n+|\n+$/g, '');
+  let found = null;
+  for (const [k, mr] of Object.entries(doc.mirror)) {
+    const ent = mr.map.find(x => x.memo === m.id);
+    if (ent) { found = { k, mr, ent }; break; }
+  }
+  const date = found ? found.k.split('|')[1] : L.dayOf(L.now(new Date(m.t)));
+  const d = ctx.getDiary(date, m.topic); if (!d) return;
+  const flat = t => (t || '').replace(/\n{2,}/g, '\n').trim();
+  const old = d.body || '';
+  const candidates = [...new Set([found && found.ent.blk, `${hm(m.t)} ${flat(oldText)}`, flat(oldText)].filter(Boolean))];
+  let at = -1, selected = '';
+  for (const candidate of candidates) {
+    // 前後が行境界である完全一致だけを対象にする
+    const hits = []; let pos = 0;
+    while ((pos = old.indexOf(candidate, pos)) >= 0) {
+      const end = pos + candidate.length;
+      if ((pos === 0 || old[pos - 1] === '\n') && (end === old.length || old[end] === '\n')) hits.push(pos);
+      pos++;
+    }
+    if (hits.length) {
+      const duplicates = found ? found.mr.map.filter(x => x.blk === candidate) : [];
+      const n = found ? duplicates.findIndex(x => x.memo === m.id) : 0;
+      at = hits[Math.max(0, Math.min(n, hits.length - 1))];
+      selected = candidate; break;
+    }
+  }
+  if (at < 0) return;
+  const pre = (selected.match(/^\d{2}:\d{2}\s+/) || [''])[0];
+  const next = pre + flat(m.text);
+  let body = old.slice(0, at) + (del ? '' : next) + old.slice(at + selected.length);
+  // 削除で残る改行を1つだけ除く。ほかのメモや節の空行は維持
+  if (del) {
+    const before = old.slice(0, at), after = old.slice(at + selected.length);
+    body = before + (before.endsWith('\n') && after.startsWith('\n') ? after.slice(1) : after);
+  }
+  body = body.replace(/^\n+|\n+$/g, '');
   d.body = body; await ctx.api.saveDiary({ date, kind: m.topic, body });
   const k = m.topic + '|' + date, mr = doc.mirror[k] || (doc.mirror[k] = { blocks: [], map: [] });
-  mr.blocks = blocks(body); if (found && del) mr.map = mr.map.filter(x => x !== found.ent); else if (found) found.ent.blk = blk;
+  mr.blocks = blocks(body);
+  if (found && del) mr.map = mr.map.filter(x => x !== found.ent);
+  else if (found) found.ent.blk = next;
   save(); await ctx.refreshDiaries();
-  const c = ctx.cur(); if (c && c.k === 'diary' && c.date === date && c.kind === m.topic) ctx.openDiary(date, true, m.topic);
+  const current = ctx.cur();
+  if (current && current.k === 'diary' && current.date === date && current.kind === m.topic) ctx.openDiary(date, true, m.topic);
 }
 const isRec = n => n === DIARY || recKinds().includes(n);
 
