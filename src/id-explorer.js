@@ -35,9 +35,15 @@ export function open({ notes, topics, readings = {}, paperEntries = [], subject 
   const byTopic = new Map(topics.map(t => [t.name, t]));
   const byKeyword = new Map(X.keywords(notes, readings, paperEntries).map(x => [x.name, x]));
   const st = { view: null, history: [], query: '', scope: 'all', mode: 'direct', typed: X.nextRoot(notes), busy: false };
-  const close = () => { root.remove(); document.removeEventListener('keydown', escapeKey, true); };
-  const escapeKey = e => { if (e.key === 'Escape' && root.isConnected) { e.preventDefault(); e.stopImmediatePropagation(); close(); } };
-  document.addEventListener('keydown', escapeKey, true);
+  const close = () => { root.remove(); window.removeEventListener('keydown', guardKeys, true); };
+  // windowのキャプチャ段階で、探索中のCtrl+Nなどが背後のエディタに届くことを防ぐ。
+  const guardKeys = e => {
+    if (!root.isConnected) return;
+    if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); close(); return; }
+    const writing = e.target && e.target.closest && e.target.closest('.idex-dialog input, .idex-dialog textarea, .idex-dialog select');
+    if (!writing || e.ctrlKey || e.metaKey || e.altKey) e.stopPropagation();
+  };
+  window.addEventListener('keydown', guardKeys, true);
 
   function drawResults() {
     const hits = X.search(notes, topics, readings, st.query, paperEntries), scope = st.scope;
