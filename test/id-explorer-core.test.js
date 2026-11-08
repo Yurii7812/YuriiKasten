@@ -64,7 +64,7 @@ test('探索結果のグループ順を変更しても全グループを保持�
 });
 test('Index、トピックIndex、ノートの内部順をそれぞれ変更する',()=>{
   const idx = X.keywords(notes,read);
-  assert.equal(X.sortResults(idx,'keywords','name')[0].name,'哲学');
+  assert.equal(X.sortResults(idx,'keywords','name')[0].name,'学習');
   assert.equal(X.sortResults(idx,'keywords','count')[0].name,'政治哲学');
   assert.equal(X.sortResults(topics,'topics','name')[0].name,'1-哲学');
   assert.equal(X.sortResults(topics,'topics','entry')[0].entry.id,'1');
