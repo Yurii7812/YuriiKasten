@@ -52,6 +52,14 @@ function topicEntries(topic, notes) {
     stars: merged.stars, refs: merged.refs
   };
 }
+// 通常のIndexと同じ遷移順: IDがトピックIndexの入口なら、先にその索引を開く。
+// そのトピックIndexの中から同じIDを押したときだけ、入口ノートを開く。
+function followIndexReference(notes, topics, space, id, fromTopicName = '') {
+  const t = topics.find(t => t.entry && t.entry.s === space && t.entry.id === id);
+  if (t && t.name !== fromTopicName) return { kind: 'topic', key: t.name };
+  const note = notes.find(n => n.s === space && n.id === id);
+  return note ? { kind: 'note', key: space + ':' + id } : { kind: 'missing', key: space + ':' + id };
+}
 function noteRelations(note, notes, topics) {
   const has = id => notes.some(n => n.s === note.s && !n.noid && n.id === id);
   const parentId = !note.noid ? L.parentIn(note.id, has) : null;
@@ -84,4 +92,4 @@ function available(notes, id, current = null, space = 'd') {
   if (!L.isId(id) || /^\d{8,}$/.test(id)) return false;
   return !notes.some(n => n.s === space && n.id === id && (!current || key(n) !== key(current)));
 }
-module.exports = { key, isAssigned, textMatches, keywords, matchesTopic, search, topicEntries, noteRelations, nextRoot, suggest, available };
+module.exports = { key, isAssigned, textMatches, keywords, matchesTopic, search, topicEntries, followIndexReference, noteRelations, nextRoot, suggest, available };
