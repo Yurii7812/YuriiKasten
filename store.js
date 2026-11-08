@@ -618,7 +618,7 @@ function openVault(vault) {
       if (x.kind) n.kind = x.kind;
       if (x.data !== undefined) n.data = x.data;
       if (x.title !== undefined) n.title = (x.title || '').trim();
-      if (n.kind && n.kind !== 'text') { if (n.data) n.data.title = n.title || n.data.title; n.body = n.kind === 'memo-group' ? '' : L.deriveBody(n.kind, n.data); }
+      if (n.kind && n.kind !== 'text') { if (n.data) n.data.title = n.kind === 'memo-group' ? n.title : (n.title || n.data.title); n.body = n.kind === 'memo-group' ? '' : L.deriveBody(n.kind, n.data); }
       if (before !== JSON.stringify([n.keywords, n.body, n.title, n.data, n.kind, n.pinned, n.color, n.archived, n.parentStem])) n.updated = L.now();
       notes.set(key(x.s, x.id), n);
       if (n.s === 'd' && (fresh || n.pending)) linkNote(n); // 作った日の日記に載る（空のノートは、書いてから）
