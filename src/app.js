@@ -755,7 +755,9 @@ const childNotes = note => {
   const has = x => !!get(note.s, x);
   return notes.filter(n => n.s === note.s && n !== note && ((!note.noid && !n.noid && L.parentIn(n.id, has) === note.id) || (n.parentStem && n.parentStem === note.stem))).sort((a, b) => note.noid || (a.noid && b.noid) ? (a.created || '').localeCompare(b.created || '') : (a.noid ? 1 : b.noid ? -1 : L.cmpId(a.id, b.id)));
 };
-const childrenHtml = note => { const cs = childNotes(note); return cs.length ? `<div class="sec"><div class="l">子ノート ${cs.length}</div>${cs.map(c => `<div class="mt ch" data-s="${c.s}" data-id="${esc(c.id)}"><a class="tl" style="margin-left:0">${esc(titleOf(c) || '（無題）')}</a></div>`).join('')}</div>` : ''; };
+// 右パネルの関係ラベルは絵文字を主役に、文字を小さめに表示する
+const metaLabel = (emoji, label, count = '') => `<div class="l meta-compact-label"><span class="meta-emoji" aria-hidden="true">${emoji}</span><span>${label}${count ? ` ${count}` : ''}</span></div>`;
+const childrenHtml = note => { const cs = childNotes(note); return cs.length ? `<div class="sec">${metaLabel('🌱', '子', cs.length)}${cs.map(c => `<div class="mt ch" data-s="${c.s}" data-id="${esc(c.id)}"><a class="tl" style="margin-left:0">${esc(titleOf(c) || '（無題）')}</a></div>`).join('')}</div>` : ''; };
 function renderMeta(note) {
   const el = $('#margin'); if (!el) return;
   if (note.noid) { const par = note.parentStem && notes.find(x => x.stem === note.parentStem); el.innerHTML = (par ? `<div class="sec"><div class="l">親</div><div class="mt ch" data-s="${par.s}" data-id="${esc(par.id)}"><a class="tl" style="margin-left:0">${esc(titleOf(par) || '（無題）')}</a></div></div>` : '') + childrenHtml(note) + '<div class="hint">IDなしのノートです。<br>「IDを付ける」と、キーワードやトピックIndex、バックリンクが使えます。</div>'; return; }
@@ -763,8 +765,8 @@ function renderMeta(note) {
   const bl = backlinks(note);
   el.innerHTML =
     (note.keywords.length ? `<div class="sec"><div class="l">キーワード</div>${note.keywords.map(k => `<div class="mk" title="${esc(readings[k] || '')}"><span>${esc(k)}</span><b data-kwdel="${esc(k)}" title="外す">×</b></div>`).join('')}</div>` : '') +
-    (ownTopic(note) ? `<div class="sec"><div class="l">このノートのトピックIndex</div><div class="mt"><a class="tl" style="margin-left:0" data-topic="${esc(ownTopic(note).name)}">📑 ${esc(topicLabel(ownTopic(note)))}</a></div></div>` : '') +
-    (tops.length ? `<div class="sec"><div class="l">索引されているトピックIndex</div>${tops.flatMap(x => x.kws.map(kw => `<div class="mt"><span>${esc(kw)}</span><a class="tl" data-topic="${esc(x.t.name)}">${esc(topicLabel(x.t))}</a></div>`)).join('')}</div>` : '') +
+    (ownTopic(note) ? `<div class="sec">${metaLabel('📑', '自トピック')}<div class="mt topic-index-entry"><a class="tl" data-topic="${esc(ownTopic(note).name)}">${esc(topicLabel(ownTopic(note)))}</a></div></div>` : '') +
+    (tops.length ? `<div class="sec">${metaLabel('🗂️', 'トピック')}${tops.map(x => `<div class="mt topic-index-entry"><a class="tl" data-topic="${esc(x.t.name)}">${esc(topicLabel(x.t))}</a><div class="topic-index-keys">${x.kws.map(kw => `<span>${esc(kw)}</span>`).join('、')}</div></div>`).join('')}</div>` : '') +
     childrenHtml(note) +
     (bl.length ? `<div class="sec"><div class="l">バックリンク ${bl.length}</div>${bl.map(x => x.m
       ? `<div class="bl" data-s="${x.m.s}" data-id="${esc(x.m.id)}"><div class="bh"><b>${esc(titleOf(x.m))}</b><em>${esc(x.m.id)}</em></div><p>${x.c}</p></div>`
