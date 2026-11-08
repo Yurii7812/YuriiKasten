@@ -228,9 +228,13 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
     val collapsed = remember { mutableStateListOf<String>() }      // Folgezettel 表示で折りたたんだメモ
     var backdate by remember { mutableStateOf<Long?>(null) }       // 日付を指定して書く（日記・時系列記録）。その日の 0 時。null は今日
     var pickDate by remember { mutableStateOf(false) }
+    var viewDate by remember { mutableStateOf(false) }
+    var limit by remember { mutableStateOf(150) }                  // 新しい順に、これだけ表示（多いと重いので、「さらに表示」で足す）
+    LaunchedEffect(topic, search) { limit = 150 }             // 日付を指定して、その日のメモを見る
     var renameFor by remember { mutableStateOf<String?>(null) }    // 名前を変えるトピック
     var deleteTopicFor by remember { mutableStateOf<String?>(null) } // 消すトピック
     if (scanOpen) { ScanScreen(onClose = { scanOpen = false }); return }
+    if (pcDaysOpen) { PcDaysScreen(days = remember { store.loadPc().second }, onClose = { pcDaysOpen = false }); return }
     val prompt by promptState
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -253,6 +257,20 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
         if (t != topic) backdate = null   // 日時の指定はトピックを変えたら今に戻す
         topic = t
         settings = settings.copy(lastTopic = t); store.saveSettings(settings)
+    }
+    // PC が USB でメモを書き込んだら、アプリを開いたままでも、すぐ取り込む（2 秒ごとに、ファイルの更新を見る）
+    LaunchedEffect(Unit) {
+        var seen = File(ctx.filesDir, "pc_memos.json").lastModified()
+        while (true) {
+            delay(2000)
+            val now = File(ctx.filesDir, "pc_memos.json").lastModified()
+            if (now != seen) {
+                seen = now
+                val cur = entries.toList(); val merged = store.syncPc(cur)
+                if (merged != cur) { entries.clear(); entries.addAll(merged); persist() }
+                pcRecords = store.loadRecords(); pcTopics = store.loadPcTopics()
+            }
+        }
     }
     LifecycleResumeEffect(Unit) {
         run { val cur = entries.toList(); val merged = store.syncPc(cur); if (merged != cur) { entries.clear(); entries.addAll(merged); persist() } }   // PC のメモと共有
@@ -360,6 +378,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
         scope.launch {
             delay(50)
             val list = visibleEntries(entries, topic).sortedByDescending { it.created }
+            val pos = list.indexOfFirst { it.id == id }; if (pos >= limit) { limit = pos + 30; delay(150) }   // 古いメモへ飛ぶときは、そこまで表示を広げる
             var idx = 0
             for ((i, x) in list.withIndex()) {
                 if (x.id == id) break
@@ -513,6 +532,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
                             if (topic !in listOf(ALL, UNASSIGNED, DIARY)) {
                                 DropdownMenuItem(text = { Text("このトピックの取り込み方") }, leadingIcon = { Icon(Icons.Filled.Settings, null) }, onClick = { moreMenu = false; modeFor = topic })
                             }
+                            DropdownMenuItem(text = { Text("日付を指定して見る") }, leadingIcon = { Icon(Icons.Filled.Event, null) }, onClick = { moreMenu = false; viewDate = true })
                             DropdownMenuItem(text = { Text("複数選択") }, leadingIcon = { Icon(Icons.Filled.Checklist, null) }, onClick = {
                                 moreMenu = false; selecting = true; selected.clear(); rangeAnchor = null; rangeMode = false; contextFor = null; keyboard?.hide()
                             })
@@ -566,7 +586,6 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
                                 ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("memo", text))
                                 selected.clear(); selecting = false
                             }, enabled = selected.isNotEmpty(), modifier = Modifier.weight(1f)) { Text("コピー") }
-                            OutlinedButton(onClick = { mergeEntries(selected.toSet()); selected.clear(); selecting = false }, enabled = selected.size >= 2, modifier = Modifier.weight(1f)) { Text("統合") }
                             OutlinedButton(onClick = { moveSelectedOpen = true }, enabled = selected.isNotEmpty(), modifier = Modifier.weight(1f)) { Text("移動") }
                             OutlinedButton(onClick = { deleteSelectedOpen = true }, enabled = selected.isNotEmpty(), modifier = Modifier.weight(1f)) { Text("消す") }
                         }
@@ -623,10 +642,11 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
     ) { pad ->
         // 検索中はトピックに関係なく、全部のメモの本文から探す
         val sq = search?.trim().orEmpty()
-        val shown = remember(entrySnapshot, search, topic) {
+        val shownAll = remember(entrySnapshot, search, topic) {
             (if (search != null && sq.isNotEmpty()) entrySnapshot.filter { matchesQuery(it.text, sq) }
                 else visibleEntries(entrySnapshot, topic)).sortedByDescending { it.created }
         }
+        val shown = remember(shownAll, limit) { if (shownAll.size > limit) shownAll.take(limit) else shownAll }
         if (settings.folgeView && search == null) {
             // Folgezettel 表示: 親子の木を上から（1, 1a, 1a1 …）。▸/▾ で一部を折りたたむ・開く
             val collapsedIds = collapsed.toSet()
@@ -717,6 +737,9 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
                         }
                     }
                 }
+            }
+            if (shownAll.size > shown.size) item(key = "more") {
+                TextButton(onClick = { limit += 150 }, modifier = Modifier.fillMaxWidth()) { Text("古いメモをさらに表示（あと ${shownAll.size - shown.size} 件）") }
             }
             if (shown.isEmpty()) item {
                 Text("この表示にはまだメモがありません。\nここに書いたものは、USB で PC に取り込むと、YuriiNote の「未整理」に 1 件ずつ届きます。\n長押しで「分岐」「文脈」などができます。",
@@ -841,6 +864,21 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
     }
 
     // 日付を指定して書く（日付だけ。時刻は「今の時刻を入れる」で選ぶ）
+    if (viewDate) {
+        val st = rememberDatePickerState(initialSelectedDateMillis = localToUtcDay(System.currentTimeMillis()))
+        DatePickerDialog(onDismissRequest = { viewDate = false },
+            confirmButton = { TextButton(onClick = {
+                viewDate = false
+                st.selectedDateMillis?.let {
+                    val from = utcDayToLocalMidnight(it); val to = from + 86_400_000L
+                    val hit = visibleEntries(entries, topic).filter { e -> e.created in from until to }.maxByOrNull { e -> e.created }
+                    if (hit != null) jumpTo(hit.id) else android.widget.Toast.makeText(ctx, "その日のメモはありません", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }) { Text("見る") } },
+            dismissButton = { TextButton(onClick = { viewDate = false }) { Text("やめる") } }) {
+            DatePicker(st)
+        }
+    }
     if (pickDate) {
         val st = rememberDatePickerState(initialSelectedDateMillis = (backdate ?: System.currentTimeMillis()).let { localToUtcDay(it) })
         DatePickerDialog(onDismissRequest = { pickDate = false },
@@ -946,21 +984,6 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
             confirmButton = { TextButton(onClick = { outlineFor = null }) { Text("やめる") } })
     }
 
-    if (pcDaysOpen) {
-        val days = remember { store.loadPc().second.sortedWith(compareByDescending<PcDay> { it.date }.thenBy { it.kind }) }
-        var shown by remember { mutableStateOf<PcDay?>(null) }
-        AlertDialog(onDismissRequest = { if (shown != null) shown = null else pcDaysOpen = false },
-            title = { Text(shown?.let { it.date + "  " + it.kind } ?: "PC の日のノート") },
-            text = {
-                val sh = shown
-                if (sh != null) androidx.compose.foundation.lazy.LazyColumn { item { SelectionContainer { androidx.compose.material3.Text(sh.body, fontSize = 14.sp) } } }
-                else androidx.compose.foundation.lazy.LazyColumn {
-                    items(days.size) { i -> val d = days[i]
-                        Text(d.date + "  " + d.kind, Modifier.fillMaxWidth().clickable { shown = d }.padding(vertical = 10.dp), fontSize = 15.sp) }
-                }
-            },
-            confirmButton = { TextButton(onClick = { if (shown != null) shown = null else pcDaysOpen = false }) { Text(if (shown != null) "一覧へ" else "閉じる") } })
-    }
     if (deleteSelectedOpen) {
         AlertDialog(onDismissRequest = { deleteSelectedOpen = false }, title = { Text("${selected.size} 件を消しますか？") },
             text = { Text(run { val n = selected.count { it !in imported }; "画像も消えます。元に戻せません。" + if (n > 0) "\nまだ PC に取り込んでいない $n 件も、消えます。" else "スマホの中からだけ消えます。" }) },

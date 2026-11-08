@@ -78,10 +78,19 @@ async function ready() {
   return { adb, serial, A, pkgs };
 }
 const cat = (r, rel, pkg) => runBuf(r.adb, r.A(['exec-out', 'run-as', pkg, 'cat', rel]));
-const putFile = async (r, rel, text, pkg) => {   // アプリの権限で、一時ファイルに書いてから置き換える
+const putFile = async (r, rel, text, pkg) => {   // アプリの権限で、一時ファイルに書いてから置き換える。書けたかを読み返して確かめる（だめなら adb push 経由でもう一度）
+  const want = Buffer.byteLength(text);
+  const ok = async () => { const g = await cat(r, rel, pkg); return g.code === 0 && g.out.length === want; };
   const w = await run(r.adb, r.A(['shell', `run-as ${pkg} sh -c 'cat > ${rel}.tmp'`]), { input: text });
-  if (w.code !== 0) return false;
-  return (await run(r.adb, r.A(['shell', `run-as ${pkg} mv ${rel}.tmp ${rel}`]))).code === 0;
+  if (w.code === 0 && (await run(r.adb, r.A(['shell', `run-as ${pkg} mv ${rel}.tmp ${rel}`]))).code === 0 && await ok()) return true;
+  const tmp = path.join(os.tmpdir(), 'yn-' + process.pid + '-' + path.basename(rel)), dev = '/data/local/tmp/yn-' + path.basename(rel);   // 大きいファイルは、こちら
+  try {
+    fs.writeFileSync(tmp, text);
+    if ((await run(r.adb, r.A(['push', tmp, dev]))).code !== 0) return false;
+    const c = await run(r.adb, r.A(['shell', `run-as ${pkg} sh -c 'cat ${dev} > ${rel}.tmp && mv ${rel}.tmp ${rel}'`]));
+    await run(r.adb, r.A(['shell', 'rm', '-f', dev]));
+    return c.code === 0 && await ok();
+  } finally { try { fs.unlinkSync(tmp); } catch { } }
 };
 const parseJson = (buf, fallback) => { try { return JSON.parse(buf.toString('utf8')); } catch { return fallback; } };
 // スマホのメモ・写真・スキャンを読む。1 つでも読めなければ中止（取り込み済みにしない）

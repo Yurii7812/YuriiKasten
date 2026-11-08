@@ -60,9 +60,9 @@ async function runPhoneImport() {
   const r = await P.pull(); if (!r.ok) return { ok: false, message: r.message };
   const out = C.importCapture(v, r.data);
   const m = await P.mark(C.importedEntries(v), out.scansDone);
-  await P.sendPcMemos(C.pcMemos(v));   // メモ・日のノートを、スマホにも（共有）
+  const pcm = C.pcMemos(v), sent = await P.sendPcMemos(pcm);   // メモ・日のノートを、スマホにも（共有）
   await P.sendRecords(v.records().map(x => x.name), (((v.state().docs || {})['C_チャット'] || {}).topics || []).filter(t => t.type !== 'whole').map(t => t.name));   // 時系列記録と、チャットメモのトピックを、スマホへ
-  return { ok: true, state: v.state(), sum: out.sum, message: C.summaryText(out.sum) + (m.ok ? '\nスマホには「取り込み済み」の印を返しました。もう要らないメモは、スマホの中から消せます（PC のノートは消えません）。' : '\n（取り込み済みの印は、スマホへ返せませんでした。もう一度、USB でつないでみてください）') };
+  return { ok: true, state: v.state(), sum: out.sum, message: C.summaryText(out.sum) + (sent && sent.ok ? `\nスマホへ、PC のメモ ${pcm.memos.length} 件と、日のノート ${pcm.days.length} 件を送りました。` : '\n（PC のメモを、スマホへ送れませんでした。もう一度つないでみてください）') + (m.ok ? '\nスマホには「取り込み済み」の印を返しました。もう要らないメモは、スマホの中から消せます（PC のノートは消えません）。' : '\n（取り込み済みの印は、スマホへ返せませんでした。もう一度、USB でつないでみてください）') };
 }
 ipcMain.handle('phoneImport', () => runPhoneImport());
 // スマホが USB でつながったら、自動で: アプリが古ければ更新 → メモを取り込む（設定の「スマホ」でオフにできる）
