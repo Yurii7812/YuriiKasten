@@ -25,11 +25,50 @@ export function layout(nodes, edges, W, H) {
   return P;
 }
 
+// ===== ネットワーク（Obsidian 風）=====
+// 力学シミュレーション: 斥力（つながりの多いノードほど、周りを広く空ける）・ばね（線）・重なり防止・弱い重力。
+// 最初の位置は、放射状の木から始める（毎回同じ・ぐちゃぐちゃになりにくい）。ドラッグすると、つながったノードがついてくる
+const REST = { tree: 52, link: 84, kw: 96, chat: 90 };
+export function simulate(nodes, edges, P) {
+  const idx = new Map(nodes.map((n, i) => [n.key, i])), N = nodes.length;
+  const x = new Float64Array(N), y = new Float64Array(N), vx = new Float64Array(N), vy = new Float64Array(N), deg = new Float64Array(N), pin = new Array(N).fill(false);
+  nodes.forEach((n, i) => { const p = P.get(n.key) || [Math.random() * 600, Math.random() * 600]; x[i] = p[0]; y[i] = p[1]; });
+  const es = edges.filter(e => idx.has(e.a) && idx.has(e.b)).map(e => ({ a: idx.get(e.a), b: idx.get(e.b), rest: REST[e.t] || 80 }));
+  for (const e of es) { deg[e.a]++; deg[e.b]++; }
+  const rad = i => 9 + Math.sqrt(deg[i]) * 3.2;
+  function step(alpha) {
+    for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) {
+      let dx = x[i] - x[j], dy = y[i] - y[j], d2 = dx * dx + dy * dy;
+      if (d2 > 90000) continue; if (d2 < 1) { dx = Math.random() - .5; dy = Math.random() - .5; d2 = 1; }
+      const d = Math.sqrt(d2), k = 1500 * (1 + (deg[i] + deg[j]) * .12) / d2, ov = rad(i) + rad(j) + 16 - d, f = k + (ov > 0 ? ov * .25 : 0);
+      const fx = dx / d * f * alpha, fy = dy / d * f * alpha; vx[i] += fx; vy[i] += fy; vx[j] -= fx; vy[j] -= fy;
+    }
+    for (const e of es) {
+      const dx = x[e.b] - x[e.a], dy = y[e.b] - y[e.a], d = Math.hypot(dx, dy) + .01, f = (d - e.rest) * .045 * alpha, fx = dx / d * f, fy = dy / d * f;
+      vx[e.a] += fx; vy[e.a] += fy; vx[e.b] -= fx; vy[e.b] -= fy;
+    }
+    let cx = 0, cy = 0; for (let i = 0; i < N; i++) { cx += x[i]; cy += y[i]; } cx /= N || 1; cy /= N || 1;
+    for (let i = 0; i < N; i++) {
+      vx[i] += (cx - x[i]) * .004 * alpha * (deg[i] ? 1 : 3); vy[i] += (cy - y[i]) * .004 * alpha * (deg[i] ? 1 : 3);   // つながりの無いノードは、中心に寄せる（遠くに飛ばない）
+      if (pin[i]) { vx[i] = vy[i] = 0; continue; }
+      vx[i] *= .8; vy[i] *= .8; const m = Math.hypot(vx[i], vy[i]), cap = 22; if (m > cap) { vx[i] *= cap / m; vy[i] *= cap / m; }
+      x[i] += vx[i]; y[i] += vy[i];
+    }
+  }
+  return { step, idx, x, y, pin, deg, rad, pos: () => new Map(nodes.map((n, i) => [n.key, [x[i], y[i]]])) };
+}
+export function networkLayout(nodes, edges) {
+  if (!nodes.length) return new Map();
+  const sim = simulate(nodes, edges, layoutMode(nodes, edges, 'radial'));
+  for (let it = 0; it < 320; it++) sim.step(Math.max(.05, 1 - it / 320));
+  return sim.pos();
+}
+
 // ===== 配置（見やすさのため、4 通り）=====
 //   tree: 番号の枝を左→右の木に（兄弟は縦に並ぶ）／ radial: 同じ木を、放射状に／ cluster: トピックIndex ごとの塊／ force: 自由（力学）
 //   木に入らないもの（キーワード・チャットメモのトピック・つながりの無いノート）は、右の列・下の列に整列
 export function layoutMode(nodes, edges, mode, grpOf) {
-  if (mode === 'force') return layout(nodes, edges, 1400, 900);
+  if (mode === 'force') return networkLayout(nodes, edges);
   if (mode === 'cluster') return layoutCluster(nodes, edges, grpOf || (() => ''));
   const keys = new Set(nodes.map(n => n.key)), kids = new Map(), hasPar = new Set();
   for (const e of edges) if (e.t === 'tree' && keys.has(e.a) && keys.has(e.b) && !hasPar.has(e.b) && e.a !== e.b) { if (!kids.has(e.a)) kids.set(e.a, []); kids.get(e.a).push(e.b); hasPar.add(e.b); }
@@ -67,7 +106,7 @@ function layoutCluster(nodes, edges, grpOf) {
   const cell = groups.map(([, ns]) => 170 + Math.sqrt(ns.length) * 95); let x = 0, y = 0, rowH = 0;
   groups.forEach(([, ns], i) => {
     const size = cell[i], keys = new Set(ns.map(n => n.key)), es = edges.filter(e => keys.has(e.a) && keys.has(e.b));
-    const P = ns.length > 1 ? layout(ns, es, size, size) : new Map([[ns[0].key, [size / 2, size / 2]]]);
+    const P = ns.length > 1 ? networkLayout(ns, es) : new Map([[ns[0].key, [size / 2, size / 2]]]);
     const ps = [...P.values()], mx = Math.min(...ps.map(p => p[0])), my = Math.min(...ps.map(p => p[1])), wx = Math.max(...ps.map(p => p[0])) - mx || 1, wy = Math.max(...ps.map(p => p[1])) - my || 1, sc = Math.min(1.2, (size - 40) / Math.max(wx, wy));
     for (const n of ns) { const p = P.get(n.key); out.set(n.key, [x + 20 + (p[0] - mx) * sc, y + 20 + (p[1] - my) * sc]); }
     rowH = Math.max(rowH, size + 40); x += size + 40; if ((i + 1) % cols === 0) { x = 0; y += rowH; rowH = 0; }
@@ -109,12 +148,13 @@ export function build(notes, titleOf, topics, mergeTopic, topicLabel) {
 const PALETTE = ['#3b5bdb', '#e67700', '#2f9e44', '#a61e4d', '#0b7285', '#7048e8', '#c92a2a', '#5c940d'];
 export function mount(box, o) {
   const { nodes, edges } = build(o.notes, o.titleOf, o.topics, o.mergeTopic, o.topicLabel), st = o.state;
-  Object.assign(st, { layout: 'tree', scope: 'all', sel: null, depth: 1, q: '', labels: true, size: true, hov: true, color: 'topic', on: { tree: true, link: true, kw: false, chat: true }, ...st });
+  Object.assign(st, { layout: 'force', scope: 'all', sel: null, depth: 1, q: '', labels: true, size: true, hov: true, color: 'topic', on: { tree: true, link: true, kw: false, chat: true }, ...st });
   if (!nodes.some(n => !n.kw && !n.topic && !n.chat)) { box.innerHTML = '<div class="none">まだ番号のあるノートがありません</div>'; return; }
   const by = new Map(nodes.map(n => [n.key, n])), adj = new Map(nodes.map(n => [n.key, []]));
   for (const e of edges) { adj.get(e.a).push([e.b, e.t]); adj.get(e.b).push([e.a, e.t]); }
   const grp = new Map(); (o.topics || []).forEach((t, i) => { const c = PALETTE[i % PALETTE.length]; for (const r of o.mergeTopic(t).rows) for (const sp of ['d', 'p']) for (const id of r[sp]) { const k = sp + ':' + L.splitAnchor(id).id; if (!grp.has(k)) grp.set(k, c); } if (t.entry && !grp.has(t.entry.s + ':' + t.entry.id)) grp.set(t.entry.s + ':' + t.entry.id, c); });
-  let P = null, shown = null, hover = null, vb = null;
+  let P = null, shown = null, hover = null, vb = null, vb0 = null, live = null;
+  const zoomIn = () => vb && vb0 && vb0[2] / vb[2] >= 1.7;   // 拡大したら、全部の名前を出す
   const KIND = { tree: ['番号の親子', '#9aa3bd'], link: ['リンク', '#3b5bdb'], kw: ['キーワード', '#e3b3ad'], chat: ['チャットメモのトピック', '#868e96'] };
   const visible = () => {   // いま描くノード（絞り込み）と線
     const es = edges.filter(e => st.on[e.t]);
@@ -128,7 +168,7 @@ export function mount(box, o) {
   };
   const groupName = n => { for (const t of o.topics || []) { if (n.topic === t.name) return t.name; if (n.s && (t.entry && n.key === t.entry.s + ':' + t.entry.id || o.mergeTopic(t).rows.some(r => r[n.s].some(x => n.s + ':' + L.splitAnchor(x).id === n.key)))) return t.name; } return n.s ? '#' + L.root(n.id) : ''; };   // トピックIndex に入っていないノートは、番号の頭（1, 2, 3…）ごとの塊
   const gmap = new Map(nodes.map(n => [n.key, groupName(n)]));
-  const layoutFor = v => { const ns = nodes.filter(n => v.set.has(n.key)); return layoutMode(ns, v.es, st.scope === 'local' && st.layout !== 'cluster' ? 'radial' : st.layout, n => n.kw ? (gmap.get((adj.get(n.key).find(([m]) => gmap.get(m)) || [])[0]) || '') : n.chat ? (gmap.get((adj.get(n.key).find(([m]) => gmap.get(m)) || [])[0]) || '') : gmap.get(n.key)); };
+  const layoutFor = v => { const ns = nodes.filter(n => v.set.has(n.key)); return layoutMode(ns, v.es, st.layout, n => n.kw ? (gmap.get((adj.get(n.key).find(([m]) => gmap.get(m)) || [])[0]) || '') : n.chat ? (gmap.get((adj.get(n.key).find(([m]) => gmap.get(m)) || [])[0]) || '') : gmap.get(n.key)); };
   const colorOf = n => st.color === 'none' ? '#868e96' : st.color === 'paper' ? (n.s === 'p' ? '#2f9e44' : '#3b5bdb') : grp.get(n.key) || '#868e96';
   const toolbar = () => `<div class="gtools"><div class="seg"><button data-gs="all" class="${st.scope === 'all' ? 'on' : ''}">全体</button><button data-gs="local" class="${st.scope === 'local' ? 'on' : ''}" title="選んだノートの周りだけ">ローカル</button></div>
     ${st.scope === 'local' ? `<label>深さ <input type="range" id="g-depth" min="1" max="4" value="${st.depth}"> <b>${st.depth}</b></label>` : ''}
@@ -153,19 +193,21 @@ export function mount(box, o) {
     const deg = new Map(); for (const e of v.es) { deg.set(e.a, (deg.get(e.a) || 0) + 1); deg.set(e.b, (deg.get(e.b) || 0) + 1); }
     const ks = [...v.set], xs = ks.map(k => P.get(k)[0]), ys = ks.map(k => P.get(k)[1]);
     const x0 = Math.min(...xs) - 120, y0 = Math.min(...ys) - 90, w = Math.max(...xs) - Math.min(...xs) + 240, h = Math.max(...ys) - Math.min(...ys) + 200;
-    if (!keepView || !vb) vb = [x0, y0, w, h];
+    if (!keepView || !vb) { vb = [x0, y0, w, h]; vb0 = [...vb]; }
     const curve = st.layout === 'tree' && !(st.scope === 'local');
     const lines = v.es.map((e, i) => { const a = P.get(e.a), b = P.get(e.b), dx = (b[0] - a[0]) / 2, d = curve ? `M${a[0].toFixed(0)} ${a[1].toFixed(0)}C${(a[0] + dx).toFixed(0)} ${a[1].toFixed(0)} ${(b[0] - dx).toFixed(0)} ${b[1].toFixed(0)} ${b[0].toFixed(0)} ${b[1].toFixed(0)}` : `M${a[0].toFixed(0)} ${a[1].toFixed(0)}L${b[0].toFixed(0)} ${b[1].toFixed(0)}`;
       return `<path class="ge" data-i="${i}" d="${d}" fill="none" stroke="${KIND[e.t][1]}" stroke-width="${e.t === 'kw' || e.t === 'chat' ? 1.3 : e.t === 'link' ? 1.8 : 1.6}"${e.t === 'kw' || e.t === 'chat' ? ' stroke-dasharray="5 4"' : ''}${e.t === 'link' ? ' marker-end="url(#gar)"' : ''}/>`; }).join('');
     const dots = nodes.filter(n => v.set.has(n.key)).map(n => {
-      const [x, y] = P.get(n.key).map(q => q.toFixed(0)), lab = st.labels ? `<text class="gl" x="${x}" y="${+y + 30}" text-anchor="middle" font-size="12">${esc(n.label.slice(0, 16))}</text>` : '';
-      if (n.chat) return `<g class="gnode" data-k="${esc(n.key)}"><rect x="${+x - 11}" y="${+y - 11}" width="22" height="22" rx="4" transform="rotate(45 ${x} ${y})" fill="#f1f3f5" stroke="#868e96" stroke-width="2.2"/><text x="${x}" y="${+y + 5}" text-anchor="middle" font-size="12">💬</text>${lab}</g>`;
-      if (n.topic) return `<g class="gnode" data-k="${esc(n.key)}"><rect x="${+x - 15}" y="${+y - 15}" width="30" height="30" rx="8" fill="#e8edff" stroke="#3b5bdb" stroke-width="2.4"/><text x="${x}" y="${+y + 5}" text-anchor="middle" font-size="14">📑</text>${lab}</g>`;
-      if (n.kw) return `<g class="gnode" data-k="${esc(n.key)}"><circle cx="${x}" cy="${y}" r="8" fill="#c0392b"/>${lab.replace('+30', '+26')}</g>`;
-      const r = st.size ? 8 + Math.sqrt(deg.get(n.key) || 0) * 4 : 11;
-      return `<g class="gnode" data-k="${esc(n.key)}"><circle cx="${x}" cy="${y}" r="${r}" fill="var(--bg,#fff)" stroke="${colorOf(n)}" stroke-width="2.6"/><text x="${x}" y="${+y + 4}" text-anchor="middle" font-size="11" fill="#8b909c">${esc(n.id)}</text>${st.labels ? `<text class="gl" x="${x}" y="${+y + r + 15}" text-anchor="middle" font-size="12">${esc(n.label.slice(0, 16))}</text>` : ''}</g>`;
+      const [x, y] = P.get(n.key).map(q => q.toFixed(1)), dg = deg.get(n.key) || 0, lo = dg < 3 ? ' lo' : '';
+      const lab = r => st.labels ? `<text class="gl${lo}" y="${r + 14}" text-anchor="middle" font-size="12">${esc(n.label.slice(0, 18))}</text>` : '';
+      const open = `<g class="gnode" data-k="${esc(n.key)}" data-deg="${dg}" transform="translate(${x},${y})">`;
+      if (n.chat) return `${open}<rect x="-10" y="-10" width="20" height="20" rx="4" transform="rotate(45)" fill="#f1f3f5" stroke="#868e96" stroke-width="2"/><text y="5" text-anchor="middle" font-size="12">💬</text>${lab(16)}</g>`;
+      if (n.topic) return `${open}<rect x="-14" y="-14" width="28" height="28" rx="8" fill="#e8edff" stroke="#3b5bdb" stroke-width="2.2"/><text y="5" text-anchor="middle" font-size="14">📑</text>${lab(20)}</g>`;
+      if (n.kw) return `${open}<circle r="6" fill="#c0392b"/>${lab(12)}</g>`;
+      const r = st.size ? 6 + Math.sqrt(dg) * 3.2 : 8, c = colorOf(n);
+      return `${open}<circle r="${r.toFixed(1)}" fill="${c}" fill-opacity=".88" stroke="var(--bg,#fff)" stroke-width="1.6"/>${lab(r)}</g>`;   // Obsidian 風: 色つきの丸。名前は、拡大したときと、ホバーしたとき
     }).join('');
-    box.innerHTML = `<div class="graph">${toolbar()}<div class="gmain"><svg id="gsvg" viewBox="${vb.join(' ')}"><defs><marker id="gar" viewBox="0 0 10 10" refX="22" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#3b5bdb"/></marker></defs>${lines}${dots}</svg><aside class="gside">${side()}</aside></div></div>`;
+    box.innerHTML = `<div class="graph">${toolbar()}<div class="gmain"><svg id="gsvg" class="${zoomIn() ? 'zin' : ''}" viewBox="${vb.join(' ')}"><defs><marker id="gar" viewBox="0 0 10 10" refX="22" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#3b5bdb"/></marker></defs>${lines}${dots}</svg><aside class="gside">${side()}</aside></div></div>`;
     paint(); wire();
   };
   const hit = n => { const q = st.q.toLowerCase(); if (!q) return false; const note = n.s ? o.get(n.s, n.id) : null; return (n.label + ' ' + (n.id || '') + ' ' + (note ? note.body : '')).toLowerCase().includes(q); };
@@ -173,12 +215,24 @@ export function mount(box, o) {
     const svg = box.querySelector('#gsvg'); if (!svg) return;
     const focus = st.hov && hover ? hover : null, nb = new Set(); if (focus) { nb.add(focus); for (const [m] of adj.get(focus)) nb.add(m); }
     const any = st.q && nodes.some(n => shown.set.has(n.key) && hit(n));
-    svg.querySelectorAll('.gnode').forEach(g => { const n = by.get(g.dataset.k), dim = (focus && !nb.has(n.key)) || (any && !hit(n)); g.style.opacity = dim ? .13 : 1; g.classList.toggle('gsel', n.key === st.sel); g.classList.toggle('ghit', !!(st.q && hit(n))); });
+    svg.querySelectorAll('.gnode').forEach(g => { const n = by.get(g.dataset.k), dim = (focus && !nb.has(n.key)) || (any && !hit(n)); g.style.opacity = dim ? .13 : 1; g.classList.toggle('gshow', !!(focus && nb.has(n.key)) || n.key === st.sel || !!(st.q && hit(n))); g.classList.toggle('gsel', n.key === st.sel); g.classList.toggle('ghit', !!(st.q && hit(n))); });
     svg.querySelectorAll('.ge').forEach(l => { const e = shown.es[+l.dataset.i], lit = focus && (e.a === focus || e.b === focus); l.style.opacity = focus ? (lit ? 1 : .06) : any ? .2 : .85; });
   };
   const setSide = () => { const a = box.querySelector('.gside'); if (a) a.innerHTML = side(); };
   function wire() {
-    const svg = box.querySelector('#gsvg'); attach(svg, vb, v => { vb = v; });
+    const svg = box.querySelector('#gsvg');
+    live = st.layout === 'force' ? (() => { const ns = nodes.filter(n => shown.set.has(n.key)); return { sim: simulate(ns, shown.es, P), ns, g: ns.map(n => svg.querySelector(`.gnode[data-k="${CSS.escape(n.key)}"]`)), p: [...svg.querySelectorAll('.ge')], frames: 0, raf: 0, drag: -1 }; })() : null;
+    const apply = () => { const L = live, sm = L.sim; L.ns.forEach((n, i) => L.g[i] && L.g[i].setAttribute('transform', `translate(${sm.x[i].toFixed(1)},${sm.y[i].toFixed(1)})`)); L.p.forEach((el, i) => { const e = shown.es[i], a = sm.idx.get(e.a), b = sm.idx.get(e.b); el.setAttribute('d', `M${sm.x[a].toFixed(1)} ${sm.y[a].toFixed(1)}L${sm.x[b].toFixed(1)} ${sm.y[b].toFixed(1)}`); }); };
+    const tick = () => { const L = live; if (!L || !svg.isConnected) return; L.sim.step(L.drag >= 0 ? .4 : .22); apply(); if (L.drag >= 0 || L.frames-- > 0) L.raf = requestAnimationFrame(tick); else L.raf = 0; };
+    const kick = n => { if (live) { live.frames = n; if (!live.raf) live.raf = requestAnimationFrame(tick); } };
+    svg.addEventListener('pointerdown', e => {   // ノードをドラッグ: つながったノードがついてくる
+      const g = e.target.closest('.gnode'); if (!g || !live || e.button !== 0) return; e.stopImmediatePropagation();
+      const i = live.ns.findIndex(n => n.key === g.dataset.k), r = svg.getBoundingClientRect(); live.drag = i; live.sim.pin[i] = true; svg._moved = false; let sx = e.clientX, sy = e.clientY;
+      const mv = ev => { if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) > 4) svg._moved = true; const v = vb; live.sim.x[i] = v[0] + (ev.clientX - r.left) / r.width * v[2]; live.sim.y[i] = v[1] + (ev.clientY - r.top) / r.height * v[3]; kick(0); };
+      const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); live.sim.pin[i] = false; live.drag = -1; kick(50); };
+      addEventListener('pointermove', mv); addEventListener('pointerup', up);
+    });
+    attach(svg, vb, v => { vb = v; svg.classList.toggle('zin', zoomIn()); });
     svg.addEventListener('pointerover', e => { const g = e.target.closest('.gnode'); const k = g ? g.dataset.k : null; if (k !== hover) { hover = k; paint(); } });
     svg.addEventListener('click', e => { if (svg._moved) return; const g = e.target.closest('.gnode'); if (!g) return; st.sel = g.dataset.k; setSide(); paint(); });
     svg.addEventListener('dblclick', e => { const g = e.target.closest('.gnode'); if (!g) return; st.sel = g.dataset.k; st.scope = 'local'; draw(); });
