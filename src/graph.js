@@ -135,8 +135,21 @@ export function loadNotesAndRelations(notes, titleOf, mapType, opt = {}) {
 const DEF = () => ({ mapType: 'link', f: { q: '', kw: false, topics: false, orphans: true, paper: true, chat: true, files: true }, groups: [], d: { arrows: true, fade: .5, nodeSize: 1, linkW: 1 }, force: { center: .12, repel: null, link: null, dist: 40 }, fixNodes: false, dock: false, tab: 'set', dockW: 320, open: { f: true, g: true, d: true, c: true }, sel: null });
 const GROUP_COLORS = ['#e03131', '#f08c00', '#2f9e44', '#1c7ed6', '#7048e8', '#d6336c'];
 
+const SEEN = new WeakSet();
+const KEYS = ['f', 'groups', 'd', 'force', 'fixNodes', 'dock', 'tab', 'dockW', 'open'], PRESET_KEYS = ['f', 'groups', 'd', 'force'];
+const clone = x => JSON.parse(JSON.stringify(x === undefined ? null : x));
 export function mount(box, o) {
-  const st = o.state; { const d = DEF(); for (const k in d) if (st[k] === undefined) st[k] = d[k]; for (const k of ['f', 'd', 'force', 'open']) st[k] = { ...d[k], ...st[k] }; }
+  const st = o.state, gdoc = o.doc || (o.doc = {});
+  if (!SEEN.has(st)) { SEEN.add(st); st.mapType = gdoc.last || st.mapType || 'link'; st._loaded = undefined; }   // アプリを開き直したら、前回使ったマップ・設定から始める
+  if (!st.mapType) st.mapType = gdoc.last || 'link';
+  { const d = DEF(); for (const k in d) if (st[k] === undefined) st[k] = d[k]; for (const k of ['f', 'd', 'force', 'open']) st[k] = { ...d[k], ...st[k] }; }
+  if (st._loaded !== st.mapType) {   // マップ（リンク / ツリー）ごとに、別々に覚えている設定を読む。前回使った設定が、そのまま次回も残る
+    const d = DEF(), saved = gdoc[st.mapType] || {};
+    for (const k of KEYS) st[k] = saved[k] !== undefined ? clone(saved[k]) : clone(d[k]);
+    for (const k of ['f', 'd', 'force', 'open']) st[k] = { ...d[k], ...st[k] };
+    st._loaded = st.mapType;
+  }
+  let saveT; const save = () => { clearTimeout(saveT); saveT = setTimeout(() => { gdoc[st.mapType] = Object.fromEntries(KEYS.map(k => [k, clone(st[k])])); gdoc.last = st.mapType; if (o.saveDoc) o.saveDoc(gdoc); }, 150); };
   box.innerHTML = '<div class="note-map-widget"><div class="nm-style"><span class="nm-bg"></span><span class="nm-anchor"></span><span class="nm-anchor-icon"></span></div><div class="note-map-container"></div><aside class="nm-dock"><div class="nm-grip" title="ドラッグして幅を変える"></div><div class="nm-tabs"><button data-tab="set">設定</button><button data-tab="note">ノート</button></div><div class="nm-set"></div><div class="nm-note"></div></aside></div>';
   const wrap = box.querySelector('.note-map-widget'), container = box.querySelector('.note-map-container'), styleEl = box.querySelector('.nm-style'), noteEl = box.querySelector('.nm-note'), setEl = box.querySelector('.nm-set'), dockTabs = box.querySelector('.nm-tabs');
   const data = loadNotesAndRelations(o.notes, o.titleOf, st.mapType, { query: st.f.q, showKw: st.f.kw, showTopics: st.f.topics, orphans: st.f.orphans, paper: st.f.paper, topics: o.topics, mergeTopic: o.mergeTopic, chat: o.chat, files: o.files, showChat: st.f.chat, showFiles: st.f.files });
@@ -221,10 +234,10 @@ export function mount(box, o) {
   const setW = w => { st.dockW = Math.max(240, Math.min(w, Math.floor(wrap.clientWidth * .75))); wrap.style.setProperty('--dw', st.dockW + 'px'); };
   setW(st.dockW);
   box.querySelector('.nm-grip').addEventListener('pointerdown', e => {   // 右の枠の幅を、ドラッグで変える
-    e.preventDefault(); const move = ev => { setW(wrap.getBoundingClientRect().right - ev.clientX); fitSize(); }, up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); fitSize(); };
+    e.preventDefault(); const move = ev => { setW(wrap.getBoundingClientRect().right - ev.clientX); fitSize(); }, up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); fitSize(); save(); };
     addEventListener('pointermove', move); addEventListener('pointerup', up);
   });
-  function setDock() { wrap.classList.toggle('nm-dock-open', !!st.dock); wrap.classList.toggle('nm-tab-note', st.tab === 'note'); dockTabs.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.tab === st.tab)); const g = box.querySelector('[data-panel]'); if (g) g.classList.toggle('on', !!st.dock); setTimeout(fitSize, 30); }
+  function setDock() { save(); wrap.classList.toggle('nm-dock-open', !!st.dock); wrap.classList.toggle('nm-tab-note', st.tab === 'note'); dockTabs.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.tab === st.tab)); const g = box.querySelector('[data-panel]'); if (g) g.classList.toggle('on', !!st.dock); setTimeout(fitSize, 30); }
   dockTabs.onclick = e => { const b = e.target.closest('[data-tab]'); if (b) { st.tab = b.dataset.tab; setDock(); } };
   // ---- 横のノート ----
   function showNote() {
@@ -254,30 +267,35 @@ export function mount(box, o) {
   const bl = ctl('nm-bl', `<button data-fix title="ノードを固定（ドラッグした位置に）" class="${st.fixNodes ? 'on' : ''}">🔒</button><button data-anim title="アニメーション（配置をやり直す）">▶</button>`);
   const br = ctl('nm-br', '<button data-zo title="縮小">－</button><button data-zi title="拡大">＋</button><button data-fit title="全体を表示">⌖</button>');
   const zoomState = k => { br.querySelector('[data-zi]').disabled = !(k < graph.maxZoom()); br.querySelector('[data-zo]').disabled = !(k > graph.minZoom()); };
-  mt.onclick = e => { const b = e.target.closest('[data-mt]'); if (b && b.dataset.mt !== st.mapType) { st.mapType = b.dataset.mt; remount(); } if (e.target.closest('[data-panel]')) { st.dock = !st.dock; if (st.dock && !st.sel) st.tab = 'set'; setDock(); } };
-  bl.onclick = e => { if (e.target.closest('[data-fix]')) { st.fixNodes = !st.fixNodes; e.target.closest('[data-fix]').classList.toggle('on', st.fixNodes); } if (e.target.closest('[data-anim]')) { framing = true; data.nodes.forEach(n => { n.fx = n.fy = undefined; }); graph.d3ReheatSimulation(); } };
+  mt.onclick = e => { const b = e.target.closest('[data-mt]'); if (b && b.dataset.mt !== st.mapType) { clearTimeout(saveT); gdoc[st.mapType] = Object.fromEntries(KEYS.map(k => [k, clone(st[k])])); st.mapType = b.dataset.mt; gdoc.last = st.mapType; if (o.saveDoc) o.saveDoc(gdoc); remount(); } if (e.target.closest('[data-panel]')) { st.dock = !st.dock; if (st.dock && !st.sel) st.tab = 'set'; setDock(); } };
+  bl.onclick = e => { if (e.target.closest('[data-fix]')) { st.fixNodes = !st.fixNodes; save(); e.target.closest('[data-fix]').classList.toggle('on', st.fixNodes); } if (e.target.closest('[data-anim]')) { framing = true; data.nodes.forEach(n => { n.fx = n.fy = undefined; }); graph.d3ReheatSimulation(); } };
   br.onclick = e => { if (e.target.closest('[data-zi]')) { release(); graph.zoom(graph.zoom() * ZOOM_STEP, ZOOM_ANIMATION_MS); } if (e.target.closest('[data-zo]')) { release(); graph.zoom(graph.zoom() / ZOOM_STEP, ZOOM_ANIMATION_MS); } if (e.target.closest('[data-fit]')) { release(); fit(ZOOM_ANIMATION_MS); } };
   // 設定の枠（Obsidian: Filters / Groups / Display / Forces）
   const slider = (key, label, min, max, step, val) => `<div class="nm-row"><span>${label}</span><input type="range" data-s="${key}" min="${min}" max="${max}" step="${step}" value="${val}"></div>`;
   const tog = (key, label, on) => `<div class="nm-row"><span>${label}</span><label class="nm-sw"><input type="checkbox" data-t="${key}" ${on ? 'checked' : ''}><i></i></label></div>`;
   const sec = (k, title, body) => `<details data-sec="${k}" ${st.open[k] ? 'open' : ''}><summary>${title}</summary>${body}</details>`;
+  const presets = gdoc.presets || [];
   const panel = document.createElement('div'); panel.className = 'nm-panel';
-  panel.innerHTML = sec('f', 'フィルター', `<input class="nm-q" data-q placeholder="ノートを検索（例: id:1a  kw:GUI  -下書き  topic:PKM）" value="${esc(st.f.q)}">${tog('f.kw', 'キーワード', st.f.kw)}${tog('f.topics', 'トピックIndex', st.f.topics)}${tog('f.paper', '紙のノート', st.f.paper)}${tog('f.chat', 'チャットメモ', st.f.chat)}${tog('f.files', '添付ファイル', st.f.files)}${tog('f.orphans', 'つながりの無いノート', st.f.orphans)}`)
+  panel.innerHTML = sec('p', '保存した設定（リンク・ツリーで共有）', `<div class="nm-row"><select data-preset>${presets.map((p, i) => `<option value="${i}">${esc(p.name)}</option>`).join('') || '<option value="">（まだありません）</option>'}</select></div><div class="nm-row"><button data-pa>この設定にする</button><button data-pdel>消す</button></div><div class="nm-row"><input class="nm-q" data-pname placeholder="名前をつけて、今の設定を保存" style="margin:0"><button data-psave>保存</button></div><button class="nm-add" data-reset>このマップを、規定の設定に戻す</button>`) + sec('f', 'フィルター', `<input class="nm-q" data-q placeholder="ノートを検索（例: id:1a  kw:GUI  -下書き  topic:PKM）" value="${esc(st.f.q)}">${tog('f.kw', 'キーワード', st.f.kw)}${tog('f.topics', 'トピックIndex', st.f.topics)}${tog('f.paper', '紙のノート', st.f.paper)}${tog('f.chat', 'チャットメモ', st.f.chat)}${tog('f.files', '添付ファイル', st.f.files)}${tog('f.orphans', 'つながりの無いノート', st.f.orphans)}`)
     + sec('g', 'グループ（検索で色分け）', `<div data-groups>${st.groups.map((g, i) => `<div class="nm-g"><input type="color" data-gc="${i}" value="${g.color}"><input data-gq="${i}" value="${esc(g.query)}" placeholder="検索（例: kw:GUI）"><button data-gx="${i}" title="消す">×</button></div>`).join('')}</div><button class="nm-add" data-gadd>新しいグループ</button>`)
     + sec('d', '表示', `${tog('d.arrows', '矢印', st.d.arrows)}${slider('d.fade', '文字の消える閾値', 0, 1, .05, st.d.fade)}${slider('d.nodeSize', 'ノードの大きさ', .3, 3, .1, st.d.nodeSize)}${slider('d.linkW', '線の太さ', .3, 4, .1, st.d.linkW)}`)
     + sec('c', '力', `${slider('force.center', '中心へ引く力', 0, 1, .005, st.force.center)}${slider('force.repel', '反発する力', 0, 60, .5, st.force.repel)}${slider('force.link', '線で引く力', 0, 1, .01, st.force.link ?? .5)}${slider('force.dist', '線の長さ', 1, 200, 1, st.force.dist)}`);
   setEl.append(panel);
   const setPath = (path, v) => { const [a, b] = path.split('.'); st[a][b] = v; };
-  panel.addEventListener('toggle', e => { const d = e.target.closest('details'); if (d) st.open[d.dataset.sec] = d.open; }, true);
+  panel.addEventListener('toggle', e => { const d = e.target.closest('details'); if (d) { st.open[d.dataset.sec] = d.open; save(); } }, true);
   panel.addEventListener('input', e => {
-    const t = e.target; clearTimeout(panel._t);
+    const t = e.target; clearTimeout(panel._t); if (!t.dataset.pname) save();
     if (t.dataset.q !== undefined) { st.f.q = t.value; panel._t = setTimeout(() => remount('[data-q]'), 350); return; }
     if (t.dataset.gc !== undefined) { st.groups[+t.dataset.gc].color = t.value; groups[+t.dataset.gc].color = t.value; keepPainting(); return; }
     if (t.dataset.gq !== undefined) { st.groups[+t.dataset.gq].query = t.value; groups[+t.dataset.gq] = { ...st.groups[+t.dataset.gq], pq: parseQuery(t.value) }; keepPainting(); return; }
     if (t.dataset.s) { setPath(t.dataset.s, +t.value); if (t.dataset.s.startsWith('force.')) { applyForces(); graph.d3ReheatSimulation(); framing = false; clearTimeout(panel._f); panel._f = setTimeout(() => fit(500), 700); } keepPainting(); labelsById.clear(); }
   });
-  panel.addEventListener('change', e => { const t = e.target; if (t.dataset.t) { setPath(t.dataset.t, t.checked); if (t.dataset.t.startsWith('f.')) remount(); else keepPainting(); } });
+  panel.addEventListener('change', e => { const t = e.target; save(); if (t.dataset.t) { setPath(t.dataset.t, t.checked); if (t.dataset.t.startsWith('f.')) remount(); else keepPainting(); } });
   panel.addEventListener('click', e => {
+    if (e.target.closest('[data-psave]')) { const name = (panel.querySelector('[data-pname]').value || '').trim(); if (!name) return; const snap = Object.fromEntries(PRESET_KEYS.map(k => [k, clone(st[k])])); const list = gdoc.presets || (gdoc.presets = []), at = list.findIndex(p => p.name === name); if (at >= 0) list[at] = { name, s: snap }; else list.push({ name, s: snap }); if (o.saveDoc) o.saveDoc(gdoc); remount(); return; }
+    if (e.target.closest('[data-pa]')) { const p = presets[+panel.querySelector('[data-preset]').value]; if (!p) return; for (const k of PRESET_KEYS) st[k] = clone(p.s[k]); st.force.repel = st.force.repel ?? null; save(); remount(); return; }
+    if (e.target.closest('[data-pdel]')) { const i = +panel.querySelector('[data-preset]').value; if (!(i >= 0) || !presets[i]) return; presets.splice(i, 1); if (o.saveDoc) o.saveDoc(gdoc); remount(); return; }
+    if (e.target.closest('[data-reset]')) { const d = DEF(); for (const k of ['f', 'groups', 'd', 'force', 'fixNodes']) st[k] = clone(d[k]); save(); remount(); return; }
     if (e.target.closest('[data-gadd]')) { st.groups.push({ query: '', color: GROUP_COLORS[st.groups.length % GROUP_COLORS.length] }); remount(); return; }
     const x = e.target.closest('[data-gx]'); if (x) { st.groups.splice(+x.dataset.gx, 1); remount(); }
   });
