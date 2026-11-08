@@ -210,9 +210,11 @@ function send() {
 
 // ===== @ で、別のメモ・ノートを入れる =====
 let mn = [];
-function mentionOff() { mn = []; const b = $('#c-mention'); if (b) b.style.display = 'none'; }
-function mentionList() {
-  const inp = $('#c-in'), box = $('#c-mention'); if (!inp || !box) return;
+let mtx = null;   // いま @ の候補を出している入力欄と、その候補の枠（送る欄・編集中の欄）
+function mentionOff() { mn = []; const b = mtx ? mtx.box : $('#c-mention'); if (b) b.style.display = 'none'; }
+function mentionList(inp0, box0) {
+  if (inp0) mtx = { inp: inp0, box: box0 }; else mtx = { inp: $('#c-in'), box: $('#c-mention') };
+  const inp = mtx.inp, box = mtx.box; if (!inp || !box) return;
   const before = inp.value.slice(0, inp.selectionStart), m = before.match(/@([^\s@]{0,20})$/);
   if (!m) return mentionOff();
   const q = m[1].toLowerCase();
@@ -224,9 +226,9 @@ function mentionList() {
 }
 function pickMention(i) {
   const x = mn[i]; if (!x) return;
-  const inp = $('#c-in'), pos = inp.selectionStart, tok = x.kind === 'memo' ? `[@${(x.m.text.split('\n')[0] || '').replace(/[\[\]()]/g, '').slice(0, 14)}](memo:${x.m.id}) ` : `:${x.n.id} `;
+  const inp = mtx ? mtx.inp : $('#c-in'), pos = inp.selectionStart, tok = x.kind === 'memo' ? `[@${(x.m.text.split('\n')[0] || '').replace(/[\[\]()]/g, '').slice(0, 14)}](memo:${x.m.id}) ` : `:${x.n.id} `;
   const before = inp.value.slice(0, pos).replace(/@([^\s@]{0,20})$/, tok);
-  inp.value = before + inp.value.slice(pos); inp.selectionStart = inp.selectionEnd = before.length; draft = inp.value; mentionOff(); inp.focus(); fit(inp);
+  inp.value = before + inp.value.slice(pos); inp.selectionStart = inp.selectionEnd = before.length; if (inp.id === 'c-in') draft = inp.value; mentionOff(); inp.focus(); if (inp.id === 'c-in') fit(inp); else inp.dispatchEvent(new Event('input'));
 }
 
 // ===== メモの操作 =====
@@ -238,7 +240,7 @@ function menuFor(e, bub) {
       ['返信', () => startReply(m.id)],
       ['選択', () => { sel = new Set([m.id]); lastSel = m.id; paint(); selbar(); }],
       ['ノートに引用…', () => quoteDialog([m])],
-      ['書き直す', () => editMsg(bub, m)],
+      ['編集', () => editMsg(bub, m)],
       ['トピックを変える', () => moveDialog(m)],
       ['コピー', () => navigator.clipboard.writeText(m.text)],
       ['消す', () => removeMsg(m), true]
@@ -248,14 +250,28 @@ function menuFor(e, bub) {
     popMenu(e, [['書き直す', () => editLine(bub, i)], ['コピー', () => navigator.clipboard.writeText(entries()[i].text)], ['消す', () => removeLine(i), true]]);
   }
 }
-function editBox(bub, text, onSave) {
+function editBox(bub, text, onSave, m) {
   const b = bub.querySelector('.b-body');
-  b.innerHTML = `<textarea class="b-edit"></textarea><div class="row"><button class="p" data-ok>保存</button><button data-no>やめる</button></div>`;
-  const ta = b.querySelector('textarea'); ta.value = text; ta.style.height = Math.max(60, ta.scrollHeight) + 'px'; ta.focus();
-  b.querySelector('[data-ok]').onclick = () => onSave(ta.value.trim());
-  b.querySelector('[data-no]').onclick = () => paint();
+  b.innerHTML = `<div class="b-chips"></div><textarea class="b-edit"></textarea><div class="rp-mention b-emn" style="display:none"></div><div class="row"><button class="p" data-ok>保存</button><button data-no>やめる</button></div>`;
+  const ta = b.querySelector('textarea'), chips = b.querySelector('.b-chips'), mbox = b.querySelector('.b-emn'); ta.value = text; ta.style.height = Math.max(60, ta.scrollHeight) + 'px'; ta.focus();
+  let rep = m ? m.reply : null;
+  const MEN = /\[@([^\]]*)\]\(memo:([^)\s]+)\)/g;
+  const drawChips = () => {   // 返信先・メンションを、×で外せる印にする（@ を打つと、候補が出て足せる）
+    const ms = [...ta.value.matchAll(MEN)], o = rep && msg(rep);
+    chips.innerHTML = (o ? `<span class="b-chip" data-crep title="返信先を外す">↩ ${esc(firstLine(o.text).slice(0, 18))} ×</span>` : '') + ms.map((x, i) => `<span class="b-chip" data-cm="${i}" title="このメンションを外す">@${esc(x[1])} ×</span>`).join('');
+  };
+  b.addEventListener('click', e => {
+    if (e.target.closest('[data-crep]')) { rep = null; drawChips(); return; }
+    const c = e.target.closest('[data-cm]'); if (c) { let k = 0; ta.value = ta.value.replace(MEN, t => (k++ === +c.dataset.cm ? '' : t)).replace(/ {2,}/g, ' '); drawChips(); ta.focus(); }
+  });
+  ta.addEventListener('input', () => { drawChips(); mentionList(ta, mbox); });
+  ta.addEventListener('keydown', e => { if (e.key === 'Escape' && mn.length) { e.stopPropagation(); mentionOff(); } if (e.key === 'Enter' && mn.length && !e.isComposing) { e.preventDefault(); pickMention(0); } });
+  mbox.addEventListener('mousedown', e => { const it = e.target.closest('[data-mn]'); if (it) { e.preventDefault(); pickMention(+it.dataset.mn); } });
+  drawChips();
+  b.querySelector('[data-ok]').onclick = () => { mentionOff(); onSave(ta.value.trim(), rep); };
+  b.querySelector('[data-no]').onclick = () => { mentionOff(); paint(); };
 }
-function editMsg(bub, m) { editBox(bub, m.text, v => { if (v) { const old = m.text; m.text = v; m.edited = Date.now(); save(); memoToDay(m, old, false); } paint(); }); }   // edited: スマホと共有するとき、新しい方が勝つ
+function editMsg(bub, m) { editBox(bub, m.text, (v, rep) => { if (v) { const old = m.text; m.text = v; if (rep) m.reply = rep; else delete m.reply; m.edited = Date.now(); save(); memoToDay(m, old, false); } paint(); }, m); }   // edited: スマホと共有するとき、新しい方が勝つ
 function editLine(bub, i) {
   const be = backend(), list = parts(be.get()), e = entries()[i];
   editBox(bub, e.text, v => { if (v) list[i] = (e.time ? e.time + ' ' : '') + v.replace(/\n{2,}/g, '\n'); else list.splice(i, 1); be.set(list.join('\n\n')); paint(); });
