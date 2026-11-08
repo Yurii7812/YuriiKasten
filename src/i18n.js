@@ -2,6 +2,19 @@
 // Languages: 'en' (default) and 'ja'. To add a language, add a table like EN and register it in TABLES.
 // User content (note bodies, titles, memos) is never translated: see SKIP.
 const EN = {
+  '所属・上位トピックを変える': 'Change assigned and upper topics',
+  '所属トピックで絞り込み': 'Filter by assigned topic',
+  '上位トピック（いくつでも）': 'Upper topics (multiple)',
+  '上位トピックを追加': 'Add upper topic',
+  '所属トピックを選ぶ': 'Choose assigned topic',
+  '直接・未指定': 'Direct / unspecified',
+  '所属・上位トピック': 'Assigned / upper topics',
+  '所属トピック': 'Assigned topic',
+  '上位トピック': 'Upper topics',
+  '所属トピック:': 'Assigned topic:',
+  '＋ 上位トピック': '+ Upper topic',
+  '上位トピック → 所属トピック・線の数字はメモ件数。トピックを押すとメモを開きます。': 'Upper topic → assigned topic. Line labels show memo counts. Click a topic to open its memos.',
+  'ノートを検索（例: folgezettel:1  id:1a  kw:GUI）': 'Search notes (e.g. folgezettel:1  id:1a  kw:GUI)',
 'ようこそ。YuriiNote の保存先を選びます': 'Welcome. Choose where YuriiNote keeps your notes',
 'ノートは、普通のフォルダ（vault）に、md ファイルとして入ります。あとで、右上の 📁 からも変えられます。フォルダごと別の PC にコピーしても、全部そのまま使えます。': 'Notes are stored as md files in an ordinary folder (the vault). You can change it later in Settings. Copy the folder to another PC and everything works as is.',
 '見つかった vault（押すと、これを開きます）': 'Vaults found (click to open)',
