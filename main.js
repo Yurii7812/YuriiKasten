@@ -52,6 +52,12 @@ async function runSync() {
   if (!syncer) return syncState;
   try {
     const r = await syncer.sync();
+    if (r.conflicts.length > 5) { // 競合が一度にたくさん出るのは、どこかが繰り返している印。広がる前に止める
+      if (syncStop) { syncStop(); syncStop = null; } clearInterval(syncTimer); syncer = null;
+      syncState = { status: `競合が ${r.conflicts.length} 件も出たので、同期を止めました。確認してから「同期の設定」で保存し直すと、再開します`, at: Date.now(), error: true };
+      if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('syncState', syncState);
+      return syncState;
+    }
     if (r.pulled.length || r.deleted.length) { v = store.openVault(vault); if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('state', v.state()); }
     syncState = { status: r.conflicts.length ? `同期しました（競合 ${r.conflicts.length} 件を未整理に残しました）` : '同期しました', at: Date.now(), pulled: r.pulled.length, pushed: r.pushed.length, conflicts: r.conflicts.length };
   } catch (e) { syncState = { status: '同期できません: ' + (e.message || e), at: Date.now(), error: true }; }

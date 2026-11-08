@@ -1279,10 +1279,18 @@ $('#more').onclick = async () => {
 let syncStatus = '…';
 api.syncGet().then(c => { syncStatus = c.state ? c.state.status : '…'; });
 api.onSyncState(st => { syncStatus = st.status; if (st.error) toast(st.status); });
-api.onState(st => { // 同期で取り込んだ変更を、画面に反映
+api.onState(st => { // 同期で取り込んだ変更を、画面に反映（いま見ている・書いているものを邪魔しない）
+  const before = cur && cur.k === 'note' ? get(cur.s, cur.id) : null, snap = before && JSON.stringify([before.title, before.body, before.keywords, before.data]);
   applyState(st);
   tabs = tabs.filter(t => t.k !== 'note' || get(t.s, t.id)); active = Math.min(active, tabs.length - 1);
-  const t = tabs[active]; if (t && t.k !== 'empty') show(active); else renderTabs();
+  if (mode !== 'notes' || !cur) return;                                // 日記・チャットなどを見ているときは、動かさない
+  const ae = document.activeElement, typing = ae && (/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.isContentEditable);
+  if (cur.k === 'note') {
+    const now = get(cur.s, cur.id);
+    if (!now) { const t = tabs[active]; if (t && t.k !== 'empty') show(active); else renderTabs(); return; }   // 消えたノート
+    if (!typing && snap !== JSON.stringify([now.title, now.body, now.keywords, now.data])) show(active);       // 相手が書き換えたノートだけ、描き直す（書いている最中は触らない）
+  }
+  renderTabs();
 });
 // スマホにアプリを入れる（USB でつないだスマホに、adb で）
 api.onPhoneMsg(m => toast(m));
