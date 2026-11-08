@@ -269,17 +269,21 @@ function fileDialog(name) {
     close(); view.dispatch({ changes: { from: h, insert: md }, selection: { anchor: h + md.length } }); view.focus();
   };
 }
-const sortBar = (diary) => `<div class="sortbar">${diary ? '<span class="sub">日付順</span>' : `<select id="sb-by" title="並べ替え"><option value="fz"${sortBy === 'fz' ? ' selected' : ''}>folgezettel 順</option><option value="created"${sortBy === 'created' ? ' selected' : ''}>作成日順</option><option value="updated"${sortBy === 'updated' ? ' selected' : ''}>更新順</option></select>`}<button id="sb-dir" class="mini" title="昇順・降順">${sortDir === 'asc' ? '↑ 昇順' : '↓ 降順'}</button><span class="grow"></span>${diary ? '' : `<button id="sb-view" class="mini" title="一覧・カード">${listView === 'card' ? '☰ 一覧' : '▦ カード'}</button>`}</div>`;
+const sortBar = (diary) => `<div class="sortbar">${diary ? '<span class="sub">日付順</span>' : `<select id="sb-by" title="並べ替え"><option value="fz"${sortBy === 'fz' ? ' selected' : ''}>番号順</option><option value="created"${sortBy === 'created' ? ' selected' : ''}>作成順</option><option value="updated"${sortBy === 'updated' ? ' selected' : ''}>更新順</option></select>`}<button id="sb-dir" class="mini" title="${sortDir === 'asc' ? '昇順（押すと降順）' : '降順（押すと昇順）'}">${sortDir === 'asc' ? '↑' : '↓'}</button></div>`;
 // 並べ替え。IDなし（未整理）は folgezettel が無いので、作成日順
 function sortNotes(list, tab) {
   const by = tab === 'u' && sortBy === 'fz' ? 'created' : sortBy, sg = sortDir === 'asc' ? 1 : -1;
   const key = n => by === 'fz' ? null : by === 'updated' ? (n.updated || n.created || '') : (n.created || '');
   return list.slice().sort((a, b) => sg * (by === 'fz' ? L.cmpId(a.id, b.id) : key(a).localeCompare(key(b)) || L.cmpId(a.id, b.id)));
 }
+// Google Keep 風のカード: 題・本文（長いときは途中まで。「続きを見る」で、その場で全部）・ID・キーワード。押すと開いて編集できる
+const cardOpen = new Set();
 const cardRow = n => {
-  const lines = (n.body || '').split('\n').map(x => x.trim()).filter(Boolean).filter(x => x !== (n.title || '')).slice(0, 4).map(x => esc(x.replace(/^#+\s*/, '').slice(0, 60))).join('<br>');
+  const body = (n.body || '').split('\n').filter(x => x.trim() && x.trim() !== (n.title || '')).map(x => x.replace(/^#+\s*/, '')), text = body.join('\n'), long = text.length > 160 || body.length > 6, open = cardOpen.has(n.s + ':' + n.id);
+  const shown = open || !long ? text : body.slice(0, 6).join('\n').slice(0, 160);
   return `<div class="item note card${cur && cur.k === 'note' && cur.s === n.s && cur.id === n.id ? ' on' : ''}" draggable="true" data-s="${n.s}" data-id="${esc(n.id)}">${selMode ? `<input type="checkbox" class="ck" ${picked.has(n.s + ':' + n.id) ? 'checked' : ''}>` : ''}<div class="nrow">` +
-    `<div class="nt">${icon(n) ? icon(n) + ' ' : ''}${n.image ? '📷 ' : ''}${esc(titleOf(n))}</div><div class="cbody">${lines || '<span class="sub">（本文なし）</span>'}</div>` +
+    `<div class="nt">${icon(n) ? icon(n) + ' ' : ''}${n.image ? '📷 ' : ''}${esc(titleOf(n))}</div><div class="cbody${open ? ' open' : ''}">${shown ? esc(shown) + (long && !open ? '…' : '') : '<span class="sub">（本文なし）</span>'}</div>` +
+    `${long ? `<a class="cmore" data-more="${n.s}:${esc(n.id)}">${open ? '閉じる ▴' : '続きを見る ▾'}</a>` : ''}` +
     `<div class="ns">${n.noid ? 'IDなし' : (n.s === 'p' ? '紙 ' : '') + esc(n.id)} · ${esc(shortTime(sortBy === 'updated' ? (n.updated || n.created) : n.created))}${n.keywords.length ? ' · ' + n.keywords.map(esc).join('・') : ''}</div></div></div>`;
 };
 
@@ -370,16 +374,18 @@ $('#rail').onclick = e => { const b = e.target.closest('button'); if (b && b.dat
 document.addEventListener('auxclick', e => { if (e.button === 1 && !e.target.closest('#tabbar')) { bgOpen = true; try { onOpenClick(e); } finally { setTimeout(() => { bgOpen = false; renderTabs(); }, 0); } } });
 // 一覧からトピックIndexの欄へドラッグすると ID が入る
 $('#list').addEventListener('click', e => {
+  const mo = e.target.closest('[data-more]'); if (mo) { e.stopPropagation(); e.preventDefault(); cardOpen.has(mo.dataset.more) ? cardOpen.delete(mo.dataset.more) : cardOpen.add(mo.dataset.more); return renderList(); }
   const fr = e.target.closest('[data-file]'); if (fr) return fileDialog(fr.dataset.file);
   if (e.target.closest('#ff-add')) return pick(true, f => attach(null, f), '*');
   if (e.target.closest('#sb-dir')) { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; savePrefs(); return renderList(); }
-  if (e.target.closest('#sb-view')) { listView = listView === 'card' ? 'list' : 'card'; savePrefs(); return renderList(); }
   if (e.target.closest('#ix-edit')) { ixEdit = !ixEdit; return renderList(); }
   const c = e.target.closest('.chip.pick'); if (c) pickDot(c.dataset.pk, c.dataset.ps, c.dataset.pid);
 });
 $('#list').addEventListener('dragstart', e => { const n = e.target.closest('[data-id]'); if (n) e.dataTransfer.setData('text/plain', n.dataset.id); });
 $('#list').addEventListener('change', e => { if (e.target.id === 'ff-sel') { fileFilter = e.target.value; renderList(); } });
 $('#list').addEventListener('change', e => { if (e.target.id === 'sb-by') { sortBy = e.target.value; savePrefs(); renderList(); } });
+$('#cardtoggle').onclick = () => { listView = listView === 'card' ? 'list' : 'card'; savePrefs(); $('#cardtoggle').classList.toggle('on', listView === 'card'); if (mode === 'notes') renderList(); };
+$('#cardtoggle').classList.toggle('on', listView === 'card');
 $('#tabs').onclick = e => { const b = e.target.closest('button'); if (b) { tab = b.dataset.tab; $('#q').value = ''; renderList(); } };
 $('#q').oninput = renderList;
 $('#q').onkeydown = e => { if (e.key === 'Escape') { $('#q').value = ''; $('#q').blur(); renderList(); if (lastView && cur && cur.k === 'note') lastView.focus(); searchMark(); } };
