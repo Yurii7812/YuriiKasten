@@ -365,7 +365,7 @@ function openVault(vault) {
   }
 
   function topicMd(t) {
-    const { rows, stars, refs } = L.mergeTopic(t), e = t.entry;
+    const { rows, stars, refs, chats } = L.mergeTopic(t), e = t.entry;
     const out = [
       `<!-- pkm-topic ${J(t)} -->`, `# ${esc(t.name)}`, '',
       `<p ${SUB}>入口 ${e ? a(noteHref(e.s, e.id), label(e.s, e.id)) : 'なし'}${t.keyword ? `　キーワード ${a(`${enc(KEYWORDS)}#${L.kwAnchor(t.keyword)}`, h(t.keyword))}` : ''}</p>`, ''
@@ -384,6 +384,7 @@ function openVault(vault) {
       }
     }
     if (stars.length) out.push('', ...stars.map(s => `★ [${esc(s)}](${topicHref(s)})  `));
+    if (chats.length) out.push('', ...chats.map(c => `💬 ${esc(c)}  `));   // チャットメモのトピック（案内だけ。メモは、C_YYYY-MM-DD.md に）
     if (refs.length) out.push('', ...refs.map(r => `★ ${esc(r.label)} [${label(r.s, r.id)}](${noteHref(r.s, r.id)})  `));
     return out.join('\n') + '\n';
   }

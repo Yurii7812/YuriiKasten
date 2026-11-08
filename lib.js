@@ -172,6 +172,8 @@ function parseIdTok(tok) {
 }
 const defOf = t => t && t.entry && t.entry.s === 'p' ? 'p' : 'd';   // トピックIndex の、印なしの側（入口が紙なら紙）
 function topicLine(line) {
+  const c = line.match(/^(\s*[@＠]\s*)(.+?)\s*$/);   // @夢 → チャットメモのトピック「夢」への案内（メモ自体は書かない）
+  if (c) return { chat: c[2], from: c[1].length, to: c[1].length + c[2].length, ids: [] };
   const s = line.match(/^(\s*[★☆+＋]\s*)(.*?)\s*$/);
   if (s) {
     // +hoge 1 → 「★ hoge 1」（1 がリンク。そのIDのトピックIndex があってもなくても）。+GUI だけなら、トピックIndex への案内
@@ -205,9 +207,10 @@ function legacyTopicText(t) {
 const topicText = t => t.text !== undefined ? t.text : legacyTopicText(t);
 // 表示用に: [{kw, d:[ids], p:[ids]}], stars, refs。(p) (d) の印で、紙とデジタルに分ける
 function mergeTopic(t) {
-  const m = new Map(), stars = [], refs = [], def = defOf(t);
+  const m = new Map(), stars = [], refs = [], chats = [], def = defOf(t);
   for (const line of topicText(t).split('\n')) {
     const r = topicLine(line);
+    if (r.chat) { if (!chats.includes(r.chat)) chats.push(r.chat); continue; }
     if (r.ref) { const s = r.ref.sp || def; if (!refs.some(x => x.s === s && x.id === r.ref.id && x.label === r.ref.label)) refs.push({ s, label: r.ref.label, id: r.ref.id }); continue; }
     if (r.star !== undefined) { if (r.star && !stars.includes(r.star)) stars.push(r.star); continue; }
     if (!r.kw && !r.ids.length) continue;
@@ -215,7 +218,7 @@ function mergeTopic(t) {
     if (!m.has(k)) m.set(k, { kw: k, d: [], p: [] });
     for (const x of r.ids) { const s = x.sp || def; if (!m.get(k)[s].includes(x.raw)) m.get(k)[s].push(x.raw); if (x.dot && !m.get(k).dot) m.get(k).dot = { s, id: x.id }; }   // 並びには (番号) つきのまま入れる
   }
-  return { rows: [...m.values()], stars, refs };
+  return { rows: [...m.values()], stars, refs, chats };
 }
 
 // トピックIndex の文字に「キーワード ID」を足す（同じキーワードの行があればその行の後ろに）。ID は 1a や 1a(p) のように、印つきで

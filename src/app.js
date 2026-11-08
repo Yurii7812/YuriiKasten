@@ -368,6 +368,7 @@ document.addEventListener('keydown', e => { if (e.altKey && (e.key === 'ArrowLef
 document.addEventListener('mouseup', e => { if (e.button === 3) { e.preventDefault(); go(-1); } if (e.button === 4) { e.preventDefault(); go(1); } });
 function onOpenClick(e) {
   if (e.target.closest('#modal') || e.target.closest('#selbar')) return;
+  const cct = e.target.closest('[data-cchat]'); if (cct) { mode = 'chat'; return Chat.open(cct.dataset.cchat, e.ctrlKey || e.metaKey); }
   const cm = e.target.closest('[data-cmemo]'); if (cm) { mode = 'chat'; return Chat.gotoMemo(cm.dataset.cmemo); }
   const dd = e.target.closest('[data-diary]'); if (dd && !e.target.closest('.cm-editor')) return openDiary(dd.dataset.diary, undefined, dd.dataset.kind || '日記');
   const cc = e.target.closest('[data-chat]'); if (cc) return Chat.open(cc.dataset.chat);
@@ -1320,9 +1321,9 @@ function openTopic(name, tmode = 'view', keep) {
   cur = place({ k: 'topic', name, mode: tmode }, keep); cur.mode = tmode; mode = 'notes';
   if (!inPreview) decided = { k: 'topic', name };
   if (!inPreview && !$('#q').value && t.entry) tab = t.entry.s === 'p' ? 'p' : 'd';   // 一覧を、そのトピックIndex のあるタブに
-  const { rows, stars, refs } = L.mergeTopic(t), e = t.entry;
+  const { rows, stars, refs, chats } = L.mergeTopic(t), e = t.entry;
   let body;
-  if (tmode === 'edit') body = `<div class="sub">1行に「キーワード ID ID …」。ID のあとに (p) で紙、(d) でデジタル（書かなければ、入口のノートと同じ側）。(番号) でノートの中の場所（例: PKM 1a 3(p) 1g(2)）。ID の前に * を付けるとそのIDの上に赤い点（例: PKM *1 1a）。+ で始めると別のトピックIndexへの案内（例: +GUI）。「+名前 ID」なら、その ID へのリンク付きの星（例: +hoge 1）。</div>
+  if (tmode === 'edit') body = `<div class="sub">1行に「キーワード ID ID …」。ID のあとに (p) で紙、(d) でデジタル（書かなければ、入口のノートと同じ側）。(番号) でノートの中の場所（例: PKM 1a 3(p) 1g(2)）。ID の前に * を付けるとそのIDの上に赤い点（例: PKM *1 1a）。+ で始めると別のトピックIndexへの案内（例: +GUI）。「+名前 ID」なら、その ID へのリンク付きの星（例: +hoge 1）。@名前 は、チャットメモのトピックへの案内（例: @夢。メモ自体は書きません）。</div>
       <div class="ed" id="ed-t"></div>`;
   else if (tmode === 'conf') body = `<div class="conf">
       <label>名前 <input id="t-name" value="${esc(t.name)}"></label>
@@ -1333,7 +1334,7 @@ function openTopic(name, tmode = 'view', keep) {
       <div class="row"><button data-act="tsave" class="p">決定</button><button data-act="tcancel">やめる</button>
         <span class="grow"></span><button data-act="tdel" class="danger">このトピックIndexを削除</button></div></div>`;
   else body = `<table class="ti">${rows.map(r => `<tr><td>${esc(r.kw)}</td><td>${rowChips(r)}</td></tr>`).join('') || '<tr><td class="none">まだ空です。「編集」で書きます</td></tr>'}</table>
-      ${stars.map(x => `<div class="star">★ ${tchip(x)}</div>`).join('')}${refs.map(x => `<div class="star">★ ${esc(x.label)} ${chip(x.s, x.id)}</div>`).join('')}`;
+      ${stars.map(x => `<div class="star">★ ${tchip(x)}</div>`).join('')}${chats.map(x => `<div class="star">💬 <span class="chip t" data-cchat="${esc(x)}">${esc(x)}</span></div>`).join('')}${refs.map(x => `<div class="star">★ ${esc(x.label)} ${chip(x.s, x.id)}</div>`).join('')}`;
   // 逆方向（上に出す）: このトピックIndexの入口を載せている Index・このIndexを + で案内している Index（引用できるのは Index だけ）
   const back = topics.filter(o => o !== t && (L.mergeTopic(o).stars.includes(t.name) || (e && L.mergeTopic(o).rows.some(r => r[e.s].some(x => L.splitAnchor(x).id === e.id))))).sort((x, y) => x.name.localeCompare(y.name, 'ja'));
   $('#pane').innerHTML = `
