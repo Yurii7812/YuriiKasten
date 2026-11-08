@@ -299,8 +299,8 @@ function openPicker(anchor, { multi, selected, near, exclude = [], extra = [], o
     box.querySelector('.tgcancel').onclick = () => { form.style.display = 'none'; };
     const make = () => {
       const name = nameIn.value.trim();
-      if (!name || topic(name) || pendingTopics.some(t => t.name === name) || isRec(name) || ['*', '全部', '全部表示', 'トピック未選択'].includes(name)) return alert('その名前は使えません');
-      pendingTopics.push({ name, type: 'bubble', stamp: true, entry: null });
+      if (!name || topic(name) || names.includes(name) || isRec(name) || ['*', '全部', '全部表示', 'トピック未選択'].includes(name)) return alert('その名前は使えません');
+      doc.topics.push({ name, type: 'bubble', stamp: true, entry: null });
       names.unshift(name); sel.add(name); save(); ctx.renderList();
       nameIn.value = ''; form.style.display = 'none'; box.querySelector('.tgs').value = ''; draw('');
     };
@@ -742,4 +742,12 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); send(); }
   }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && pickReply) { pickReply = null; const eb = document.querySelector('.b-edit'); if (eb) eb.dispatchEvent(new Event('input')); } }, true);   // 返信先を選ぶのをやめる
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || !ctx.cur() || ctx.cur().k !== 'chat') return;
+  if (pickReply) { pickReply = null; const eb = document.querySelector('.b-edit'); if (eb) eb.dispatchEvent(new Event('input')); return; }
+  if (document.querySelector('#modal[style*="flex"], .tgpick, .b-edit, .idex-cover')) return;
+  if (e.target.closest && e.target.closest('input, textarea, [contenteditable]') && e.target.id !== 'c-in') return;
+  if (e.target.id === 'c-in' && mn.length) return;
+  if (e.target.id === 'c-in' && replyTos.length) return;
+  if (sel) { e.preventDefault(); sel = null; lastSel = null; paint(); selbar(); }
+}, true);   // Esc: 返信・候補を優先し、次に複数選択を解除
