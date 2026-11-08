@@ -259,10 +259,7 @@ function menuFor(e, bub) {
   if (bub.dataset.m) {
     const m = msg(bub.dataset.m);
     popMenu(e, [
-      ['返信', () => startReply(m.id)],
-      ['返信先を編集', () => startReplyEdit(m.id)],
       ['選択', () => { sel = new Set([m.id]); lastSel = m.id; paint(); selbar(); }],
-      ['ノートに引用…', () => quoteDialog([m])],
       ['編集', () => editMsg(bub, m)],
       ['トピックを変える', () => moveDialog(m)],
       ['コピー', () => navigator.clipboard.writeText(m.text)],
