@@ -464,13 +464,29 @@ function setTopicsDialog(ms) {
   const one = ms.length === 1 ? ms[0] : null;
   let topicSel = one ? one.topic : null, upsSel = new Set(one ? upsOf(one) : []), upsTouched = !!one;
   const names = recentNames(one ? one.topic : undefined);
-  dialog(`<h3>${ms.length > 1 ? ms.length + ' 件の' : ''}所属・上位トピックを変える</h3><input id="sd-q" placeholder="トピックを探す" style="width:100%;margin-bottom:6px"><div class="sd-cols"><div><div class="sub">所属トピック</div><div id="sd-t" class="sd-list"></div></div><div><div class="sub">上位トピック（いくつでも）</div><div id="sd-u" class="sd-list"></div></div></div><div class="row"><button class="p" id="sd-ok">決定</button><button id="sd-no">やめる</button></div>`, close => {
+  dialog(`<h3>${ms.length > 1 ? ms.length + ' 件の' : ''}所属・上位トピックを変える</h3><input id="sd-q" placeholder="トピックを探す" style="width:100%;margin-bottom:6px"><div class="sd-cols"><div><div class="sub">所属トピック</div><div id="sd-t" class="sd-list"></div><div class="row" style="gap:4px;margin-top:6px"><input id="sd-new-t" style="min-width:0;flex:1" placeholder="新しい所属トピック"><button id="sd-create-t" type="button">＋ 作る</button></div></div><div><div class="sub">上位トピック（いくつでも）</div><div id="sd-u" class="sd-list"></div><div class="row" style="gap:4px;margin-top:6px"><input id="sd-new-u" style="min-width:0;flex:1" placeholder="新しい上位トピック"><button id="sd-create-u" type="button">＋ 作る</button></div></div></div><div class="row"><button class="p" id="sd-ok">決定</button><button id="sd-no">やめる</button></div>`, close => {
     const draw = () => {
       const q = $('#sd-q').value.trim().toLowerCase(), f = n => !q || topicLabel(n).toLowerCase().includes(q);
       $('#sd-t').innerHTML = ['', ...names].filter(f).map(n => `<div class="sdi${topicSel === n ? ' on' : ''}" data-t="${esc(n)}">${esc(topicLabel(n))}</div>`).join('');
       $('#sd-u').innerHTML = names.filter(f).map(n => `<div class="sdi${upsSel.has(n) ? ' on' : ''}" data-u="${esc(n)}">${upsSel.has(n) ? '☑ ' : '☐ '}${esc(topicLabel(n))}</div>`).join('');
     };
     draw(); $('#sd-q').oninput = draw; $('#sd-q').focus();
+    // 所属・上位の選択画面内で作成し、作ったトピックを即座に選択する。
+    const create = kind => {
+      const input = $('#sd-new-' + kind), name = input.value.trim();
+      if (!name || topic(name) || isRec(name) || ['*', '全部', '全部表示', 'トピック未選択'].includes(name)) return alert('その名前は使えません');
+      doc.topics.push({ name, type: 'bubble', stamp: true, entry: null });
+      names.unshift(name);
+      if (kind === 't') topicSel = name;
+      else { upsSel.add(name); upsTouched = true; }
+      input.value = ''; $('#sd-q').value = ''; draw(); save(); ctx.renderList();
+    };
+    for (const kind of ['t', 'u']) {
+      $('#sd-create-' + kind).onclick = () => create(kind);
+      $('#sd-new-' + kind).onkeydown = e => {
+        if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); create(kind); }
+      };
+    }
     $('#modal .box').onclick = e => { const t = e.target.closest('[data-t]'), u = e.target.closest('[data-u]'); if (t) { topicSel = t.dataset.t; draw(); } if (u) { upsTouched = true; if (upsSel.has(u.dataset.u)) upsSel.delete(u.dataset.u); else upsSel.add(u.dataset.u); draw(); } };
     $('#sd-no').onclick = close;
     $('#sd-ok').onclick = () => { const now = Date.now(); for (const m of ms) { if (topicSel !== null) m.topic = topicSel; if (upsTouched) { const list = [...upsSel].filter(x => x !== m.topic); if (list.length) m.ups = list; else delete m.ups; } m.edited = now; } save(); close(); paint(); showTarget(); ctx.renderList(); };
