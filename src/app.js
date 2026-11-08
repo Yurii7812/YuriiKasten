@@ -686,8 +686,7 @@ function openNote(s, id, n, keep, mid) {
   if (n) { const p = L.anchorPos(note.body, n); if (p >= 0) jump(view, p); }
   else if (hitAt >= 0) view.dispatch({ effects: EditorView.scrollIntoView(hitAt, { y: 'center' }) }); // 検索から開いたら、最初の一致の所へ
   else if (keep && cur.pos != null) jump(view, Math.min(cur.pos, view.state.doc.length));
-  else if (s === 'd' && !note.body && !note.title) $('#f-title').focus();
-  else if (s === 'd' && !note.body) view.focus();
+  else if (s === 'd' && !note.body) view.focus(); // 新規ノートは題名欄でなく本文にカーソルを置く
 }
 // グラフの横に、ふつうのノートと同じ表示（題・本文のエディタ。直すと、そのまま保存）を入れる
 function mountNoteIn(el, s, id) {
@@ -871,13 +870,14 @@ async function createNoidRel(note, act) {
   const parentStem = act === 'chi' ? note.stem : (note.parentStem || '');
   const n = await api.createNote({ kind: 'text', created: L.now(), parentStem });
   notes.push(n); await refreshDiaries(); openNote('d', n.id);
-  setTimeout(() => { const t = $('#f-title'); if (t) t.focus(); }, 30);
+  setTimeout(() => { if (cur && cur.k === 'note' && cur.id === n.id && lastView && lastView.dom.isConnected) lastView.focus(); }, 30);
 }
 async function createNoid(kind) {
   const data = kind === 'rp' ? RP.emptyData() : kind === 'canvas' ? CV.emptyData() : null;
   const n = await api.createNote({ kind, data, created: L.now() });
   notes.push(n); await refreshDiaries(); openNote('d', n.id);
-  setTimeout(() => { const t = $('#f-title'); if (t) t.focus(); }, 30); // 作った直後は、タイトル欄から書き始める
+  if (kind === 'text') setTimeout(() => { if (cur && cur.k === 'note' && cur.id === n.id && lastView && lastView.dom.isConnected) lastView.focus(); }, 30);
+  else setTimeout(() => { const t = $('#f-title'); if (t) t.focus(); }, 30);
 }
 $('#new').onclick = e => {
   if (mode === 'diary') return openDiary(L.todayStr());
