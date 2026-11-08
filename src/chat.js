@@ -254,21 +254,12 @@ export function newTopicDialog() {
   const rootFree = () => { const r = ctx.notes().filter(n => n.s === 'd' && /^\d+$/.test(n.id)).map(n => +n.id); return ctx.free('d', String((r.length ? Math.max(...r) : 0) + 1)); };
   dialog(`<h3>トピックを作る</h3>
     <div class="sub">名前</div><input id="tp-name" placeholder="例: アイデア">
-    <label class="rad"><input type="radio" name="tp" value="bubble" checked> メモ型 — 1 件ずつのメモ（ノートにするのは、あとで選んだものだけ）</label>
-    <label class="rad"><input type="radio" name="tp" value="whole"> 全体型 — このトピック全体が 1 つのノート <input id="tp-id" style="width:90px" value="${esc(rootFree())}" title="ノートのID（無ければ作る）"></label>
-    <label class="rad"><input type="checkbox" id="tp-stamp" checked> 時刻（HH:MM）を付ける（全体型の行）</label>
     <div class="row"><button class="p" id="tp-ok">作る</button><button id="tp-no">やめる</button></div>`, close => {
     $('#tp-name').focus(); $('#tp-no').onclick = close;
     $('#tp-ok').onclick = async () => {
-      const name = $('#tp-name').value.trim(), type = document.querySelector('input[name=tp]:checked').value;
+      const name = $('#tp-name').value.trim();
       if (!name) return; if (topic(name) || ['全部表示', DIARY].includes(name)) return alert('その名前は使えません');
-      const t = { name, type, stamp: $('#tp-stamp').checked, entry: null };
-      if (type === 'whole') {
-        const id = $('#tp-id').value.trim().toLowerCase();
-        if (!L.isId(id)) return alert('IDの形が違います');
-        if (!ctx.get('d', id)) ctx.notes().push(await ctx.api.saveNote({ s: 'd', id, created: L.now(), keywords: [], body: '' }));
-        t.entry = { id };
-      }
+      const t = { name, type: 'bubble', stamp: true, entry: null };   // 新しいトピックは、1 件ずつのメモ（旧い「全体型」は、あるものだけ残す）
       doc.topics.push(t); save(); close(); open(name);
     };
   });
@@ -277,15 +268,15 @@ function confDialog() {
   const t = topic(view), n = countOf(view);
   dialog(`<h3>トピックの設定</h3>
     <div class="sub">名前</div><input id="cf-name" value="${esc(t.name)}">
-    <div class="sub">型: ${t.type === 'whole' ? `全体型（ノート ${esc(t.entry && t.entry.id)}）` : 'メモ型'}　${n ? '— 中身があるので、型は変えられません' : ''}</div>
-    <label class="rad"><input type="checkbox" id="cf-stamp" ${t.stamp ? 'checked' : ''}> 時刻（HH:MM）を付ける（全体型の行）</label>
+    ${t.type === 'whole' ? `<div class="sub">全体型（ノート ${esc(t.entry && t.entry.id)}）</div>
+    <label class="rad"><input type="checkbox" id="cf-stamp" ${t.stamp ? 'checked' : ''}> 時刻（HH:MM）を付ける（全体型の行）</label>` : ''}
     <div class="row"><button class="p" id="cf-ok">決定</button><button id="cf-no">やめる</button><span class="grow"></span><button class="danger" id="cf-del">このトピックを消す</button></div>`, close => {
     $('#cf-no').onclick = close;
     $('#cf-ok').onclick = () => {
       const name = $('#cf-name').value.trim();
       if (!name) return; if (name !== t.name && (topic(name) || ['全部表示', DIARY].includes(name))) return alert('その名前は使えません');
       for (const m of doc.messages) if (m.topic === t.name) m.topic = name;
-      t.name = name; t.stamp = $('#cf-stamp').checked; save(); close(); open(name, true);
+      t.name = name; if ($('#cf-stamp')) t.stamp = $('#cf-stamp').checked; save(); close(); open(name, true);
     };
     $('#cf-del').onclick = () => {
       if (!confirm(`トピック「${t.name}」を消しますか？${t.type === 'bubble' ? '（中のメモは「トピック未選択」に移ります）' : '（ノートは残ります）'}`)) return;
