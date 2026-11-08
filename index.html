@@ -423,6 +423,20 @@ button{font-size:14.5px;padding:5px 13px;border-color:#d6d9e1;color:#3d4150}
 .idex-view-index .ix{font-size:15px}
 .idex-preview .idex-section .item{padding:6px 10px;border-bottom:1px solid var(--line);cursor:pointer}
 .idex-preview .idex-section .item:hover{background:var(--hl)}
+/* 長いタイトルは一覧・カード・本文のいずれでも読めるようにする。
+   リスト行の高さは自然に広げ、タイトル欄は入力中も折り返し自動伸長。 */
+.item.note .nt,.item.topicrow .nt,.idex-result-section .nt{
+  white-space:normal;overflow:visible;text-overflow:clip;
+  overflow-wrap:anywhere;word-break:break-word;
+}
+.item.note .nrow,.item.topicrow .nrow{min-width:0;width:100%}
+.item.note .ns,.item.topicrow .ns{white-space:normal;overflow-wrap:anywhere;word-break:break-word}
+textarea.ntitle,textarea#f-title{
+  display:block;width:100%;box-sizing:border-box;min-width:0;
+  min-height:1.45em;height:auto;resize:none;overflow:hidden;
+  overflow-wrap:anywhere;white-space:pre-wrap;
+  font-family:inherit;field-sizing:content;
+}
 #idpop{position:fixed;z-index:60;background:#fff;border:1px solid #cfd5e3;border-radius:10px;box-shadow:0 6px 24px rgba(30,40,80,.18);padding:4px;min-width:150px;font-size:14px}#idpop div{padding:6px 10px;border-radius:7px;cursor:pointer}#idpop div.on{background:var(--acc-bg)}#idpop kbd{background:#eef0f5;border-radius:4px;padding:0 5px;font:12px ui-monospace,monospace;color:#667}#idpop b{color:var(--acc);margin-left:4px}
 .sortbar{display:flex;align-items:center;gap:6px;padding:6px 12px;border-bottom:1px solid #f2f2f2;position:sticky;top:0;background:var(--bg,#fff);z-index:2}.sortbar select{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:6px;padding:2px 4px;background:#fff}
 .item.card{display:block;margin:6px 10px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:#fff}.item.card:hover,.item.card.on{background:var(--hl)}
