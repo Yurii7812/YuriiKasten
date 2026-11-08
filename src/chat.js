@@ -108,6 +108,7 @@ export function open(name, keep) {
   render(); ctx.renderTabs(); ctx.renderList();
 }
 // このメモ（ノートの出典リンクから）へ飛ぶ
+export const searchMemos = q => doc.messages.filter(m => (m.text || '').toLowerCase().includes(q)).sort((a, b) => b.t - a.t);   // 検索結果に出す
 export function gotoMemo(id) {
   const m = msg(id); if (!m) return toast('そのチャットメモは、もうありません');
   view = '*'; viewMode = 'all'; day = '';

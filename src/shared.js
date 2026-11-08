@@ -47,8 +47,12 @@ export function popMenu(e, items) {
     const b = document.createElement('div'); b.textContent = name; if (danger) b.className = 'danger';
     b.onclick = () => { m.remove(); fn(); }; m.append(b);
   }
-  m.style.left = Math.min(e.clientX, innerWidth - 190) + 'px'; m.style.top = Math.min(e.clientY, innerHeight - items.length * 32 - 10) + 'px';
+  const z = parseFloat(document.body.style.zoom) || 1;   // 画面全体の拡大（設定）があっても、位置がずれない
+  m.style.left = e.clientX / z + 'px'; m.style.top = e.clientY / z + 'px'; m.style.maxHeight = (innerHeight - 16) / z + 'px'; m.style.overflowY = 'auto';
   document.body.append(m);
+  const r = m.getBoundingClientRect();   // 実際の大きさで、画面の外に出ないように（下のメモで右クリックしても見切れない）
+  if (r.bottom > innerHeight - 8) m.style.top = Math.max(8 / z, (e.clientY - (r.bottom - (innerHeight - 8))) / z) + 'px';
+  if (r.right > innerWidth - 8) m.style.left = Math.max(8 / z, (innerWidth - 8 - r.width) / z) + 'px';
   setTimeout(() => document.addEventListener('mousedown', ev => { if (!m.contains(ev.target)) m.remove(); }, { once: true, capture: true }), 0);
 }
 export function toast(text) {

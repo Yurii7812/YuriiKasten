@@ -326,6 +326,8 @@ function renderList() {
     if (fh.length) out.push('<h4>ファイル</h4>', ...fh.map(f => fileRow(f, q)));
     const dh = diaries.filter(d => [d.date, d.title, d.body].join('\n').toLowerCase().includes(q)).sort((a, b) => b.date.localeCompare(a.date));
     if (dh.length) out.push('<h4>日記</h4>', ...dh.map(d => `<div class="item note" data-diary="${d.date}" data-kind="${esc(d.kind || '日記')}"><div class="nrow"><div class="nt">${mk(d.title || d.date, q)}</div><div class="ns">${esc(d.kind || '日記')} · ${d.date}</div>${snippet(d.body, q) ? `<div class="sn">${snippet(d.body, q)}</div>` : ''}</div></div>`));
+    const ch = Chat.searchMemos(q);   // チャットメモも
+    if (ch.length) out.push('<h4>チャットメモ</h4>', ...ch.slice(0, 80).map(m => `<div class="item note" data-cmemo="${esc(m.id)}"><div class="nrow"><div class="nt">${mk((m.text || '').split('\n')[0].slice(0, 80), q)}</div><div class="ns">${esc(Chat.label(m.topic))} · ${new Date(m.t).toLocaleString()}</div></div></div>`));
     if (!out.length) out.push('<div class="none">見つかりません</div>');
   } else if (tab === 'f') {
     refreshFiles();
@@ -366,6 +368,7 @@ document.addEventListener('keydown', e => { if (e.altKey && (e.key === 'ArrowLef
 document.addEventListener('mouseup', e => { if (e.button === 3) { e.preventDefault(); go(-1); } if (e.button === 4) { e.preventDefault(); go(1); } });
 function onOpenClick(e) {
   if (e.target.closest('#modal') || e.target.closest('#selbar')) return;
+  const cm = e.target.closest('[data-cmemo]'); if (cm) { mode = 'chat'; return Chat.gotoMemo(cm.dataset.cmemo); }
   const dd = e.target.closest('[data-diary]'); if (dd && !e.target.closest('.cm-editor')) return openDiary(dd.dataset.diary, undefined, dd.dataset.kind || '日記');
   const cc = e.target.closest('[data-chat]'); if (cc) return Chat.open(cc.dataset.chat);
   if (e.target.id === 'c-new') return Chat.newTopicDialog();
