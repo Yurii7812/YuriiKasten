@@ -80,13 +80,21 @@ document.addEventListener('contextmenu', e => {
   if (ix) {   // Index（左の一覧）
     e.preventDefault();
     const k = ix.dataset.ixk, sp = c.dataset.s, id = c.dataset.id, dd = kwTopic(k) && dotOf(kwTopic(k), k), on = !!(dd && dd.s === sp && dd.id === id);
-    popMenu(e, [[on ? '⚪ 赤い点を外す' : '🔴 赤い点を付ける', () => pickDot(k, sp, id)]]);
+    const v = globalIndex().find(x => x[0] === k), n = v ? v[1].d.length + v[1].p.length : 0;
+    // 赤い点: そのIDのノートに索引があって、そのキーワードのIDが2つ以上あるときだけ付けられる（付いているものは、いつでも外せる）
+    if (on) popMenu(e, [['⚪ 赤い点を外す', () => pickDot(k, sp, id)]]);
+    else if (topicOf(sp, id) && n >= 2) popMenu(e, [['🔴 赤い点を付ける', () => pickDot(k, sp, id)]]);
+    else popMenu(e, [[topicOf(sp, id) ? '🔴 赤い点は、キーワードのIDが2つ以上のときだけ' : '🔴 赤い点は、そのIDに索引があるときだけ', () => { }]]);
   } else if (tr && cur && cur.k === 'topic') {   // 索引の中
     const t = topics.find(x => x.name === cur.name); if (!t) return;
     const kw = tr.dataset.kw, sp = c.dataset.s, id = c.dataset.id, on = topicDot(t, kw, sp, id, false);
     if (on === null) return;
     e.preventDefault();
-    popMenu(e, [[on ? '⚪ 赤い点を外す' : '🔴 赤い点を付ける', () => { topicDot(t, kw, sp, id, true); openTopic(t.name, 'view', true); }]]);
+    const row = L.mergeTopic(t).rows.find(r => r.kw === kw), n = row ? row.d.length + row.p.length : 0;
+    const go = () => { topicDot(t, kw, sp, id, true); openTopic(t.name, 'view', true); };
+    if (on) popMenu(e, [['⚪ 赤い点を外す', go]]);   // 付いているものは、いつでも外せる
+    else if (topicOf(sp, id) && n >= 2) popMenu(e, [['🔴 赤い点を付ける', go]]);   // そのIDのノートに索引があって、その行のIDが2つ以上
+    else popMenu(e, [[topicOf(sp, id) ? '🔴 赤い点は、キーワードのIDが2つ以上のときだけ' : '🔴 赤い点は、そのIDに索引があるときだけ', () => { }]]);
   }
 });
 const ixRow = ([k, v]) => {
