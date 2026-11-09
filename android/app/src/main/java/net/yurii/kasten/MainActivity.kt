@@ -1226,6 +1226,15 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>, sharedState:
         var stamp by remember { mutableStateOf(settings.writtenStamp) }
         AlertDialog(onDismissRequest = { settingsOpen = false }, title = { Text("アラームと設定") },
             text = { Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val pkgInfo=remember(ctx) { ctx.packageManager.getPackageInfo(ctx.packageName,0) }
+                val installedVersion=pkgInfo.versionName ?: "不明"
+                val installedCode=if(Build.VERSION.SDK_INT>=28) pkgInfo.longVersionCode else @Suppress("DEPRECATION") pkgInfo.versionCode.toLong()
+                Text("YuriiNote Android v$installedVersion（ビルド $installedCode）",fontWeight=FontWeight.Medium)
+                Text("最新版の状態：未確認（インストール済みの番号は上に表示）",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick={
+                    ctx.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://github.com/Yurii7812/YuriiNote/releases")))
+                }) { Text("GitHubのリリースを確認") }
+                HorizontalDivider()
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("定期的に鳴らす", Modifier.weight(1f)); Switch(on, { on = it })
                 }
