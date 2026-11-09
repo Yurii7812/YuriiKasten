@@ -1,6 +1,7 @@
 // チャット・なりきり・キャンバスで共通の部品。app.js が ctx の中身を入れる
 import MarkdownIt from 'markdown-it';
 import L from '../lib.js';
+import { mermaidPlaceholder } from './mermaid.js';
 
 export const ctx = {};
 export const $ = s => document.querySelector(s);
@@ -12,6 +13,12 @@ export const vaultUrl = () => 'file://' + ctx.vault().split('/').map(encodeURICo
 
 // ===== 吹き出しなどの Markdown 表示 =====
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
+const oldFence = md.renderer.rules.fence;
+md.renderer.rules.fence = (tokens, idx, options, env, self) => {
+  const t = tokens[idx];
+  if ((t.info || '').trim().split(/\s+/)[0].toLowerCase() === 'mermaid') return mermaidPlaceholder(t.content);
+  return oldFence ? oldFence(tokens, idx, options, env, self) : self.renderToken(tokens, idx, options);
+};
 // :1a や 1a: は、ノートへのリンクにする（pkm: で始まるリンク）
 export function renderMd(text) {
   let src = text || '', out = '', last = 0;
