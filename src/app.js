@@ -811,6 +811,8 @@ async function refreshDiaries() {
   for (const r of await api.diaryState()) { const d = getDiary(r.date, r.kind); if (!d) diaries.push(r); else if (!timers['dy' + r.kind + r.date] && !timers['dt' + r.kind + r.date]) Object.assign(d, r); }
 }
 $('#pane').addEventListener('click', async e => {
+  const memoLink = e.target.closest('[data-cmemo]');
+  if (memoLink) { e.preventDefault(); Chat.gotoMemo(memoLink.dataset.cmemo); return; }
   const del = e.target.closest('[data-kwdel]');
   if (del && cur && cur.k === 'note') {
     if (!confirm(`キーワード「${del.dataset.kwdel}」をこのノートから外しますか？`)) return;
