@@ -198,7 +198,12 @@ button.danger{color:var(--red);border-color:#efc9c4}
 #scan .view{flex:1;overflow:auto;text-align:center;background:#f6f6f6}#scan .view img{max-width:100%}
 @media(max-width:800px){.paper,.two{grid-template-columns:1fr}aside{width:220px}}
 
-#clist .ci{margin-right:8px}#clist .item small{float:right;color:var(--sub)}#clist .dtop{padding:8px 10px;border-bottom:1px solid var(--line)}
+#clist .ci{margin-right:8px}#clist .item small{float:right;color:var(--sub)}
+/* 左のトピック一覧: 長い名前は折り返して全部見せる。3 行を超えるときだけ「…」にする */
+#clist .item{display:flex;align-items:flex-start;gap:8px;white-space:normal;text-overflow:clip}
+#clist .item .ci{margin-right:0;flex:none}
+#clist .item b{flex:1;min-width:0;margin-right:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;overflow-wrap:anywhere}
+#clist .item small{float:none;flex:none;margin-left:auto}#clist .dtop{padding:8px 10px;border-bottom:1px solid var(--line)}
 .chat{display:flex;flex-direction:column;flex:1;min-height:0;max-width:820px;margin:0 auto;width:100%}
 #pane:has(.chat){display:flex;flex-direction:column;overflow:hidden}
 .chat-head{flex-shrink:0}

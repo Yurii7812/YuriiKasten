@@ -510,7 +510,7 @@ function paint(toBottom) {
 }
 function selbar() {
   const b = $('#c-selbar'); if (!b) return;
-  b.innerHTML = sel ? `<span>${sel.size} 件を選択</span><span class="grow"></span><button data-c="selall">全部</button><button data-c="selclear" ${sel.size ? '' : 'disabled'}>選択解除</button><button data-c="selcopy" ${sel.size ? '' : 'disabled'}>コピー</button><button data-c="selmove" ${sel.size ? '' : 'disabled'}>所属・上位トピック</button><button data-c="seldel" class="danger" ${sel.size ? '' : 'disabled'}>消す</button><button class="p" data-c="tonote" ${sel.size ? '' : 'disabled'}>ノート化</button><button data-c="selno">やめる</button>` : '';
+  b.innerHTML = sel ? `<span>${sel.size} 件を選択</span><span class="grow"></span><button data-c="selall">全部</button><button data-c="selclear" ${sel.size ? '' : 'disabled'}>選択解除</button><button data-c="selcopy" ${sel.size ? '' : 'disabled'}>コピー</button><button data-c="selmove" ${sel.size ? '' : 'disabled'}>所属・上位トピック</button><button data-c="selspeaker" ${sel.size ? '' : 'disabled'}>話した人</button><button data-c="seldel" class="danger" ${sel.size ? '' : 'disabled'}>消す</button><button class="p" data-c="tonote" ${sel.size ? '' : 'disabled'}>ノート化</button><button data-c="selno">やめる</button>` : '';
   b.style.display = sel ? 'flex' : 'none';
 }
 
@@ -567,6 +567,7 @@ function menuFor(e, bub) {
       ['ノート化', () => toNoteDialog([m])],
       ['編集', () => editMsg(bub, m)],
       ['トピックを変える', () => moveDialog(m)],
+      ['話した人を変える', () => speakerDialog([m])],
       ['コピー', () => navigator.clipboard.writeText(m.text)],
       ['消す', () => removeMsg(m), true]
     ]);
@@ -618,6 +619,30 @@ function removeMsg(m) {
 }
 // トピック（下）と上を、変える。1 件でも、選んだ複数でも
 function moveDialog(m) { setTopicsDialog([m]); }
+// 話した人（キャラ）を変える。1 件でも、複数選択でも。「自分」と、役のライブラリのキャラから選ぶ
+function speakerDialog(ms) {
+  const one = ms.length === 1 ? ms[0] : null;
+  const people = [{ id: 'self', name: doc.selfName, icon: null }, ...roleLibrary.filter(r => !r.archived)];
+  let chosenId = one ? (one.actor || 'self') : null;   // 複数のときは、選ぶまで変えない
+  dialog(`<h3>${ms.length > 1 ? ms.length + ' 件の' : ''}話した人を変える</h3>
+    <div class="sub">${one ? '今は: ' + esc(actorName(one.actor)) : '選んだメモの話した人を、まとめて変えます'}</div>
+    <div id="sp-list" style="display:flex;flex-direction:column;gap:4px;margin:8px 0;max-height:320px;overflow:auto"></div>
+    <div class="row"><button class="p" id="sp-ok" disabled>変える</button><button id="sp-no">やめる</button></div>`, close => {
+    const draw = () => {
+      $('#sp-list').innerHTML = people.map(p => `<div class="sdi${chosenId === p.id ? ' on' : ''}" data-p="${esc(p.id)}">${chosenId === p.id ? '● ' : '○ '}${p.icon && p.icon.emoji ? esc(p.icon.emoji) + ' ' : ''}${esc(p.name || 'キャラクター')}</div>`).join('');
+      $('#sp-ok').disabled = chosenId === null;
+    };
+    draw();
+    $('#sp-list').onclick = e => { const it = e.target.closest('[data-p]'); if (it) { chosenId = it.dataset.p; draw(); } };
+    $('#sp-no').onclick = close;
+    $('#sp-ok').onclick = () => {
+      if (chosenId === null) return;
+      for (const m of ms) m.actor = chosenId;   // 'self' は自分（書くときと同じ形）
+      close(); save(); paint(); ctx.renderList();
+      toast(`${ms.length} 件の話した人を「${actorName(chosenId)}」にしました`);
+    };
+  });
+}
 function setTopicsDialog(ms) {
   const one = ms.length === 1 ? ms[0] : null;
   let topicSel = one ? one.topic : null, upsSel = new Set(one ? upsOf(one) : []), upsTouched = !!one;
@@ -886,6 +911,7 @@ document.addEventListener('click', e => {
       const current = ctx.cur(); if (current && current.k === 'chat') delete current.sourceMemoIds;
       render(); ctx.renderTabs(); return;
     }
+    if (a === 'selspeaker') { const ms = [...sel].map(id => msg(id)).filter(Boolean); if (ms.length) speakerDialog(ms); return; }
     if (a === 'selmove') { const ms = [...sel].map(id => msg(id)).filter(Boolean); if (ms.length) setTopicsDialog(ms); return; }
     if (a === 'seldel') { const ids = [...sel]; if (!ids.length || !confirm(`${ids.length} 件のメモを消しますか？（復元用に残しておきます。ノートにしたものは、残ります）`)) return; for (const id of ids) { const m = msg(id); if (!m) continue; doc.messages = doc.messages.filter(x => x !== m); doc.trash.push({ ...m, deleted: Date.now() }); memoToDay(m, m.text, true); } sel = null; save(); paint(); selbar(); ctx.renderList(); }
     if (a === 'selclear') { sel = new Set(); lastSel = null; paint(); selbar(); }   // 選択を全部外す（選ぶ状態は続く）
