@@ -86,6 +86,7 @@ async function flush() { // 待っている保存を今すぐ
   await Promise.all(fs.map(x => x.f()));
 }
 window.addEventListener('beforeunload', () => { flush(); });
+if (window.api.onFlush) window.api.onFlush(() => flush());   // 閉じる前に、main から「今すぐ保存」と言われる
 installMermaidObserver();
 
 // ===== エディタ（:1 や (1) をその場でリンクに）=====
@@ -118,6 +119,11 @@ function links(mode, space) {
       const sel = view.state.selection.main, rs = [];
       for (const [f, t, d, ok, cls] of items) {
         if (d === 'mk') { rs.push(Decoration.mark({ class: 'mk' }).range(f, t)); continue; }
+        if (d && d.t === 'ref' && !d.n && ok && !(sel.from <= t && sel.to >= f)) {   // 「- :ID」だけの行（今日のノートなど）は、ID のかわりにノートの題を見せる
+          const ls = text.lastIndexOf('\n', f - 1) + 1, le = text.indexOf('\n', f), line = text.slice(ls, le < 0 ? text.length : le);
+          const nt = /^\s*-\s+:[0-9a-z]+\s*$/.test(line) && get(d.s, d.id);
+          if (nt) { rs.push(Decoration.replace({ widget: new TitleWidget(titleOf(nt), d) }).range(f, t)); continue; }
+        }
         rs.push(Decoration.mark({ class: 'lk' + (cls ? ' ' + cls : '') + (ok ? '' : ' miss'), attributes: { 'data-l': JSON.stringify(d) } }).range(f, t));
         if (cls === 'file' && !(sel.from <= t && sel.to >= f)) {
           const open = text[f] === '!' ? 2 : 1, close = text.lastIndexOf('](', t);
@@ -166,6 +172,12 @@ function links(mode, space) {
 }
 // ![名前](パス) の行の下に、画像をそのまま表示する（見るだけ。押しても開かない）
 const vaultUrl = () => 'file://' + vault.split('/').map(encodeURIComponent).join('/') + '/';
+class TitleWidget extends WidgetType {
+  constructor(title, d) { super(); this.title = title; this.d = d; }
+  eq(o) { return o.title === this.title && o.d.s === this.d.s && o.d.id === this.d.id; }
+  toDOM() { const e = document.createElement('span'); e.className = 'lk ref-title'; e.setAttribute('data-l', JSON.stringify(this.d)); e.textContent = this.title; return e; }
+  ignoreEvent() { return false; }
+}
 class NameWidget extends WidgetType {
   constructor(name) { super(); this.name = name; }
   eq(o) { return o.name === this.name; }
@@ -770,14 +782,22 @@ const childNotes = note => {
 // 右パネルの関係ラベルは絵文字を主役に、文字を小さめに表示する
 const metaLabel = (emoji, label, count = '') => `<div class="l meta-compact-label"><span class="meta-emoji" aria-hidden="true">${emoji}</span><span>${label}${count ? ` ${count}` : ''}</span></div>`;
 const childrenHtml = note => { const cs = childNotes(note); return cs.length ? `<div class="sec">${metaLabel('🌱', '子', cs.length)}${cs.map(c => `<div class="mt ch" data-s="${c.s}" data-id="${esc(c.id)}"><a class="tl" style="margin-left:0">${esc(titleOf(c) || '（無題）')}</a></div>`).join('')}</div>` : ''; };
+// 右パネルの親ノート（子と同じ書式）。IDなしは親のIDなし（parentStem）をたどる
+const parentNote = note => {
+  if (note.noid) return note.parentStem ? notes.find(x => x.stem === note.parentStem) || null : null;
+  const pid = L.parentIn(note.id, x => !!get(note.s, x));
+  return pid ? get(note.s, pid) || null : null;
+};
+const parentHtml = note => { const p = parentNote(note); return p ? `<div class="sec">${metaLabel('🌳', '親')}<div class="mt ch" data-s="${p.s}" data-id="${esc(p.id)}"><a class="tl" style="margin-left:0">${esc(titleOf(p) || '（無題）')}</a></div></div>` : ''; };
 function renderMeta(note) {
   const el = $('#margin'); if (!el) return;
-  if (note.noid) { const par = note.parentStem && notes.find(x => x.stem === note.parentStem); el.innerHTML = (par ? `<div class="sec"><div class="l">親</div><div class="mt ch" data-s="${par.s}" data-id="${esc(par.id)}"><a class="tl" style="margin-left:0">${esc(titleOf(par) || '（無題）')}</a></div></div>` : '') + childrenHtml(note) + '<div class="hint">IDなしのノートです。<br>「IDを付ける」と、キーワードやトピックIndex、バックリンクが使えます。</div>'; return; }
+  if (note.noid) { el.innerHTML = parentHtml(note) + childrenHtml(note) + '<div class="hint">IDなしのノートです。<br>「IDを付ける」と、キーワードやトピックIndex、バックリンクが使えます。</div>'; return; }
   const tops = topics.map(t => ({ t, kws: L.mergeTopic(t).rows.filter(r => r[note.s].some(x => L.splitAnchor(x).id === note.id)).map(r => r.kw) })).filter(x => x.kws.length); // 自分のキーワードがあるものだけ
   const bl = backlinks(note), memoReplies = Chat.noteBacklinks(note);
   el.innerHTML =
     (ownTopic(note) ? `<div class="sec">${metaLabel('📑', '自トピック')}<div class="mt topic-index-entry"><a class="tl" data-topic="${esc(ownTopic(note).name)}">${esc(topicLabel(ownTopic(note)))}</a></div></div>` : '') +
     (tops.length ? `<div class="sec">${metaLabel('🗂️', 'トピック')}${tops.map(x => `<div class="mt topic-index-entry"><a class="tl" data-topic="${esc(x.t.name)}">${esc(topicLabel(x.t))}</a><div class="topic-index-keys">${x.kws.map(kw => `<span>${esc(kw)}</span>`).join('、')}</div></div>`).join('')}</div>` : '') +
+    parentHtml(note) +
     childrenHtml(note) +
     (bl.length ? `<div class="sec"><div class="l">バックリンク ${bl.length}</div>${bl.map(x => x.m
       ? `<div class="bl" data-s="${x.m.s}" data-id="${esc(x.m.id)}"><div class="bh"><b>${esc(titleOf(x.m))}</b><em>${esc(x.m.id)}</em></div><p>${x.c}</p></div>`
@@ -1652,6 +1672,7 @@ function firstRun(st) {
 }
 function loaded(st) {
   if (st && st.firstRun) return firstRun(st);
+  if (st && st.warnings && st.warnings.length) setTimeout(() => alert(st.warnings.join('\n\n')), 300);   // 壊れたファイルを控えから戻したときなど
   loadSettings(st); graphDoc = (st.docs || {})['K_graph'] || {};
   if (pendingLang) { settings.lang = pendingLang; pendingLang = null; saveSettings(); }
   ({ notes, topics, vault } = st); readings = st.readings || {}; diaries = st.diaries || []; records = st.records || records; Chat.init(st.docs || {}); RP.init(st.docs || {}); Chat.migrateLegacyRoleplay(); PI.init(st.docs || {}); cur = null; tabs = []; active = -1; refreshFiles();

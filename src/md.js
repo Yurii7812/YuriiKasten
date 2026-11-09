@@ -3,6 +3,7 @@ import { EditorView, Decoration, ViewPlugin, WidgetType, keymap } from '@codemir
 import { Prec, RangeSetBuilder, StateField, StateEffect } from '@codemirror/state';
 import { foldService, foldGutter, foldKeymap, codeFolding, foldEffect, unfoldEffect, foldedRanges } from '@codemirror/language';
 import { indentLess } from '@codemirror/commands';
+import { mermaidPlaceholder } from './mermaid.js';
 
 const INDENT = '  ';
 const BULLET = /^(\s*)([-*+]|\d+[.)])(\s+)(\[[ xX]\]\s+)?/;
@@ -259,8 +260,57 @@ const noMiddlePaste = EditorView.domEventHandlers({
   auxclick(e) { if (e.button === 1) { e.preventDefault(); return true; } },
   paste(e) { return false; }
 });
+// Mermaid: カーソル（選択）が図の外にあるときは描いた図だけを出し、図の中に入ると Markdown のソースを出す。
+class MermaidWidget extends WidgetType {
+  constructor(source, from) { super(); this.source = source; this.from = from; }
+  eq(other) { return other.source === this.source && other.from === this.from; }
+  toDOM(view) {
+    const holder = document.createElement('div');
+    holder.innerHTML = mermaidPlaceholder(this.source);
+    const el = holder.firstElementChild;
+    el.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      view.dispatch({ selection: { anchor: this.from } });
+      view.focus();
+    });
+    return el;
+  }
+  ignoreEvent() { return true; }
+}
+function mermaidBlocks(state) {
+  const decorations = [], ranges = state.selection.ranges;
+  let open = null;
+  for (let i = 1; i <= state.doc.lines; i++) {
+    const line = state.doc.line(i);
+    if (!open) {
+      const start = line.text.match(/^\s*(`{3,}|~{3,})mermaid\s*$/i);
+      if (start) open = { line, marker: start[1][0], markerLength: start[1].length, code: [] };
+      continue;
+    }
+    const trimmed = line.text.trim();
+    if (trimmed.length >= open.markerLength && [...trimmed].every(ch => ch === open.marker)) {
+      const from = open.line.from, to = line.to;
+      const editing = ranges.some(r => r.from <= to && r.to >= from);
+      if (!editing) {
+        decorations.push(Decoration.replace({
+          widget: new MermaidWidget(open.code.join('\n'), from),
+          block: true
+        }).range(from, to));
+      }
+      open = null;
+    } else open.code.push(line.text);
+  }
+  return Decoration.set(decorations, true);
+}
+const mermaidField = StateField.define({
+  create: state => mermaidBlocks(state),
+  update(value, tr) { return tr.docChanged || tr.selection ? mermaidBlocks(tr.state) : value; },
+  provide: field => EditorView.decorations.from(field)
+});
+
 export const mdExtensions = [noMiddlePaste, margins, 
-  linePlugin, tableField, codeFolding(),
+  linePlugin, tableField, mermaidField, codeFolding(),
   foldGutter({ markerDOM: open => { const s = document.createElement('span'); s.className = 'cm-fold-mark'; s.textContent = open ? '▾' : '▸'; return s; } }),
   outlineFold, listKeys, clickBelow, fenceClose, keymap.of(foldKeymap)
 ];

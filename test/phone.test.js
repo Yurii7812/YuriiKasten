@@ -37,7 +37,7 @@ test('入れる（USB）。設定は渡さない', async () => {
   const d = tmp(); process.env.ADB = fakeAdb(d, 'ABC123\\tdevice');
   const r = await load().install({}, () => { });
   assert.ok(r.ok, r.message);
-  assert.match(fs.readFileSync(path.join(d, 'calls.log'), 'utf8'), /-s ABC123 install -r .*YuriiNote-memo\.apk/);
+  assert.match(fs.readFileSync(path.join(d, 'calls.log'), 'utf8'), /-s ABC123 install -r -d .*\.apk/);
   assert.ok(!fs.existsSync(path.join(d, 'settings.out')));
 });
 
@@ -82,7 +82,7 @@ test('スマホのメモを USB で取り込む: 未整理・日記・記録・�
   const r = await P.pull(); assert.ok(r.ok, r.message); assert.strictEqual(r.data.entries.length, 5); assert.ok(r.data.images['p1.jpg'].length === 3);
   assert.deepStrictEqual(Object.keys(r.data.scans.files), ['paper-scan-1.jpg']);   // 番号の無いスキャンは、取らない
   const v = openVault(vdir), out = C.importCapture(v, r.data), st = v.state(), chat = st.docs['C_チャット'];
-  assert.deepStrictEqual([out.sum.chats, out.sum.days, out.sum.appended, out.sum.scans, out.sum.blankScans], [5, 2, 1, 1, 1]);
+  assert.deepStrictEqual([out.sum.chats, out.sum.days, out.sum.appended, out.sum.scans, out.sum.blankScans], [5, 2, 0, 1, 1]);
   const ma = chat.messages.find(m => m.text.includes('未整理のメモ')), mb = chat.messages.find(m => m.text.includes('続き'));
   assert.ok(/!\[\]\(\d{14}\.jpg\)/.test(ma.text) && ma.topic === '');                               // 写真は日時の名前で取り込まれる
   assert.deepStrictEqual(mb.replies, [ma.id]);                                       // 分岐元・文脈は、返信の @ になる（親・文脈は持たない）
@@ -92,7 +92,7 @@ test('スマホのメモを USB で取り込む: 未整理・日記・記録・�
   assert.ok(chat.messages.some(m => m.topic === '日記' && m.text.includes('朝の日記')) && chat.messages.some(m => m.topic === '夢'));
   assert.ok(st.records.some(k => k.name === '夢'));                                                  // 記録の種類は、なければ足される
   assert.ok(chat.topics.some(t => t.name === '読書'));
-  const book = st.notes.find(n => n.title === '読書'); assert.match(book.body, /## 2026-11-08[\s\S]*09:34 1 行目/);
+  assert.ok(!st.notes.some(n => n.title === '読書'));                                                // 「1 つのノートにまとめる」は、もう無い（昔の設定が残っていても、チャットメモだけ）
   assert.ok(st.notes.find(n => n.s === 'p' && n.id === '12a').image);                                // 番号つきのスキャン → 紙のノート
   assert.ok(fs.readdirSync(vdir).some(f => /^C_2026-11-08\.md$/.test(f)) && /09:30 未整理のメモ/.test(fs.readFileSync(path.join(vdir, 'C_2026-11-08.md'), 'utf8')));   // 日ごとの md
   const m = await P.mark(C.importedEntries(v), out.scansDone); assert.ok(m.ok);

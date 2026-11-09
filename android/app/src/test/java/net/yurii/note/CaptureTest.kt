@@ -33,7 +33,7 @@ class CaptureTest {
             Entry("c", 3, "途中", "c"), Entry("d", 4, "夢", "d"),
             Entry("e", 5, DIARY, "e"), Entry("f", 6, "PC記録", "f"))
         val settings = Settings(topics = listOf(DIARY, "済み", "途中", "夢", "PC記録", "まだ空"), lastTopic = "済み",
-            topicModes = mapOf("済み" to TopicMode(single = true), "夢" to TopicMode(record = true)))
+            topicModes = mapOf("済み" to TopicMode(), "夢" to TopicMode(record = true)))
         val out = settingsAfterImportedRemoval(es, settings, setOf("a", "b", "d", "e", "f"), setOf("PC記録"))
         assertEquals(listOf(DIARY, "途中", "夢", "PC記録", "まだ空"), out.topics)
         assertEquals(ALL, out.lastTopic)
@@ -108,23 +108,6 @@ class CaptureTest {
         assertEquals(listOf("見出し 1", "二つ目"), memoHeadings("本文\n## 見出し 1\n#タグではない\n### 二つ目 \n"))
     }
 
-    @Test fun folgezettelRowsAndCollapse() {
-        val es = listOf(
-            Entry("r1", 1, "", "1"), Entry("a", 2, "", "1a", parent = "r1"), Entry("a1", 3, "", "1a1", parent = "a"),
-            Entry("a1a", 4, "", "1a1a", parent = "a1"), Entry("a2", 5, "", "1a2", parent = "a"), Entry("b", 6, "", "1b", parent = "r1"),
-            Entry("r2", 7, "", "2"), Entry("x", 8, "", "親は別のトピック", parent = "gone"),
-        )
-        val rows = folgeRows(es)
-        assertEquals(listOf("1", "1a", "1a1", "1a1a", "1a2", "1b", "2", "3"), rows.map { it.label })
-        assertEquals(listOf(0, 1, 2, 3, 2, 1, 0, 0), rows.map { it.depth })
-        assertTrue(rows.first { it.entry.id == "a" }.hasChildren)
-        // 1a を折りたたむと 1a1・1a1a・1a2 が消える
-        assertEquals(listOf("1", "1a", "1b", "2", "3"), folgeRows(es, setOf("a")).map { it.label })
-        // 全部折りたたむと最上位だけ
-        assertEquals(listOf("1", "2", "3"), folgeRows(es, folgeParents(es)).map { it.label })
-        assertEquals("aa", folgeLetters(27))
-    }
-
     @Test fun renameTopicKeepsModesAndRefusesBadNames() {
         val s = Settings(topics = listOf(DIARY, "夢"), topicModes = mapOf("夢" to TopicMode(record = true)), lastTopic = "夢")
         val es = listOf(Entry("1", 1, "夢", "a"), Entry("2", 2, DIARY, "b"))
@@ -136,6 +119,19 @@ class CaptureTest {
         assertNull(renameTopic(es, s, DIARY, "x"))
         assertNull(renameTopic(es, s, "夢", DIARY))
         assertNull(renameTopic(es, s, "夢", "  "))
+    }
+
+    @Test fun topicIncludesMemosOfItsLowerTopics() {
+        val es = listOf(
+            Entry("1", 1, "自分観察", "直接"),
+            Entry("2", 2, "待ち癖", "下位トピックのメモ", ups = listOf("自分観察")),
+            Entry("3", 3, "仕事", "別のトピック"),
+            Entry("4", 4, UNASSIGNED, "未所属"),
+        )
+        assertEquals(listOf("1", "2"), visibleEntries(es, "自分観察").map { it.id })
+        assertEquals(listOf("2"), visibleEntries(es, "待ち癖").map { it.id })
+        assertEquals(listOf("4"), visibleEntries(es, UNASSIGNED).map { it.id })
+        assertEquals(4, visibleEntries(es, ALL).size)
     }
 
     @Test fun backdatedTextStamp() {
@@ -153,7 +149,7 @@ class CaptureTest {
     }
 
     @Test fun deleteTopicMovesMemosToUnassigned() {
-        val s = Settings(topics = listOf(DIARY, "仕事"), topicModes = mapOf("仕事" to TopicMode(single = true)), lastTopic = "仕事")
+        val s = Settings(topics = listOf(DIARY, "仕事"), topicModes = mapOf("仕事" to TopicMode()), lastTopic = "仕事")
         val es = listOf(Entry("1", 1, "仕事", "a"), Entry("2", 2, DIARY, "b"))
         val (ne, ns) = deleteTopic(es, s, "仕事")!!
         assertEquals(listOf(UNASSIGNED, DIARY), ne.map { it.topic })

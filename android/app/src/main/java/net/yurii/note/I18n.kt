@@ -47,7 +47,7 @@ object I18n {
         "この一覧を全部消す（" to "Delete this whole list (", "この表示にはまだメモがありません。\nここに書いたものは、YuriiNote の「未整理」に 1 件ずつ届きます。\n長押しで「分岐」「文脈」などができます。" to "No memos here yet.\nWhatever you write here arrives in YuriiNote's \"Unsorted\" one memo at a time when you import over USB.\nLong-press for \"Branch\", \"Context\" and more.",
         "この表示にはまだメモがありません。" to "No memos in this view yet.",
         "すべて取り込み済み" to "All imported", "すべての" to "All ", "そのほか" to "More", "その他" to "Other",
-        "その名前にはできません（同じ名前のトピックがある・使えない名前）" to "That name cannot be used (a topic with that name exists, or the name is not allowed)",
+        "同じ名前のトピックがあります（日記・すべて・未所属など、決まった名前も使えません）" to "That name cannot be used (a topic with that name exists, or the name is not allowed)",
         "たたむ" to "Collapse", "つながりを確かめて外す" to "Check links and remove", "つなぐ相手のメモを続けてタップ" to "Tap the memo to connect to", "なし" to "None",
         "まだ PC に取り込んでいないので、消せません" to "Not imported to the PC yet, so it cannot be deleted", "まだスキャンがありません。下のボタンで、紙を続けて撮れます。" to "No scans yet. Use the button below to scan paper one after another.",
         "まだトピックがありません" to "No topics yet", "まとめて移す・消す" to "Move / delete in bulk", "やめる" to "Cancel",

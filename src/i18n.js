@@ -129,7 +129,7 @@ const EN = {
 'このメモから作ったノート': 'Notes made from this memo', 'いま開いているノートのカーソルに、リンクを書き込む': 'Write a link at the cursor of the open note',
 'いま開いているノートへ飛ぶ (o)': 'Jump to the open note (o)', '先にノートを開いてください': 'Open a note first',
 '件を、ノートにする': ' item(s) → make note', '件を、ノートに引用': ' item(s) → quote in note', '件を選択': ' selected',
-'全部表示': 'Show all', 'そのメモは、いまの表示にありません（「全部表示」で探せます）': 'That memo is not in the current view (use "Show all")',
+'すべて': 'All', '全部表示': 'Show all', 'そのメモは、いまの表示にありません（「全部表示」で探せます）': 'That memo is not in the current view (use "Show all")',
 'その日のメモはありません': 'No memos on that day', 'そのチャットメモは、もうありません': 'That chat memo no longer exists',
 '日付を入れてください': 'Enter a date', '日付を入れると、その日へ': 'Enter a date to jump to that day', '前の日': 'Previous day', '次の日': 'Next day', '今日の': "Today's",
 '元のチャットメモ: [': 'Original chat memo: [', '出典:': 'Source:',

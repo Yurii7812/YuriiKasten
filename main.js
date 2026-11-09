@@ -78,13 +78,18 @@ async function phoneTick() {
   const send = x => { if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('phoneAuto', x); };
   try {
     send({ say: 'スマホがつながりました。自動で取り込みます…' });
-    let updated = false; const sha = P.apkSha(), cfg = readCfg();
-    if (sha && (cfg.phoneSha || {})[dev.serial] !== sha) {   // アプリを更新（新しい APK が、まだ入っていない）
-      const r = await P.install({ open: false }); if (r.ok) { writeCfg({ ...readCfg(), phoneSha: { ...(readCfg().phoneSha || {}), [dev.serial]: sha } }); updated = true; }
+    let updated = false, updateFail = '';
+    const sha = P.apkSha(), cfg = readCfg(), have = sha ? await P.installedSha(dev.serial) : null;
+    // スマホに本当に入っているアプリと比べる（読めないときだけ、前に入れた印で判断する）
+    if (sha && (have !== null ? have !== sha : (cfg.phoneSha || {})[dev.serial] !== sha)) {
+      send({ say: 'スマホのアプリを更新しています…' });
+      const r = await P.install({ open: false, serial: dev.serial });
+      if (r.ok) { writeCfg({ ...readCfg(), phoneSha: { ...(readCfg().phoneSha || {}), [dev.serial]: sha } }); updated = true; }
+      else updateFail = 'スマホのアプリを更新できませんでした。' + r.message;
     }
     const r = await runPhoneImport();
     const got = r.ok && r.sum && (r.sum.chats || r.sum.days || r.sum.scans || r.sum.updated || r.sum.removed);
-    send({ ok: r.ok, state: r.ok ? r.state : null, message: [updated ? 'スマホのアプリを更新しました。' : '', r.ok ? (got ? r.message.split('\n')[0] : '') : ''].filter(Boolean).join(' '), quiet: !updated && !got });
+    send({ ok: r.ok, state: r.ok ? r.state : null, message: [updated ? 'スマホのアプリを更新しました。' : '', updateFail, r.ok ? (got ? r.message.split('\n')[0] : '') : ''].filter(Boolean).join(' '), quiet: !updated && !updateFail && !got });
   } catch (e) { send({ ok: false, message: 'スマホの自動取り込みでエラー: ' + e.message }); }
   finally { phoneBusy = false; }
 }
@@ -212,6 +217,14 @@ if (!argv.some(a => ['--version', '--update', '--check', '--install'].includes(a
     if(url===w.webContents.getURL()) return;
     event.preventDefault();
     const target=externalUri(url); if(target) void shell.openExternal(target);
+  });
+  // 閉じる前に、画面の書きかけを必ず保存してから閉じる（最大 3 秒待つ）
+  let closeFlushed = false;
+  w.on('close', e => {
+    if (closeFlushed) return; e.preventDefault();
+    let done = false; const finish = () => { if (done) return; done = true; closeFlushed = true; if (!w.isDestroyed()) w.close(); };
+    ipcMain.once('flush-done', finish); setTimeout(finish, 3000);
+    try { w.webContents.send('flush-now'); } catch { finish(); }
   });
   mainWin = w; setInterval(phoneTick, 6000); setTimeout(phoneTick, 3000); w.maximize(); w.once('ready-to-show', () => w.show()); w.loadFile('index.html');
 });

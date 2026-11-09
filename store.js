@@ -36,6 +36,42 @@ const MARK = '.pkm-layout'; // 平らな置き方になったことの印（昔�
 
 // 添付の名前。D_ P_ T_ で始まる名前や、Index などとぶつかるときは F_ を付け、同名があれば -1, -2 …
 const RESERVED = /^(D_|P_|T_|C_|R_|K_|V_)|^(Index|デジタル|紙|日記|未整理|キーワード)\.md$|^\./;
+// ===== 書き込みの安全 =====
+// いつも「一時ファイルに書く → ディスクへ同期 → 置き換え」。途中で止まっても（落ちた・電源が切れた）、元のファイルは壊れない
+function writeAtomic(file, data) {
+  const tmp = file + '.tmp-' + process.pid;
+  const fd = fs.openSync(tmp, 'w');
+  try { fs.writeSync(fd, data); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  fs.renameSync(tmp, file);
+}
+const HIST = '.history', HIST_KEEP = 60, HIST_GAP_MS = 60 * 1000;
+const histStamp = () => new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').replace('Z', '');
+// 上書きする前の中身を、.history/<ファイル名>/ に残す（1 分に 1 回まで。中身が大きく減るときは、必ず）。古いものは 60 個まで
+function snapshotBefore(vault, file, next) {
+  try {
+    if (typeof next !== 'string' || !fs.existsSync(file)) return;
+    const old = fs.readFileSync(file, 'utf8'); if (old === next || !old.trim()) return;
+    const rel = path.relative(vault, file); if (rel.startsWith('..') || rel.startsWith(HIST) || rel.startsWith('.trash')) return;
+    const dir = path.join(vault, HIST, rel); fs.mkdirSync(dir, { recursive: true });
+    const names = fs.readdirSync(dir).filter(n => !n.endsWith('.tmp')).sort();
+    const shrink = next.length < old.length * 0.7;   // 大きく減る（消えた疑い）ときは、間隔に関係なく必ず残す
+    const last = names.length ? fs.statSync(path.join(dir, names[names.length - 1])).mtimeMs : 0;
+    if (!shrink && Date.now() - last < HIST_GAP_MS) return;
+    writeAtomic(path.join(dir, histStamp() + (shrink ? '-shrink' : '') + path.extname(file)), old);
+    for (const n of names.slice(0, Math.max(0, names.length + 1 - HIST_KEEP))) fs.unlinkSync(path.join(dir, n));
+  } catch { }
+}
+// 壊れた JSON を読めなかったとき: 壊れたものは .history に残し、読める一番新しい控えから戻す
+function recoverDoc(vault, file, warnings) {
+  const rel = path.basename(file), dir = path.join(vault, HIST, rel);
+  try { fs.mkdirSync(dir, { recursive: true }); fs.copyFileSync(file, path.join(dir, histStamp() + '-corrupt' + path.extname(file))); } catch { }
+  let names = []; try { names = fs.readdirSync(dir).filter(n => !n.includes('corrupt') && !n.endsWith('.tmp')).sort().reverse(); } catch { }
+  for (const n of names) {
+    try { const d = JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8')); writeAtomic(file, JSON.stringify(d, null, 1)); warnings.push(`${rel} が壊れていたので、控え（${n.slice(0, 15)}）から戻しました。壊れたファイルは ${HIST}/${rel}/ にあります。`); return d; } catch { }
+  }
+  warnings.push(`${rel} を読めませんでした。壊れたファイルは ${HIST}/${rel}/ に残してあります（上書きしません）。`); return null;
+}
+
 function uniqueName(dir, name) {
   let base = path.basename(name).replace(/[\\/:*?"<>|]/g, '_') || 'file';
   if (RESERVED.test(base)) base = 'F_' + base.replace(/^\.+/, '');
@@ -85,7 +121,7 @@ function flatten(vault) {
       if (!f.startsWith(PRE[s]) || !f.endsWith('.md')) continue;
       const text = fs.readFileSync(p(f), 'utf8'); let out = text;
       for (const [x, y] of Object.entries(linkMap[s])) out = out.split(`](${x})`).join(`](${y})`);
-      if (out !== text) fs.writeFileSync(p(f), out);
+      if (out !== text) writeAtomic(p(f), out);
     }
   }
   // v1: 直下の <ID>.md / <ID>.jpg
@@ -104,7 +140,7 @@ function flatten(vault) {
     const date = (fm.date || '').match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
     const created = s === 'd' ? (date ? `${date[1]}-${date[2].padStart(2, '0')}-${date[3].padStart(2, '0')} 00:00` : L.now(fs.statSync(p(f)).mtime)) : '';
     const body = (m ? m[2] : text).replace(/\n$/, '');
-    fs.writeFileSync(p(PRE[s] + id + '.md'), `<!-- pkm ${J(s === 'd' ? { created, keywords: L.splitKw(fm.keywords) } : { keywords: L.splitKw(fm.keywords) })} -->\n# ${id}\n\n${BODY}${body}\n${NAV}\n`);
+    writeAtomic(p(PRE[s] + id + '.md'), `<!-- pkm ${J(s === 'd' ? { created, keywords: L.splitKw(fm.keywords) } : { keywords: L.splitKw(fm.keywords) })} -->\n# ${id}\n\n${BODY}${body}\n${NAV}\n`);
     fs.renameSync(p(f), p(f + '.old'));
   }
 }
@@ -136,7 +172,7 @@ function migrateStems(vault) {
     const stem = free14(used, c || mt), noid = L.isNoid(id);
     const i = text.indexOf(BODY), j = text.indexOf(NAV), body = i >= 0 ? text.slice(i + BODY.length, j > i ? j : undefined) : text;
     const y = { folgezettel: noid ? undefined : id, source: s === 'p' ? 'paper' : 'digital', created: created || L.now(c || mt), updated: L.now(mt), kind: md.kind && md.kind !== 'text' ? md.kind : undefined, title: md.title || undefined, keywords: (md.keywords || []).length ? md.keywords : undefined };
-    fs.writeFileSync(p(stem + '.md'), L.fmDump(y) + (data ? `<!-- pkm-data ${J(data)} -->\n` : '') + BODY + body.replace(/\n+$/, '') + '\n' + NAV + '\n');
+    writeAtomic(p(stem + '.md'), L.fmDump(y) + (data ? `<!-- pkm-data ${J(data)} -->\n` : '') + BODY + body.replace(/\n+$/, '') + '\n' + NAV + '\n');
     fs.unlinkSync(p(f)); fileMap.set(f, stem + '.md'); if (noid) idMap.set(id, stem);
     for (const e of IMG) if (fs.existsSync(p(`${pre}_${id}${e}`))) { fs.renameSync(p(`${pre}_${id}${e}`), p(stem + e)); fileMap.set(`${pre}_${id}${e}`, stem + e); }
   }
@@ -145,7 +181,7 @@ function migrateStems(vault) {
     const text = fs.readFileSync(p(f), 'utf8'); let out = text;
     for (const [from, to] of fileMap) { const ef = enc(from).replace(/%5F/g, '_'); for (const x of new Set([from, ef])) for (const q of ['(', '"']) out = out.split(q + x).join(q + to); }
     for (const [from, to] of idMap) out = out.split(`"${from}"`).join(`"${to}"`);
-    if (out !== text) fs.writeFileSync(p(f), out);
+    if (out !== text) writeAtomic(p(f), out);
   }
 }
 
@@ -168,13 +204,13 @@ function migrateDiaries(vault) {
     const md = meta(text, 'pkm-diary') || {}, i = text.indexOf(BODY), j = text.indexOf(NAV), body = i >= 0 ? text.slice(i + BODY.length, j > i ? j : undefined) : text;
     const at = L.parseTime(date + ' 05:00:00') || new Date(), stem = free14(used, at), mt = fs.statSync(p(f)).mtime;
     const y = { record: '日記', date, title: (md.title !== undefined ? md.title : name) || undefined, created: L.now(at), updated: L.now(mt) };
-    fs.writeFileSync(p(stem + '.md'), L.fmDump(y) + BODY + body.replace(/\n+$/, '') + '\n' + NAV + '\n');
+    writeAtomic(p(stem + '.md'), L.fmDump(y) + BODY + body.replace(/\n+$/, '') + '\n' + NAV + '\n');
     fs.unlinkSync(p(f)); fileMap.set(f, stem + '.md');
   }
   for (const f of fs.readdirSync(vault, { withFileTypes: true }).filter(d => d.isFile() && /\.(md|json)$/.test(d.name)).map(d => d.name)) {
     const text = fs.readFileSync(p(f), 'utf8'); let out = text;
     for (const [from, to] of fileMap) { const ef = enc(from).replace(/%5F/g, '_'); for (const x of new Set([from, ef])) for (const q of ['(', '"']) out = out.split(q + x).join(q + to); }
-    if (out !== text) fs.writeFileSync(p(f), out);
+    if (out !== text) writeAtomic(p(f), out);
   }
 }
 
@@ -184,6 +220,8 @@ function openVault(vault) {
   const key = (s, id) => s + ':' + id;
   const get = (s, id) => notes.get(key(s, id));
   const abs = f => path.join(vault, f);
+  const warnings = [];   // 起動のとき、壊れたファイルを直したことなどをアプリへ伝える
+  const put = (file, data) => { snapshotBefore(vault, file, data); writeAtomic(file, data); };
   const stemOf = (s, id) => { const n = get(s, id); return n ? n.stem : null; };
   const noteFile = (s, id) => `${stemOf(s, id) || (PRE[s] + id)}.md`;
   const used = new Set(fs.readdirSync(vault).map(f => (f.match(/^(\d{14})(?:\.|$)/) || [])[1]).filter(Boolean));
@@ -204,7 +242,7 @@ function openVault(vault) {
   const dayParents = d => d.parents || (d.parent ? [d.parent] : []);
   const setDayParents = (d, list) => { list = [...new Set(asList(list))]; d.parents = list; d.parent = list[0] || ''; };
   const kindNames = () => { const out = [DIARY]; for (const k of recDoc().kinds.map(x => x.name).concat([...diaries.values()].map(d => d.kind))) if (k && !out.includes(k)) out.push(k); return out; };
-  const saveRecDoc = d => { docs.set('K_records', d); fs.writeFileSync(abs('K_records.json'), JSON.stringify(d, null, 1)); };
+  const saveRecDoc = d => { docs.set('K_records', d); put(abs('K_records.json'), JSON.stringify(d, null, 1)); };
   // その日の上位: 日ごとの parent。その種類のその日のノートが無ければ、種類の上位をたどる（その日に無い中間は飛ばす）
   const upDay = (p0, date) => { let p = p0, seen = new Set(); while (p && !diaries.has(dk(p, date)) && !seen.has(p)) { seen.add(p); p = kindParent(p); } return p && diaries.has(dk(p, date)) ? p : ''; };
   const effParents = day => [...new Set(dayParents(day).map(p => upDay(p, day.date)).filter(Boolean))];
@@ -214,7 +252,7 @@ function openVault(vault) {
 
   // ===== 読み込み =====
   fs.mkdirSync(vault, { recursive: true });
-  if (!fs.existsSync(abs(MARK))) { flatten(vault); fs.writeFileSync(abs(MARK), 'flat1\n'); }
+  if (!fs.existsSync(abs(MARK))) { flatten(vault); put(abs(MARK), 'flat1\n'); }
   migrateStems(vault); migrateDiaries(vault);
   const recs = new Map();
   for (const f of fs.readdirSync(vault)) {
@@ -231,7 +269,7 @@ function openVault(vault) {
       } catch { }
       continue;
     }
-    if (DOC_PRE.test(f)) { try { docs.set(f.replace(/\.json$/, ''), JSON.parse(fs.readFileSync(abs(f), 'utf8'))); } catch { } continue; }
+    if (DOC_PRE.test(f)) { const nm = f.replace(/\.json$/, ''); try { docs.set(nm, JSON.parse(fs.readFileSync(abs(f), 'utf8'))); } catch { const d = recoverDoc(vault, abs(f), warnings); if (d) docs.set(nm, d); } continue; }
     const m = f.match(/^(\d{14}(?:-\d+)?)(\.[^.]+)$/);
     if (m) {
       const stem = m[1], e = m[2].toLowerCase(), r = recs.get(stem) || { stem, img: null, fm: null };
@@ -414,7 +452,7 @@ function openVault(vault) {
     const keep = d.entries.filter(e => e.ids.length);
     if (keep.length !== d.entries.length) changed = true;
     d.entries = keep;
-    if (changed) fs.writeFileSync(abs(PIDX + '.json'), JSON.stringify(d, null, 1));
+    if (changed) put(abs(PIDX + '.json'), JSON.stringify(d, null, 1));
   }
   // 日記の「今日のノート」から、もう無いノートへのリンクを外す
   function pruneDiaryLinks() {
@@ -459,11 +497,16 @@ function openVault(vault) {
     mergePaperIndex(); pruneDiaryLinks();
     const chatFiles = chatMdFiles();
     for (const f of fs.readdirSync(vault)) if (/^C_\d{4}-\d{2}-\d{2}\.md$/.test(f) && !chatFiles.has(f)) removeFile(f);   // メモが無くなった日のファイル
+    // 日記には、その日のチャットメモ一覧へのリンクを（その日にメモがあるとき）
+    for (const d of diaries.values()) {
+      const cf = `C_${d.date}.md`;
+      if (d.kind === DIARY && chatFiles.has(cf) && !(d.body || '').includes(`](${cf})`)) d.body = L.addToSection(d.body || '', '今日のチャットメモ一覧', `- [今日のチャットメモ一覧](${cf})`);
+    }
     const files = new Map([...chatFiles, ['Index.md', indexMd()], [KEYWORDS, keywordsMd()], [UNSORTED, unsortedMd()], [LIST.d, listMd('d')], [LIST.p, listMd('p')], [DIARY_LIST, diaryListMd()]]);
     for (const d of diaries.values()) files.set(diaryFile(d), diaryMd(d));
     for (const n of notes.values()) files.set(noteFile(n.s, n.id), noteMd(n));
     for (const t of topics.values()) files.set(topicFile(t.name), topicMd(t));
-    for (const [f, c] of files) if (cache.get(f) !== c) { fs.writeFileSync(abs(f), c); cache.set(f, c); }
+    for (const [f, c] of files) if (cache.get(f) !== c) { put(abs(f), c); cache.set(f, c); }
   }
   function removeFile(f) { // 消すときはゴミ箱へ
     if (!fs.existsSync(abs(f))) return;
@@ -499,7 +542,7 @@ function openVault(vault) {
   return {
     vault,
     state() { return { vault, notes: [...notes.values()].map(pub), topics: [...topics.values()], readings: { ...readings },
-      diaries: [...diaries.values()].map(pubDiary), records: this.records(), docs: Object.fromEntries(docs) }; },
+      diaries: [...diaries.values()].map(pubDiary), records: this.records(), docs: Object.fromEntries(docs), warnings: [...warnings] }; },
     diaryState: () => [...diaries.values()].map(pubDiary),
     // ===== 日記（と、夢・ビジネスなどの記録）=====
     // kind の date のノートを作る（無ければ）。日記なら、その日に作ったノートで、まだ入っていないものも足す
@@ -535,7 +578,7 @@ function openVault(vault) {
       if (!L.isDate(date)) return false;
       const d = ensureDiary(date, DIARY), list = pages.get(date) || [];
       const name = list.length ? `P_${date}_${list.length + 1}.jpg` : `P_${date}.jpg`;
-      fs.writeFileSync(abs(name), buf); pages.set(date, [...list, name]);
+      put(abs(name), buf); pages.set(date, [...list, name]);
       d.body = L.addToSection(d.body, '紙の日記', `![](${name})`);
       rebuild(); return pubDiary(d);
     },
@@ -606,7 +649,7 @@ function openVault(vault) {
     // ===== JSON の文書（チャット・なりきり・役・キャンバス）=====
     saveDoc(name, obj) {
       if (!/^(C|K)_[^\\/]+$/.test(name)) return false;
-      docs.set(name, obj); fs.writeFileSync(abs(name + '.json'), JSON.stringify(obj, null, 1)); if (name === 'C_チャット') rebuild(); if (name === 'K_settings' && obj && obj.dayStart !== undefined) L.setDayStart(obj.dayStart); return true;
+      docs.set(name, obj); put(abs(name + '.json'), JSON.stringify(obj, null, 1)); if (name === 'C_チャット') rebuild(); if (name === 'K_settings' && obj && obj.dayStart !== undefined) L.setDayStart(obj.dayStart); return true;
     },
     deleteDoc(name) { if (!docs.has(name)) return false; docs.delete(name); removeFile(name + '.json'); return true; },
     setReading(k, r) { if (r) readings[k] = r; else delete readings[k]; rebuild(); return true; },
@@ -665,7 +708,7 @@ function openVault(vault) {
     saveImage(s, id, buf) {
       const n = get(s, id) || blank(s, id);
       for (const e of IMG) { const f = abs(n.stem + e); if (fs.existsSync(f)) fs.unlinkSync(f); }
-      n.img = `${n.stem}.jpg`; fs.writeFileSync(abs(n.img), buf); n.updated = L.now();
+      n.img = `${n.stem}.jpg`; put(abs(n.img), buf); n.updated = L.now();
       notes.set(key(s, id), n); rebuild(); return pub(n);
     },
     // 添付（画像・html・csv など）をコピーする。名前は日時（同じ秒はずらす）。元の名前は K_files.json に残す（タイトルはあとから付ける）
@@ -674,11 +717,11 @@ function openVault(vault) {
       const d = docs.get(FILES) || { files: {} }, t = new Date();
       const out = list.map(({ name, bytes }, i) => {
         const ext = path.extname(path.basename(name)).toLowerCase().replace(/[^.\w]/g, ''), stem = freeStem(new Date(t.getTime())), f = stem + ext;
-        fs.writeFileSync(abs(f), Buffer.from(bytes));
+        put(abs(f), Buffer.from(bytes));
         d.files[f] = { orig: path.basename(name), title: '', desc: '', added: L.now() };
         return f;
       });
-      docs.set(FILES, d); fs.writeFileSync(abs(FILES + '.json'), JSON.stringify(d, null, 1));
+      docs.set(FILES, d); put(abs(FILES + '.json'), JSON.stringify(d, null, 1));
       return out;
     },
     // 取り込んだファイル（画像・html・csv など）の一覧。タイトル・説明・元の名前つき。ノートや Index などは含めない
@@ -693,7 +736,7 @@ function openVault(vault) {
     setFileInfo(name, { title, desc }) {
       if (!fs.existsSync(abs(name)) || path.basename(name) !== name) return false;
       const d = docs.get(FILES) || { files: {} }; d.files[name] = { orig: name, added: L.now(), ...(d.files[name] || {}), title: (title || '').trim(), desc: (desc || '').trim() };
-      docs.set(FILES, d); fs.writeFileSync(abs(FILES + '.json'), JSON.stringify(d, null, 1)); return true;
+      docs.set(FILES, d); put(abs(FILES + '.json'), JSON.stringify(d, null, 1)); return true;
     },
     // ごみ箱（.trash）のノート。戻す: ファイルを vault に戻す（同じ名前があれば、新しい日時の名前で）
     trashList() {
@@ -743,13 +786,13 @@ function openVault(vault) {
       if (!e) { e = { kw, reading: '', ids: [] }; d.entries.push(e); }
       if (reading) { e.reading = reading; readings[kw] = reading; }
       for (const id of ids || []) if (validId(L.splitAnchor(id).id) && !e.ids.includes(id)) e.ids.push(id);   // 3a(1) のように (番号) もつけられる
-      docs.set(PIDX, d); fs.writeFileSync(abs(PIDX + '.json'), JSON.stringify(d, null, 1));
+      docs.set(PIDX, d); put(abs(PIDX + '.json'), JSON.stringify(d, null, 1));
       rebuild(); return this.state();
     },
     // 紙のIndexから外す（まだ紙のノートが無いIDは表から、ノートがあるIDはノートのキーワードから）
     removePaperIndex({ kw, id }) {
       const d = docs.get(PIDX), e = d && d.entries.find(x => x.kw === kw);
-      if (e && e.ids.includes(id)) { e.ids = e.ids.filter(x => x !== id); d.entries = d.entries.filter(x => x.ids.length); fs.writeFileSync(abs(PIDX + '.json'), JSON.stringify(d, null, 1)); }
+      if (e && e.ids.includes(id)) { e.ids = e.ids.filter(x => x !== id); d.entries = d.entries.filter(x => x.ids.length); put(abs(PIDX + '.json'), JSON.stringify(d, null, 1)); }
       const n = get('p', L.splitAnchor(id).id); if (n) n.keywords = n.keywords.filter(k => k !== kw);
       rebuild(); return this.state();
     },

@@ -66,12 +66,6 @@ function importCapture(v, data) {
       const kind = topic === '日記' ? '日記' : topic;
       if (!v.records().some(r => r.name === kind)) v.addRecord(kind);
       v.appendToDay(kind, date, line); sum.days++;
-    } else if (mode.single && topic) {
-      let n = st.topicNotes[topic] && noteByStem(st.topicNotes[topic]);
-      if (!n) { const c = v.createNote({ kind: 'text', title: topic, created: at, body: '', keywords: [] }); st.topicNotes[topic] = c.stem; n = c; }
-      const head = mode.stamp !== false && !(n.body || '').includes(`## ${date}`) ? `## ${date}\n\n` : '';
-      v.saveNote({ s: 'd', id: n.id, keywords: n.keywords, body: ((n.body || '').trim() ? n.body.replace(/\s+$/, '') + '\n\n' : '') + head + line, title: n.title, created: n.created });
-      sum.appended++;
     }
   }
   if (chatTouched) v.saveDoc('C_チャット', chat);

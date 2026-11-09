@@ -25,8 +25,12 @@ function findAdb() {
 }
 // APK の場所: 配布版は resources、git のフォルダは downloads
 function apkPath() {
-  const c = [process.resourcesPath && path.join(process.resourcesPath, 'YuriiNote-memo.apk'), path.join(__dirname, 'downloads', 'YuriiNote-memo.apk'), path.join(__dirname, 'android/app/build/outputs/apk/fast/app-fast.apk')].filter(Boolean);
-  return c.find(f => fs.existsSync(f)) || null;
+  const packaged = process.resourcesPath && path.join(process.resourcesPath, 'YuriiNote-memo.apk');
+  if (packaged && fs.existsSync(packaged)) return packaged;   // 配布版は、同梱の APK
+  // git のフォルダ: downloads（build-apk.sh が置く）と、gradle の出力のうち、新しい方（古い方を入れてしまわない）
+  const c = [path.join(__dirname, 'downloads', 'YuriiNote-memo.apk'), path.join(__dirname, 'android/app/build/outputs/apk/fast/app-fast.apk')]
+    .filter(f => fs.existsSync(f)).map(f => ({ f, t: fs.statSync(f).mtimeMs })).sort((a, b) => b.t - a.t);
+  return c.length ? c[0].f : null;
 }
 // `adb devices` の出力 → [{serial, state}]
 function parseDevices(out) {
@@ -45,9 +49,9 @@ async function install(opts = {}, say = () => { }) {
     if (list.some(x => x.state === 'unauthorized')) return { ok: false, message: 'スマホの画面に「USBデバッグを許可しますか？」と出ています。「許可」を押して、もう一度やってください。' };
     return { ok: false, message: 'スマホが見つかりません。\n1. USB ケーブルでつなぐ\n2. 設定 → 開発者向けオプション → USBデバッグ をオン\n3. 画面に出る許可を押す\nそのあと、もう一度やってください。' };
   }
-  const serial = ready[0].serial, A = a => ['-s', serial, ...a];
+  const serial = (opts.serial && ready.find(x => x.serial === opts.serial) || ready[0]).serial, A = a => ['-s', serial, ...a];
   say(`スマホに入れています…（${serial}）`);
-  const r = await run(adb, A(['install', '-r', apk]), { timeout: 180000 });
+  const r = await run(adb, A(['install', '-r', '-d', apk]), { timeout: 180000 });
   if (r.code !== 0 || !/Success/.test(r.out)) return { ok: false, message: '入れられませんでした:\n' + (r.out + r.err).trim().split('\n').slice(-4).join('\n') };
   const note = '';
   if (opts.open !== false) await run(adb, A(['shell', 'monkey', '-p', PKG, '-c', 'android.intent.category.LAUNCHER', '1']));
@@ -153,6 +157,14 @@ async function listDevices() {
   const adb = findAdb(); if (!adb) return [];
   return parseDevices((await run(adb, ['devices'], { timeout: 8000 })).out);
 }
+// 今、スマホに入っているアプリの APK の指紋（読めなければ null）。PC に覚えている印ではなく、本当に入っているものと比べる
+async function installedSha(serial) {
+  const adb = findAdb(); if (!adb) return null;
+  const p = await run(adb, ['-s', serial, 'shell', 'pm', 'path', PKG], { timeout: 15000 });
+  const base = (p.out.split('\n').map(l => l.trim()).find(l => /^package:.*base\.apk$/.test(l)) || '').slice(8); if (!base) return null;
+  const h = await run(adb, ['-s', serial, 'shell', 'sha256sum', base], { timeout: 30000 });
+  const m = /^([0-9a-f]{64})\s/.exec(h.out.trim()); return m ? m[1] : null;
+}
 // 入れようとしている APK の指紋。前に入れたものと違えば、更新が必要（バージョン番号を上げ忘れても、分かる）
 function apkSha() { const f = apkPath(); if (!f) return null; try { return require('crypto').createHash('sha256').update(fs.readFileSync(f)).digest('hex'); } catch { return null; } }
-module.exports = { listDevices, apkSha, sendPcMemos, install, findAdb, apkPath, parseDevices, PKG, pull, mark, sendRecords };
+module.exports = { listDevices, apkSha, installedSha, sendPcMemos, install, findAdb, apkPath, parseDevices, PKG, pull, mark, sendRecords };

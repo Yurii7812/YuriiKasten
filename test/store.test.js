@@ -5,7 +5,7 @@ const { openVault } = require('../store');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'pkm-'));
 const dfile = (v, date, kind = '日記') => v.state().diaries.find(d => d.date === date && d.kind === kind).stem + '.md';   // 日記のファイル名は日時
-const ls = dir => fs.readdirSync(dir).filter(f => f !== '.trash' && !f.startsWith('.backup-')).sort();
+const ls = dir => fs.readdirSync(dir).filter(f => f !== '.trash' && f !== '.history' && !f.startsWith('.backup-')).sort();
 
 test('全部が1つのフォルダに平らに置かれ、リンクは同じフォルダの中', () => {
   const dir = tmp();
@@ -21,7 +21,7 @@ test('全部が1つのフォルダに平らに置かれ、リンクは同じフ�
   assert.match(F('p', '1'), /^\d{14}$/);
   assert.deepStrictEqual(ls(dir), ['.pkm-layout', dfile(v, '2026-10-10'), 'Index.md', F('d', '1') + '.md', F('d', '1a') + '.md', F('p', '1') + '.jpg', F('p', '1') + '.md', 'T_1-PKM.md', 'キーワード.md', 'デジタル.md', '日記.md', '未整理.md', '紙.md'].sort()); // 日記は作った日のものが自動で
   const D1 = F('d', '1') + '.md', D1a = F('d', '1a') + '.md', P1 = F('p', '1');
-  assert.ok(fs.readdirSync(dir).every(f => fs.statSync(path.join(dir, f)).isFile())); // サブフォルダなし
+  assert.ok(fs.readdirSync(dir).filter(f => f !== '.history').every(f => fs.statSync(path.join(dir, f)).isFile())); // サブフォルダなし（控えの .history だけ別）
   const r = f => fs.readFileSync(path.join(dir, f), 'utf8');
   const d1 = r(D1);
   assert.match(r(D1), /^---\nfolgezettel: "1"\nsource: "digital"\ncreated: "2026-10-10 11:12:30"\nupdated: "[^"]+"\nkeywords: \["PKM"\]\n---\n/); // 先頭は YAML
@@ -106,7 +106,7 @@ test('v2（digital/ paper/ topic/ files/）を平らに移す', () => {
   const sx = (s, id) => v.state().notes.find(n => n.s === s && n.id === id).stem;
   assert.deepStrictEqual(ls(dir), ['.pkm-layout', sx('d', '1b') + '.md', sx('d', '2') + '.md', 'Index.md', sx('p', '3') + '.jpg', sx('p', '3') + '.md', 'T_1-X.md', 'y.png', 'キーワード.md', '未整理.md', 'デジタル.md', '図(1)-1.html', '図(1).html', '日記.md', '紙.md'].sort());
   assert.ok(fs.readdirSync(dir).some(f => f.startsWith('.backup-')));   // 日時の名前に移す前の複製
-  assert.ok(fs.readdirSync(dir).filter(f => !f.startsWith('.backup-')).every(f => fs.statSync(path.join(dir, f)).isFile()));
+  assert.ok(fs.readdirSync(dir).filter(f => !f.startsWith('.backup-') && f !== '.history').every(f => fs.statSync(path.join(dir, f)).isFile()));
   assert.strictEqual(body('1b'), '[図(1).html](%E5%9B%B3%281%29.html)'); // リンクも平らに
   assert.strictEqual(body('2'), '![x](%E5%9B%B3%281%29-1.html)  \n![y](y.png)'.replace('  \n', '\n'));
   assert.ok(v.state().notes.find(n => n.s === 'p' && n.id === '3').image);
@@ -525,4 +525,35 @@ test('ノート化: 元のチャットを残したまま通常のノートとし
   assert.strictEqual(reopened.state().notes.find(x => x.id === '1b').kind, 'memo-group');
   assert.strictEqual(reopened.state().docs['C_チャット'].messages.length, 2);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('保存の安全: 上書き前の控えが残る・壊れた JSON は控えから戻る・一時ファイルは残らない', () => {
+  const dir = tmp(), v = openVault(dir);
+  const big = { topics: [], messages: Array.from({ length: 20 }, (_, i) => ({ id: 'm' + i, topic: '', t: i, text: 'メモ ' + i })), trash: [] };
+  v.saveDoc('C_チャット', big);
+  v.saveDoc('C_チャット', { ...big, messages: big.messages.slice(0, 2) });   // 大きく減る保存 → 必ず控えが残る
+  const hdir = path.join(dir, '.history', 'C_チャット.json');
+  assert.ok(fs.readdirSync(hdir).some(n => n.includes('shrink')), '大きく減る前の控えがある');
+  assert.ok(!fs.readdirSync(dir).some(n => n.includes('.tmp-')), '一時ファイルが残らない');
+  // 控えの中身は、減る前の 20 件
+  const shrink = fs.readdirSync(hdir).find(n => n.includes('shrink'));
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(hdir, shrink), 'utf8')).messages.length, 20);
+  // 壊れた（途中で切れた）JSON → 次に開くとき、控えから戻る。空のまま上書きされない
+  fs.writeFileSync(path.join(dir, 'C_チャット.json'), '{"topics":[],"messages":[{"id":"m0"');
+  const v2 = openVault(dir), st = v2.state();
+  assert.strictEqual(st.docs['C_チャット'].messages.length, 20);
+  assert.ok(st.warnings.some(w => /壊れていたので/.test(w)));
+  assert.ok(fs.readdirSync(hdir).some(n => n.includes('corrupt')), '壊れたファイルも残る');
+});
+
+test('日記: その日にチャットメモがあれば、今日のチャットメモ一覧へのリンクが入る', () => {
+  const v = openVault(tmp());
+  v.openDiary('2026-11-09', '日記');
+  const doc = { topics: [], messages: [{ id: 'm1', topic: '', t: new Date(2026, 10, 9, 10, 0).getTime(), text: 'メモ' }], trash: [] };
+  v.saveDoc('C_チャット', doc);
+  const body = v.state().diaries.find(d => d.date === '2026-11-09' && d.kind === '日記').body;
+  assert.match(body, /## 今日のチャットメモ一覧/);
+  assert.match(body, /\[今日のチャットメモ一覧\]\(C_2026-11-09\.md\)/);
+  v.saveDoc('C_チャット', doc);   // 何度保存しても、1 つだけ
+  assert.strictEqual((v.state().diaries.find(d => d.date === '2026-11-09').body.match(/C_2026-11-09\.md/g) || []).length, 1);
 });

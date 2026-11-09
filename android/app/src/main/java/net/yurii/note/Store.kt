@@ -39,74 +39,34 @@ data class Settings(
     val topicModes: Map<String, TopicMode> = emptyMap(),
     val ringSeconds: Int = 0,        // アラームを鳴らし続ける長さ（秒）。0 は 1 回だけ鳴らす
     val expandAll: Boolean = false,  // 長いメモを「続きを見る」を押さずに全部見せる
-    val folgeView: Boolean = false,  // Folgezettel 表示（Branch の親子を木で見せる）。false は時系列
     val writtenStamp: Boolean = false, // 日付を指定して書いたとき、書いている時刻を入れる（本文の最初に書いた日も入れる）
 )
 
-/**
- * トピックの取り込み方（日記以外）。single = PC に取り込むとこのトピックの 1 つのノートに追記する
- * （1 件 = 1 ノートにしない）。stamp = 追記するとき時刻を付け、日が替わったら日付の見出しを入れる。
- * record = 時系列記録（PC の :GnosisRecordNew と同じ。日記のように、その日のノート「2026-10-19-MO-夢」に時刻つきで入る）。
- * single と record は同時に使わない（record が優先）。
- */
-data class TopicMode(val single: Boolean = false, val stamp: Boolean = true, val record: Boolean = false)
+/** 時系列記録のトピック（PC の時系列記録の名前。日記のように、その日のノートに時刻つきで入る）。 */
+data class TopicMode(val record: Boolean = false)
 
 const val DIARY = "日記"
+const val FRAGMENT = "断片メモ"   // 標準のトピック（日記と同じように、いつもある。PC のチャットメモと同じ名前）
 const val ALL = "__all__"
 const val UNASSIGNED = ""
 fun normalizedTopic(topic: String) = if (topic == "メモ") UNASSIGNED else topic
+/** トピックの色（色相 0〜360）。決まったものは固定、ほかは名前から決める。未所属は -1（灰色）。 */
+fun topicHue(topic: String): Float = when (topic) {
+    ALL -> 215f
+    DIARY -> 35f
+    FRAGMENT -> 150f
+    UNASSIGNED -> -1f
+    else -> (topic.fold(7) { h, c -> (h * 31 + c.code) and 0xffff } % 360).toFloat()
+}
 fun topicLabel(topic: String) = when (topic) {
-    ALL -> "全部"
+    ALL -> "すべて"
     UNASSIGNED -> "未所属"
     else -> topic
 }
-fun visibleEntries(entries: List<Entry>, topic: String) = entries.filter { topic == ALL || it.topic == topic }
+/** そのトピックに入るメモ: 所属がそのトピック、または上位トピックにそのトピックを持つもの（PC のチャットメモと同じ。下位トピックのメモも入る）。 */
+fun visibleEntries(entries: List<Entry>, topic: String) =
+    entries.filter { topic == ALL || it.topic == topic || (topic != UNASSIGNED && topic in it.ups) }
 fun writingTopic(topic: String) = if (topic == ALL) UNASSIGNED else topic
-
-/** Folgezettel 表示の 1 行: メモ・番号（1, 1a, 1a1 …）・深さ・子があるか。 */
-data class FolgeRow(val entry: Entry, val label: String, val depth: Int, val hasChildren: Boolean)
-
-/** 1→a, 26→z, 27→aa（Gnosis の Folgezettel と同じ数え方）。 */
-fun folgeLetters(n: Int): String {
-    var x = n; val sb = StringBuilder()
-    while (x > 0) { x -= 1; sb.insert(0, 'a' + x % 26); x /= 26 }
-    return sb.toString()
-}
-
-/**
- * Branch の親子（parent）を木にして、上から順に並べる。親が list に無いメモは最上位（古い順に 1, 2, 3 …）。
- * 子は古い順に、数字で終わる番号には a, b …、文字で終わる番号には 1, 2 … を付ける（1 → 1a → 1a1 → 1a1a）。
- * collapsed にあるメモの子孫は並べない（そのメモ自体は並べる）。
- */
-fun folgeRows(list: List<Entry>, collapsed: Set<String> = emptySet()): List<FolgeRow> {
-    val ids = list.map { it.id }.toSet()
-    val kids = list.filter { it.parent != null && it.parent in ids && it.parent != it.id }.groupBy { it.parent!! }
-    val roots = list.filter { it.parent == null || it.parent !in ids || it.parent == it.id }.sortedBy { it.created }
-    val out = ArrayList<FolgeRow>()
-    val seen = HashSet<String>()
-    fun walk(e: Entry, label: String, depth: Int) {
-        if (!seen.add(e.id)) return
-        val cs = kids[e.id].orEmpty().sortedBy { it.created }
-        out.add(FolgeRow(e, label, depth, cs.isNotEmpty()))
-        if (e.id in collapsed) return
-        val numeric = label.last().isDigit()
-        cs.forEachIndexed { i, c -> walk(c, label + if (numeric) folgeLetters(i + 1) else (i + 1).toString(), depth + 1) }
-    }
-    roots.forEachIndexed { i, r -> walk(r, (i + 1).toString(), 0) }
-    // 循環などで最上位からたどれなかったメモも落とさない（折りたたんで隠したものは除く）
-    val reach = HashSet<String>()
-    fun mark(id: String) { if (reach.add(id)) kids[id].orEmpty().forEach { mark(it.id) } }
-    roots.forEach { mark(it.id) }
-    var n = roots.size
-    list.filter { it.id !in reach }.sortedBy { it.created }.forEach { if (it.id !in reach) { mark(it.id); n += 1; walk(it, n.toString(), 0) } }
-    return out
-}
-
-/** 子を持つメモの id（全部折りたたむときに使う）。 */
-fun folgeParents(list: List<Entry>): Set<String> {
-    val ids = list.map { it.id }.toSet()
-    return list.mapNotNull { it.parent }.filter { it in ids }.toSet()
-}
 
 /** トピックの名前を変える（メモ・トピックの一覧・取り込み方・最後に開いたトピック）。日記と、使えない名前・ある名前には変えない。 */
 fun renameTopic(entries: List<Entry>, settings: Settings, from: String, to: String): Pair<List<Entry>, Settings>? {
@@ -258,6 +218,16 @@ class Store(private val ctx: Context) {
         } catch (e: Exception) { emptySet() }
     }
 
+    /** 書きかけ（送る前の文章）。アプリを閉じても・OS に終了されても消えないよう、書くたびにファイルへ。 */
+    private val draftFile get() = File(ctx.filesDir, "draft.txt")
+    fun loadDraft(): String = try { draftFile.takeIf { it.exists() }?.readText().orEmpty() } catch (e: Exception) { "" }
+    fun saveDraft(text: String) {
+        try {
+            if (text.isEmpty()) { draftFile.delete(); return }
+            val tmp = File(ctx.filesDir, "draft.txt.tmp"); tmp.writeText(text); tmp.renameTo(draftFile)
+        } catch (e: Exception) { }
+    }
+
     fun loadSettings(): Settings {
         if (!settingsFile.exists()) return Settings()
         val o = JSONObject(settingsFile.readText())
@@ -286,12 +256,11 @@ class Store(private val ctx: Context) {
             writeUpsByTopic = byTopic,
             topicModes = o.optJSONObject("topicModes")?.let { m ->
                 m.keys().asSequence().filter { it.isNotEmpty() && it != DIARY }.associateWith { k ->
-                    val t = m.getJSONObject(k); TopicMode(t.optBoolean("single", false), t.optBoolean("stamp", true), t.optBoolean("record", false))
+                    val t = m.getJSONObject(k); TopicMode(t.optBoolean("record", false))
                 }
             } ?: emptyMap(),
             ringSeconds = o.optInt("ringSeconds", 0).coerceIn(0, 600),
             expandAll = o.optBoolean("expandAll", false),
-            folgeView = o.optBoolean("folgeView", false),
             writtenStamp = o.optBoolean("writtenStamp", false),
         )
     }
@@ -356,10 +325,10 @@ class Store(private val ctx: Context) {
         s.writeUpsByTopic.forEach { (topic, uppers) -> upperPrefs.put(topic, JSONArray(uppers)) }
         o.put("writeUpsByTopic", upperPrefs)
         o.put("ringSeconds", s.ringSeconds); o.put("expandAll", s.expandAll)
-        o.put("folgeView", s.folgeView); o.put("writtenStamp", s.writtenStamp)
+        o.put("writtenStamp", s.writtenStamp)
         // PC の取り込み（\M）もこのファイルを読む（topicModes）
         val modes = JSONObject()
-        s.topicModes.forEach { (k, v) -> modes.put(k, JSONObject().put("single", v.single).put("stamp", v.stamp).put("record", v.record)) }
+        s.topicModes.forEach { (k, v) -> modes.put(k, JSONObject().put("record", v.record)) }
         o.put("topicModes", modes)
         settingsFile.writeText(o.toString())
     }
