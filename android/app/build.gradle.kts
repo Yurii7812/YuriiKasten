@@ -4,7 +4,7 @@ plugins {
 }
 
 val packageJson = rootProject.file("../package.json").readText()
-val versionParts = Regex(""""version"\\s*:\\s*"([0-9]+)\\.([0-9]+)\\.([0-9]+)"""").find(packageJson)
+val versionParts = Regex(""""version"\s*:\s*"([0-9]+)\.([0-9]+)\.([0-9]+)"""").find(packageJson)
     ?.groupValues?.drop(1)?.map(String::toInt) ?: error("package.json version missing")
 val (majorVersion, minorVersion, patchVersion) = versionParts
 val unifiedVersion = "$majorVersion.$minorVersion.$patchVersion"
