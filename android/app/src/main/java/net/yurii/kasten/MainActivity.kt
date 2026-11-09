@@ -220,6 +220,18 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>, sharedState:
         (settings.topics + entrySnapshot.map { it.topic } + pcRecords + pcTopics).filter { it.isNotEmpty() && it != ALL }.distinct().sortedByDescending { lastUse[it] ?: 0L }   // 最近使った順
     }
     val topicCounts = remember(entrySnapshot) { entrySnapshot.groupingBy { it.topic }.eachCount() }
+    val recentTopics = remember(settings.recentTopics, topics, topic) {
+        (listOf(topic) + settings.recentTopics + topics + listOf(ALL,UNASSIGNED)).distinct()
+    }
+    // 関係はメモ単位で決まり、トピックには固定の親・子を置かない。
+    val upperCandidates = remember(entrySnapshot, topic) {
+        entrySnapshot.filter { it.topic==topic }.flatMap { it.ups }.filter { it!=topic }.distinct()
+            .sortedWith(compareByDescending<String> { name -> entrySnapshot.count { it.topic==topic && name in it.ups } }.thenBy { it })
+    }
+    val lowerCandidates = remember(entrySnapshot, topic) {
+        entrySnapshot.filter { topic in it.ups && it.topic.isNotEmpty() && it.topic!=topic }.map { it.topic }.distinct()
+            .sortedWith(compareByDescending<String> { name -> entrySnapshot.count { it.topic==name && topic in it.ups } }.thenBy { it })
+    }
     val selected = remember { mutableStateListOf<String>() }
     var selecting by remember { mutableStateOf(false) }
     var moveSelectedOpen by remember { mutableStateOf(false) }
@@ -254,7 +266,11 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>, sharedState:
     var addTopicOpen by remember { mutableStateOf(false) }
     var moveToNewTopic by remember { mutableStateOf<List<String>>(emptyList()) }
     var topicMenuFor by remember { mutableStateOf<String?>(null) }  // 長押ししたトピック（編集のシート）
-    var topicListOpen by remember { mutableStateOf(false) }       // 「その他」のトピック一覧
+    var topicListOpen by remember { mutableStateOf(false) }       // 固定の「一覧表示」からトピック検索
+    val upperFilter = remember { mutableStateListOf<String>() }
+    val lowerFilter = remember { mutableStateListOf<String>() }
+    var filterPicker by remember { mutableStateOf<String?>(null) }
+    var jumpPickerOpen by remember { mutableStateOf(false) }
     var modeFor by remember { mutableStateOf<String?>(null) }      // 取り込み方（1 つのノートにまとめる・日時）を変えるトピック
     var search by remember { mutableStateOf<String?>(null) }      // 全文検索（null で閉じている）
     var settingsOpen by remember { mutableStateOf(false) }
@@ -291,9 +307,11 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>, sharedState:
     // PC が取り込むたびに imported.json が変わるので、戻ってくるたびに読み直す
     fun setTopic(t: String) {
         if (t != topic) backdate = null   // 日時の指定はトピックを変えたら今に戻す
+        if (t != topic) { upperFilter.clear(); lowerFilter.clear() }
         topic = t
         val assigned = if (t == ALL) UNASSIGNED else t
         settings = settings.copy(lastTopic = t, writeTopic = assigned,
+            recentTopics = (listOf(t) + settings.recentTopics).distinct().take(100),
             writeUps = settings.writeUpsByTopic[assigned].orEmpty().filter { it != assigned })
         store.saveSettings(settings)
     }
