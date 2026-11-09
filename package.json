@@ -43,6 +43,7 @@
       "main.js",
       "preload.js",
       "store.js",
+      "memo-group.js",
       "lib.js",
       "update.js",
       "phone.js",
