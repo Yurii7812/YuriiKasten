@@ -530,6 +530,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>, sharedState:
     }
 
     fun send() {
+        if(lowerFilter.size>1) return // 1件のメモの所属トピックは1つだけ
         val text = input.trim()
         if (text.isEmpty() && pendingImages.isEmpty()) return
         val ed = editing
@@ -544,7 +545,10 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>, sharedState:
             val bd = backdate
             val at = if (bd != null) backdatedTime(bd, now) else now
             val body = if (bd != null) backdatedText(text, settings.writtenStamp, now) else text
-            entries.add(Entry(id = Store.newId(at, entries), created = at, topic = if (topic == ALL) UNASSIGNED else topic, ups = settings.writeUps.filter { it != (if (topic == ALL) UNASSIGNED else topic) }, text = body,
+            val writeTopic = lowerFilter.singleOrNull() ?: if (topic == ALL) UNASSIGNED else topic
+            val writeUps = if (lowerFilter.size==1) (settings.writeUpsByTopic[writeTopic].orEmpty() + topic).distinct()
+                else if(upperFilter.isNotEmpty()) upperFilter.toList() else settings.writeUps
+            entries.add(Entry(id = Store.newId(at, entries), created = at, topic = writeTopic, ups = writeUps.filter { it != writeTopic }, text = body,
                 images = pendingImages.toList(), parent = null, contexts = contextsTo.toList(),
                 noTime = bd != null && !settings.writtenStamp))
             replyTo = null; contextsTo.clear()
@@ -769,7 +773,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>, sharedState:
                         } },
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, keyboardType = KeyboardType.Text),
                     )
-                    FilledIconButton(onClick = { send() }, enabled = input.isNotBlank() || pendingImages.isNotEmpty(), modifier = Modifier.size(46.dp)) {
+                    FilledIconButton(onClick = { send() }, enabled = lowerFilter.size<2 && (input.isNotBlank() || pendingImages.isNotEmpty()), modifier = Modifier.size(46.dp)) {
                         Icon(Icons.AutoMirrored.Filled.Send, "送る")
                     }
                 }
@@ -778,9 +782,12 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>, sharedState:
     ) { pad ->
         // 検索中はトピックに関係なく、全部のメモの本文から探す
         val sq = search?.trim().orEmpty()
-        val shownAll = remember(entrySnapshot, search, topic) {
+        val shownAll = remember(entrySnapshot, search, topic, upperFilter.toList(), lowerFilter.toList()) {
             (if (search != null && sq.isNotEmpty()) entrySnapshot.filter { matchesQuery(it.text, sq) }
-                else visibleEntries(entrySnapshot, topic)).sortedByDescending { it.created }
+                else if (upperFilter.isNotEmpty() || lowerFilter.isNotEmpty()) entrySnapshot.filter { m ->
+                    (m.topic == topic && m.ups.any { it in upperFilter }) ||
+                    (m.topic in lowerFilter && topic in m.ups)
+                } else visibleEntries(entrySnapshot, topic)).sortedByDescending { it.created }
         }
         val shown = remember(shownAll, limit) { if (shownAll.size > limit) shownAll.take(limit) else shownAll }
         if (settings.folgeView && search == null) {
@@ -905,6 +912,37 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>, sharedState:
         // 書く操作のあとだけ入力欄を選ぶ（コピー・トピックを変えるなどでは選ばない）
         onAfter = { if (replyTo != null || editing != null) focusTick++ })
 
+    // フィルターの「＋」から検索・複数選択・新しいトピックを追加する。
+    filterPicker?.let { kind ->
+        val related = if(kind=="upper") upperCandidates else lowerCandidates
+        val ordered = (related + settings.recentTopics + topics).distinct().filter { it!=topic }
+        UpsDialog(ordered,if(kind=="upper") upperFilter.toSet() else lowerFilter.toSet(),topic,
+            onDismiss={filterPicker=null},
+            onDone={ picked ->
+                if(kind=="upper") {
+                    upperFilter.clear(); upperFilter.addAll(picked)
+                    settings=settings.copy(writeUps=picked,writeUpsByTopic=settings.writeUpsByTopic+(topic to picked))
+                    store.saveSettings(settings)
+                } else { lowerFilter.clear();lowerFilter.addAll(picked) }
+                filterPicker=null
+            },
+            onCreate={ proposed ->
+                val name=normalizedTopic(proposed.trim())
+                if(name.isBlank() || name==topic || name in topics || name in pcRecords || name in pcTopics ||
+                    name in setOf(ALL,DIARY,"全部","全部表示","未所属","トピック未選択","その他")) false
+                else {settings=settings.copy(topics=settings.topics+name);store.saveSettings(settings);true}
+            },title=if(kind=="upper") "上位トピックで絞り込み・追加" else "下位トピックで絞り込み・追加")
+    }
+    if(jumpPickerOpen) {
+        val destinations=(upperFilter+lowerFilter).distinct()
+        AlertDialog(onDismissRequest={jumpPickerOpen=false},title={Text("移動先を選ぶ")},
+            text={Column {
+                destinations.forEach { name ->
+                    TextButton(onClick={jumpPickerOpen=false;setTopic(name)},modifier=Modifier.fillMaxWidth()) {Text(name)}
+                }
+            }},
+            confirmButton={TextButton(onClick={jumpPickerOpen=false}){Text("閉じる")}})
+    }
     upsDialogIds?.let { ids ->
         val target = if (ids.isEmpty()) topic.let { if (it == ALL) UNASSIGNED else it } else byId[ids.first()]?.topic
         val used = remember(entrySnapshot, target) { entrySnapshot.filter { it.topic == target }.flatMap { it.ups }.toSet() }
