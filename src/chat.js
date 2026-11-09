@@ -177,7 +177,7 @@ const dayOfMsg_ = m => L.dayOf(L.now(new Date(m.t)));
 
 function filteredMessages() {
   let list = doc.messages.filter(m => inView(m, view) && (!sourceIds || sourceIds.has(m.id))).sort((a, b) => a.t - b.t);
-  if (childFilter.size || upperFilter.size) list = TopicNav.filter(list, view, [...upperFilter], [...childFilter]);
+  if (childFilter.size || upperFilter.size) list = TopicNav.filter(doc.messages.filter(m=>!sourceIds || sourceIds.has(m.id)), view, [...upperFilter], [...childFilter]).sort((a,b)=>a.t-b.t);
   if (cq) { const q = cq.toLowerCase(); list = list.filter(m => (m.text || '').toLowerCase().includes(q)); }   // チャットメモの中の検索
   return list;
 }
@@ -814,6 +814,7 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('mousedown', e => { if (sel && e.shiftKey && e.target.closest && e.target.closest('#c-msgs')) { e.preventDefault(); const g = window.getSelection(); if (g) g.removeAllRanges(); } });   // Shift+クリックで、文字が青く選択されない
 document.addEventListener('change', e => {
+  if (e.target.id === 'c-speaker') { speakerView=e.target.value; paint(); return; }
   if (e.target.id === 'c-day' && e.target.value) { day = e.target.value; render(); }
   if (e.target.id === 'c-jump' && e.target.value) { // その日へ（全部表示の中で）
     const d = e.target.value, el = [...document.querySelectorAll('#c-msgs .dsep')].find(x => x.textContent.startsWith(d)) || [...document.querySelectorAll('#c-msgs .dsep')].reverse().find(x => x.textContent.slice(0, 10) <= d);
