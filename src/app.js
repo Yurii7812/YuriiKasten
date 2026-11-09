@@ -353,7 +353,7 @@ function renderList() {
     }
     if (out.length === 1) out.push('<div class="none">ノートにキーワードを書くと、ここに並びます</div>');
   } else {
-    const list = sortNotes(tab === 'u' ? notes.filter(n => n.noid) : notes.filter(n => n.s === tab && !n.noid), tab);
+    const list = sortNotes((tab === 'u' ? notes.filter(n => n.noid) : notes.filter(n => n.s === tab && !n.noid)).filter(n=>!Chat.isImportedRoleplay(n)), tab);
     out.push(sortBar(false));
     const byFz = sortBy === 'fz' && tab !== 'u';
     if (byFz && (tab === 'd' || tab === 'p')) for (const t of topics.filter(x => (!x.entry || !get(x.entry.s, x.entry.id)) && (x.entry ? x.entry.s : 'd') === tab).sort((a, b) => a.name.localeCompare(b.name, 'ja'))) out.push(topicRow(t)); // 入口のノートがまだないもの（取り込み前の紙の番号など）は、その側の先頭
@@ -889,7 +889,6 @@ $('#new').onclick = e => {
   const r = $('#new').getBoundingClientRect();
   popMenu({ clientX: r.left, clientY: r.bottom + 4 }, [
     ['ノート', () => createNoid('text')],
-    ['🎭 なりきりチャット', () => createNoid('rp')],
     ['🗺 キャンバス', () => createNoid('canvas')],
     ['📷 スキャンを取り込む（紙）', () => $('#imp').click()]
   ]);
@@ -1638,7 +1637,7 @@ function loaded(st) {
   if (st && st.firstRun) return firstRun(st);
   loadSettings(st); graphDoc = (st.docs || {})['K_graph'] || {};
   if (pendingLang) { settings.lang = pendingLang; pendingLang = null; saveSettings(); }
-  ({ notes, topics, vault } = st); readings = st.readings || {}; diaries = st.diaries || []; records = st.records || records; Chat.init(st.docs || {}); RP.init(st.docs || {}); PI.init(st.docs || {}); cur = null; tabs = []; active = -1; refreshFiles();
+  ({ notes, topics, vault } = st); readings = st.readings || {}; diaries = st.diaries || []; records = st.records || records; Chat.init(st.docs || {}); RP.init(st.docs || {}); Chat.migrateLegacyRoleplay(); PI.init(st.docs || {}); cur = null; tabs = []; active = -1; refreshFiles();
   $('#vault').textContent = '📁 ' + vault.split('/').pop(); $('#vault').title = vault + '\n（Brave では Index.md を開くと全部たどれます）';
   try {
     const saved = JSON.parse(localStorage.getItem('pkm-tabs:' + vault) || 'null');
