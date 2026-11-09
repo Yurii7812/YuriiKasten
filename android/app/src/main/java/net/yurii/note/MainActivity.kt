@@ -221,7 +221,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>, sharedState:
     }
     val topicCounts = remember(entrySnapshot) { entrySnapshot.groupingBy { it.topic }.eachCount() }
     val recentTopics = remember(settings.recentTopics, topics, topic) {
-        (listOf(topic) + settings.recentTopics + topics + listOf(ALL,UNASSIGNED)).distinct()
+        (listOf(topic) + settings.recentTopics).distinct().filter { it==ALL || it==UNASSIGNED || it in topics || it in pcTopics || it in pcRecords }
     }
     // 関係はメモ単位で決まり、トピックには固定の親・子を置かない。
     val upperCandidates = remember(entrySnapshot, topic) {
