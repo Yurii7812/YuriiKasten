@@ -1,6 +1,6 @@
 {
   "name": "yuriinote",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "YuriiNote — 紙のPKM（ツェッテルカステン）をデジタルで",
   "main": "main.js",
   "scripts": {
@@ -8,10 +8,11 @@
     "start": "npm run build && electron .",
     "test": "node --test test/*.test.js",
     "dist": "npm run build && electron-builder --publish never",
-    "version:minor": "node scripts/bump-minor.js",
+    "version:minor": "node scripts/bump-version.js minor",
     "dist:linux": "npm run build && electron-builder --linux --publish never",
     "dist:win": "npm run build && electron-builder --win --publish never",
-    "dist:mac": "npm run build && electron-builder --mac --publish never"
+    "dist:mac": "npm run build && electron-builder --mac --publish never",
+    "version:patch": "node scripts/bump-version.js patch"
   },
   "license": "MIT",
   "devDependencies": {

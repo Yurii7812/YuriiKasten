@@ -240,10 +240,10 @@ function quoteToNote(m) {
 function menuFor(e, el) {
   const m = conv().messages.find(x => x.id === el.dataset.mid); if (!m) return;
   popMenu(e, [
-    ['返信する', () => { draftReply = m.id; quoteBar(); $('#c-in').focus(); }],
-    ['書き直す', () => editMsg(el, m)],
-    ...(m.text ? [['ノートに引用する', () => quoteToNote(m)], ['コピー', () => navigator.clipboard.writeText(m.text)]] : []),
-    ['消す', () => { if (!confirm('この発言を消しますか？')) return; conv().messages = conv().messages.filter(x => x !== m); save(); paint(); ctx.renderList(); }, true]
+    ['↩ 返信する', () => { draftReply = m.id; quoteBar(); $('#c-in').focus(); }],
+    ['✎ 書き直す', () => editMsg(el, m)],
+    ...(m.text ? [['📝 ノートに引用する', () => quoteToNote(m)], ['📋 コピー', () => navigator.clipboard.writeText(m.text)]] : []),
+    ['🗑 消す', () => { if (!confirm('この発言を消しますか？')) return; conv().messages = conv().messages.filter(x => x !== m); save(); paint(); ctx.renderList(); }, true]
   ]);
 }
 function editMsg(el, m) {

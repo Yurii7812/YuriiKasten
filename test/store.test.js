@@ -578,3 +578,23 @@ test('古い画面からの保存: ほかで増えたメモを失わず、足し
   r = v.saveDoc('C_チャット', fresh); assert.strictEqual(r.merged, false);
   assert.deepStrictEqual(v.state().docs['C_チャット'].messages.map(m => m.id), ['a', 'c', 'd']);
 });
+
+test('ファイル: 同じ中身は取り込まない（既にある）・削除は .trash へ・文字の中身をアプリで見られる', () => {
+  const dir = tmp(), v = openVault(dir);
+  const [a] = v.addFiles([{ name: 'メモ.txt', bytes: Buffer.from('こんにちは\n2 行目') }]);
+  assert.ok(fs.existsSync(path.join(dir, a)));
+  const [b] = v.addFiles([{ name: '別の名前.txt', bytes: Buffer.from('こんにちは\n2 行目') }]);
+  assert.strictEqual(b, a);                                                  // 同じ中身 → 既にあるファイルの名前
+  assert.deepStrictEqual(v.takeFileDups(), [{ orig: '別の名前.txt', existing: a }]);
+  assert.deepStrictEqual(v.takeFileDups(), []);
+  assert.strictEqual(v.filesInfo().length, 1);
+  const [c] = v.addFiles([{ name: 'x.txt', bytes: Buffer.from('違う中身') }]); assert.notStrictEqual(c, a);
+  assert.strictEqual(v.filePreview(a).text, 'こんにちは\n2 行目');
+  assert.strictEqual(v.filePreview('Index.md').kind, '');                    // ノートなどは、見せない・消せない
+  assert.strictEqual(v.deleteFile('Index.md'), false);
+  assert.ok(v.deleteFile(a)); assert.ok(!fs.existsSync(path.join(dir, a)));
+  assert.ok(fs.readdirSync(path.join(dir, '.trash')).some(n => n.endsWith(a)));
+  assert.strictEqual(v.filesInfo().length, 1);
+  const [again] = v.addFiles([{ name: 'メモ.txt', bytes: Buffer.from('こんにちは\n2 行目') }]);   // 消したあとは、もう一度取り込める
+  assert.ok(fs.existsSync(path.join(dir, again))); assert.deepStrictEqual(v.takeFileDups(), []);
+});

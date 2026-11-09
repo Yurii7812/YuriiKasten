@@ -87,7 +87,8 @@ async function flush() { // 待っている保存を今すぐ
   await Promise.all(fs.map(x => x.f()));
 }
 window.addEventListener('beforeunload', () => { flush(); });
-if (window.api.onFlush) window.api.onFlush(() => flush());   // 閉じる前に、main から「今すぐ保存」と言われる
+if (window.api.onFlush) window.api.onFlush(() => flush());
+if (window.api.onFileDup) window.api.onFileDup(dups => toast(dups.length === 1 ? `「${dups[0].orig}」は既にあります（${dups[0].existing}）` : `${dups.length} 件のファイルは、既にあります`));   // 同じ中身のファイルは、二重に取り込まない
 installMermaidObserver();
 
 // ===== エディタ（:1 や (1) をその場でリンクに）=====
@@ -331,14 +332,24 @@ function fileDialog(name) {
   $('#modal .box').innerHTML = `<h3>${fileIcon(f.ext)} ${esc(f.orig)}</h3>
     ${isImg ? `<img src="file://${esc(vault + '/' + name)}" style="max-width:100%;max-height:220px;display:block;margin:0 auto 8px;border-radius:6px">` : ''}
     <div class="sub">保存名 ${esc(name)} · ${Math.round(f.size / 1024)} KB · ${esc(f.added)}</div>
+    <div id="fi-pv"></div>
     <div class="sub">タイトル</div><input id="fi-t" value="${esc(f.title)}" placeholder="例: 図でわかる知識管理術の表紙">
     <div class="sub">説明（探すときに使います）</div><textarea id="fi-d" rows="3" style="width:100%;font:inherit">${esc(f.desc)}</textarea>
-    <div class="row"><button id="fi-ok" class="p">保存</button><button id="fi-open">開く</button><button id="fi-ins" title="いま開いているノートのカーソルに、リンクを書き込む">ノートに貼る</button><button id="fi-cancel">やめる</button></div>`;
+    <div class="row"><button id="fi-ok" class="p">💾 保存</button><button id="fi-open" title="パソコンの標準のアプリで開く">📂 開く</button><button id="fi-ins" title="いま開いているノートのカーソルに、リンクを書き込む">📌 ノートに貼る</button><span class="grow"></span><button id="fi-del" class="danger" title="ごみ箱（.trash）へ移す">🗑 削除</button><button id="fi-cancel">やめる</button></div>`;
+  if (!isImg) api.filePreview(name).then(p => {   // 文字のファイルは、アプリの中で中身を見られる
+    const box = $('#fi-pv'); if (!box || !p || p.kind !== 'text') return;
+    box.innerHTML = `<pre class="fi-pre">${esc(p.text)}</pre>${p.cut ? `<div class="sub">先頭の 60KB だけ表示しています（全体は ${Math.round(p.size / 1024)} KB。「開く」で全部見られます）</div>` : ''}`;
+  });
   $('#modal').style.display = 'flex'; $('#fi-t').focus();
   const close = () => { $('#modal').style.display = 'none'; };
   $('#fi-cancel').onclick = close; $('#modal').onkeydown = e => { if (e.key === 'Escape') close(); };
   $('#fi-ok').onclick = async () => { await api.setFileInfo(name, { title: $('#fi-t').value, desc: $('#fi-d').value }); close(); filesCache = await api.filesInfo(); renderList(); };
   $('#fi-open').onclick = () => api.openPath(encRel(name));
+  $('#fi-del').onclick = async () => {
+    if (!confirm(`「${f.orig}」を削除しますか？\n（ごみ箱の .trash に移ります。ノートの中のこのファイルへのリンクは、見つからなくなります）`)) return;
+    const ok = await api.deleteFile(name); close(); filesCache = await api.filesInfo(); renderList();
+    toast(ok ? `「${f.orig}」を削除しました（.trash に移しました）` : '削除できませんでした');
+  };
   $('#fi-ins').onclick = () => {
     const view = lastView; if (!view || !view.dom.isConnected || !cur || !['note', 'diary'].includes(cur.k)) return toast('先にノートを開いてください');
     const h = view.state.selection.main.head, t = ($('#fi-t').value || f.orig).replace(/[\[\]]/g, ''), md = PIC.test(name) ? `![${t}](${encRel(name)})` : `[${t}](${encRel(name)})`;
@@ -914,12 +925,14 @@ function toggleMgn() { mgnHidden = !mgnHidden; try { localStorage.setItem('pkm-m
 document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === '\\' && !e.shiftKey) { e.preventDefault(); toggleMgn(); } });
 // ノートのメニュー（⋯）: 並列・分岐・表・添付・ID・削除
 function noteMenu(btn, note) {
-  const r = btn.getBoundingClientRect(), { s, id } = note, text = (note.kind || 'text') === 'text';
+  // 「⋯」の中は、画面のほかの場所に無いものだけ。並列・分岐・IDを付ける/消す/探す は、上の行にあるボタンにあるので、ここには出さない
+  // （ノート化したチャットメモのノートだけは、上の行を 1 行にまとめたので、IDを消す・探すを、ここに出す）
+  const r = btn.getBoundingClientRect(), { s, id } = note, text = (note.kind || 'text') === 'text', memoGroup = note.kind === 'memo-group';
   popMenu({ clientX: r.right - 190, clientY: r.bottom + 4 }, [
-    ...(!note.noid ? [[`並列のノートを作る（${free(s, L.sibling(id))}）`, () => create(s, free(s, L.sibling(id)))], [`分岐のノートを作る（${free(s, L.child(id))}）`, () => create(s, free(s, L.child(id)))]] : []),
-    ...(text ? [['表を入れる', () => insertTable()], ['ファイルを添付', () => pick(true, f => attach(note, f), '*')]] : []),
-    ...(s === 'd' ? [['↩ チャットメモで返信', () => Chat.replyToNote(note)], ['索引・本文からIDを探す', () => giveIdDialog(note)], ...(!note.noid ? [['IDを消す（IDなしにする）', () => clearIdFlow(note)]] : [])] : []),
-    ['削除', () => deleteNotes([{ s, id }]), true]
+    ...(text ? [['▦ 表を入れる', () => insertTable()], ['📎 ファイルを添付', () => pick(true, f => attach(note, f), '*')]] : []),
+    ...(s === 'd' ? [['💬 チャットメモで返信', () => Chat.replyToNote(note)]] : []),
+    ...(s === 'd' && memoGroup ? [['🔎 索引・本文からIDを探す', () => giveIdDialog(note)], ...(!note.noid ? [['🧹 IDを消す（IDなしにする）', () => clearIdFlow(note)]] : [])] : []),
+    ['🗑 削除', () => deleteNotes([{ s, id }]), true]
   ]);
 }
 // IDを消す: このノートを指すリンクは、自動でファイルへのリンクに直る
@@ -954,7 +967,7 @@ $('#new').onclick = e => {
   if (mode === 'chat') return Chat.newTopicDialog();
   const r = $('#new').getBoundingClientRect();
   popMenu({ clientX: r.left, clientY: r.bottom + 4 }, [
-    ['ノート', () => createNoid('text')],
+    ['📝 ノート', () => createNoid('text')],
     ['🗺 キャンバス', () => createNoid('canvas')],
     ['📷 スキャンを取り込む（紙）', () => $('#imp').click()]
   ]);
@@ -1430,7 +1443,7 @@ function openGraph(keep) {
   cur.gs = cur.gs || {};   // Link map / Tree map・線の長さ・固定（タブに覚える）
   const rootKey = lastNote ? lastNote.s + ':' + lastNote.id : null;
   GR.mount($('#pane'), { doc: graphDoc, saveDoc: d => later('doc:G', () => api.saveDoc('K_graph', d)), notes, titleOf, rootKey, mountNote: mountNoteIn, childNotes: (s, id) => { const nn = get(s, id); return nn ? childNotes(nn).map(c => ({ s: c.s, id: c.id, title: titleOf(c) || '（無題）' })) : []; }, chat: Chat.graphData(), files: filesCache, fileUrl: n => 'file://' + kImg(n), onChat: name => { mode = 'chat'; Chat.open(name); }, onMemo: id => { mode = 'chat'; Chat.gotoMemo(id); }, onFile: name => api.openPath(encodeURIComponent(name)), topics, mergeTopic: L.mergeTopic, get, renderMd, state: cur.gs, onOpen: (s, id, e, topic) => topic ? openTopic(topic) : openNote(s, id),
-    onMenu: (node, e) => popMenu(e, [['開く', () => openNote(node.s, node.nid)], ['新しいタブで開く', () => { bgOpen = true; try { openNote(node.s, node.nid); } finally { bgOpen = false; } }]]) });
+    onMenu: (node, e) => popMenu(e, [['📖 開く', () => openNote(node.s, node.nid)], ['🗂 新しいタブで開く', () => { bgOpen = true; try { openNote(node.s, node.nid); } finally { bgOpen = false; } }]]) });
   renderTabs(); renderList();
 }
 function openTopic(name, tmode = 'view', keep) {
@@ -1720,8 +1733,8 @@ function loaded(st) {
 $('#more').onclick = () => {   // 「⋯」: USB での取り込みと、設定だけ。ほかは、全部、設定に
   const r = $('#more').getBoundingClientRect();
   popMenu({ clientX: r.right - 190, clientY: r.bottom + 4 }, [
-    ['スマホのメモを取り込む…（USB）', phoneImport],
-    ['設定…', settingsDialog]
+    ['📱 スマホのメモを取り込む…（USB）', phoneImport],
+    ['⚙️ 設定…', settingsDialog]
   ]);
 };
 

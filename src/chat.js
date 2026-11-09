@@ -637,17 +637,17 @@ function menuFor(e, bub) {
   if (bub.dataset.m) {
     const m = msg(bub.dataset.m);
     popMenu(e, [
-      ['選択', () => { sel = new Set([m.id]); lastSel = m.id; paint(); selbar(); }],
-      ['ノート化', () => toNoteDialog([m])],
-      ['編集', () => editMsg(bub, m)],
-      ['トピックを変える', () => moveDialog(m)],
-      ['話した人を変える', () => speakerDialog([m])],
-      ['コピー', () => navigator.clipboard.writeText(m.text)],
-      ['消す', () => removeMsg(m), true]
+      ['☑ 選択', () => { sel = new Set([m.id]); lastSel = m.id; paint(); selbar(); }],
+      ['📝 ノート化', () => toNoteDialog([m])],
+      ['✎ 編集', () => editMsg(bub, m)],
+      ['🏷 トピックを変える', () => moveDialog(m)],
+      ['🗣 話した人を変える', () => speakerDialog([m])],
+      ['📋 コピー', () => navigator.clipboard.writeText(m.text)],
+      ['🗑 消す', () => removeMsg(m), true]
     ]);
   } else if (bub.dataset.i !== undefined && be) {
     const i = +bub.dataset.i;
-    popMenu(e, [['書き直す', () => editLine(bub, i)], ['コピー', () => navigator.clipboard.writeText(entries()[i].text)], ['消す', () => removeLine(i), true]]);
+    popMenu(e, [['✎ 書き直す', () => editLine(bub, i)], ['📋 コピー', () => navigator.clipboard.writeText(entries()[i].text)], ['🗑 消す', () => removeLine(i), true]]);
   }
 }
 function editBox(bub, text, onSave, m) {

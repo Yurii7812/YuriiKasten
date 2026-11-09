@@ -105,7 +105,13 @@ ipcMain.handle('saveImage', (_e, s, id, bytes) => v.saveImage(s, id, Buffer.from
 ipcMain.handle('saveTopic', (_e, t, old) => v.saveTopic(t, old));
 ipcMain.handle('deleteTopic', (_e, name) => v.deleteTopic(name));
 ipcMain.handle('deleteNotes', (_e, items) => v.deleteNotes(items));
-ipcMain.handle('addFiles', (_e, list) => v.addFiles(list));
+ipcMain.handle('addFiles', (_e, list) => {
+  const names = v.addFiles(list), dups = v.takeFileDups();
+  if (dups.length && mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('fileDup', dups);   // 「既にあります」を画面に出す
+  return names;
+});
+ipcMain.handle('deleteFile', (_e, name) => v.deleteFile(name));
+ipcMain.handle('filePreview', (_e, name) => v.filePreview(name));
 ipcMain.handle('filesInfo', () => v.filesInfo());
 ipcMain.handle('setFileInfo', (_e, name, info) => v.setFileInfo(name, info));
 // 本文のリンクを開く。ファイルは OS の既定のビューアーで、http(s) は既定のブラウザで

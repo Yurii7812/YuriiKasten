@@ -208,11 +208,11 @@ document.addEventListener('contextmenu', e => {
   const card = e.target.closest('.cv-card'), ed = e.target.closest('[data-e]');
   if (card) {
     e.preventDefault(); const n = node(card.dataset.n); sel = { kind: 'node', id: n.id }; document.querySelectorAll('.cv-card').forEach(c => c.classList.toggle('sel', c === card));
-    popMenu(e, [...(n.type === 'text' ? [['書き直す', () => editText(n.id)]] : []), ...(n.type === 'note' ? [['ノートを開く', () => ctx.get(n.s, n.nid) && ctx.openNote(n.s, n.nid)]] : []),
-      ['手前に出す', () => { cv().nodes = [...cv().nodes.filter(x => x !== n), n]; touch(); drawAll(); }], ['消す', removeSel, true]]);
+    popMenu(e, [...(n.type === 'text' ? [['✎ 書き直す', () => editText(n.id)]] : []), ...(n.type === 'note' ? [['📖 ノートを開く', () => ctx.get(n.s, n.nid) && ctx.openNote(n.s, n.nid)]] : []),
+      ['⬆ 手前に出す', () => { cv().nodes = [...cv().nodes.filter(x => x !== n), n]; touch(); drawAll(); }], ['🗑 消す', removeSel, true]]);
   } else if (ed) {
     e.preventDefault(); const x = edge(ed.dataset.e); sel = { kind: 'edge', id: x.id }; drawEdges();
-    popMenu(e, [['ラベルをつける', () => edgeLabelDialog(x)], [x.arrow !== false ? '矢印をなくす' : '矢印をつける', () => { x.arrow = x.arrow === false; touch(); drawEdges(); }], ['消す', removeSel, true]]);
+    popMenu(e, [['🏷 ラベルをつける', () => edgeLabelDialog(x)], [x.arrow !== false ? '➖ 矢印をなくす' : '➡ 矢印をつける', () => { x.arrow = x.arrow === false; touch(); drawEdges(); }], ['🗑 消す', removeSel, true]]);
   }
 });
 document.addEventListener('wheel', e => {

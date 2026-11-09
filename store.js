@@ -501,6 +501,7 @@ function openVault(vault) {
     return out;
   }
   const pad2 = x => String(x).padStart(2, '0');
+  let fileDups = [];   // 直前の取り込みで、既にあったファイル
   function rebuild() {
     mergePaperIndex(); pruneDiaryLinks();
     const chatFiles = chatMdFiles();
@@ -726,16 +727,42 @@ function openVault(vault) {
     },
     // 添付（画像・html・csv など）をコピーする。名前は日時（同じ秒はずらす）。元の名前は K_files.json に残す（タイトルはあとから付ける）
     // 返す名前は保存した名前。orig は元の名前（リンクの表示に使う）
+    // 取り込む。中身（指紋）が同じファイルが、もうあれば、取り込まずに、そのファイルの名前を返す（既にある、と知らせるため takeFileDups で渡す）
     addFiles(list) {
-      const d = docs.get(FILES) || { files: {} }, t = new Date();
-      const out = list.map(({ name, bytes }, i) => {
+      const d = docs.get(FILES) || { files: {} }, t = new Date(), sha = b => require('crypto').createHash('sha256').update(b).digest('hex');
+      fileDups = [];
+      const known = new Map();   // 指紋 → 既にある保存名
+      for (const f of this.filesInfo()) {
+        const m = d.files[f.name] || (d.files[f.name] = { orig: f.name, title: '', desc: '', added: f.added });
+        if (!m.sha) { try { m.sha = sha(fs.readFileSync(abs(f.name))); } catch { } }
+        if (m.sha && !known.has(m.sha)) known.set(m.sha, f.name);
+      }
+      const out = list.map(({ name, bytes }) => {
+        const buf = Buffer.from(bytes), h = sha(buf);
+        if (known.has(h)) { fileDups.push({ orig: path.basename(name), existing: known.get(h) }); return known.get(h); }
         const ext = path.extname(path.basename(name)).toLowerCase().replace(/[^.\w]/g, ''), stem = freeStem(new Date(t.getTime())), f = stem + ext;
-        put(abs(f), Buffer.from(bytes));
-        d.files[f] = { orig: path.basename(name), title: '', desc: '', added: L.now() };
+        put(abs(f), buf);
+        d.files[f] = { orig: path.basename(name), title: '', desc: '', added: L.now(), sha: h };
+        known.set(h, f);
         return f;
       });
       docs.set(FILES, d); put(abs(FILES + '.json'), JSON.stringify(d, null, 1));
       return out;
+    },
+    takeFileDups() { const x = fileDups; fileDups = []; return x; },
+    // 取り込んだファイルを消す（ごみ箱の .trash へ。ノートや Index は消せない）
+    deleteFile(name) {
+      if (typeof name !== 'string' || path.basename(name) !== name || !this.filesInfo().some(f => f.name === name)) return false;
+      removeFile(name);
+      const d = docs.get(FILES); if (d && d.files && d.files[name]) { delete d.files[name]; put(abs(FILES + '.json'), JSON.stringify(d, null, 1)); }
+      return true;
+    },
+    // ファイルの中身を、アプリの中で見るための文字（文字のファイルだけ。先頭 60KB）
+    filePreview(name) {
+      if (typeof name !== 'string' || path.basename(name) !== name || !this.filesInfo().some(f => f.name === name)) return { kind: '' };
+      if (!/\.(txt|md|markdown|csv|tsv|json|xml|log|ya?ml|html?|css|js|ts|py|sh|ini|toml)$/i.test(name)) return { kind: '' };
+      const buf = fs.readFileSync(abs(name)), cut = buf.length > 60000;
+      return { kind: 'text', text: buf.subarray(0, 60000).toString('utf8'), cut, size: buf.length };
     },
     // 取り込んだファイル（画像・html・csv など）の一覧。タイトル・説明・元の名前つき。ノートや Index などは含めない
     filesInfo() {
