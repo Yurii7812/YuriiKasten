@@ -13,6 +13,7 @@ import * as MD from './mandala.js';
 import * as SM from './similar.js';
 import * as CV from './canvas.js';
 import { dialog, popMenu, toast, renderMd } from './shared.js';
+import { installMermaidObserver } from './mermaid.js';
 import { setLang } from './i18n.js';
 let pendingLang = null;
 
@@ -84,6 +85,7 @@ async function flush() { // 待っている保存を今すぐ
   await Promise.all(fs.map(x => x.f()));
 }
 window.addEventListener('beforeunload', () => { flush(); });
+installMermaidObserver();
 
 // ===== エディタ（:1 や (1) をその場でリンクに）=====
 function links(mode, space) {
