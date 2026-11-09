@@ -32,7 +32,13 @@ aside{width:250px;display:flex;flex-direction:column;border-right:1px solid #f0f
 #tabs button:hover{background:none;color:#666}#tabs button.on{color:var(--fg);font-weight:600}
 #list{flex:1;overflow:auto}
 #selbar{display:flex;gap:6px;align-items:center;padding:5px 10px;border-bottom:1px solid var(--line);font-size:13px;color:var(--sub)}
-#selbar button{font-size:13px;padding:1px 9px}
+#selbar button{font-size:13px;padding:1px 9px;white-space:nowrap;flex:none}
+#selbar{flex:none;min-width:0}
+#selbar.selecting{flex-direction:column;align-items:stretch}
+#selbar .sel-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#selbar .sel-head>span{white-space:nowrap}
+#selbar .sel-actions{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+#selbar #sel-end small{color:var(--sub);margin-left:4px}
 button:disabled{opacity:.4;cursor:default}
 .ck{margin-right:7px;vertical-align:middle}
 .ed .cm-content{padding:10px 8px 40px;tab-size:4}
@@ -130,8 +136,8 @@ button:disabled{opacity:.4;cursor:default}
 .stage:has(#nbody)>.col>#nbody>.chat,.stage:has(#nbody)>.col>#nbody>.cvbox{max-width:1100px;margin:0 auto;width:100%}
 .mgn{width:260px;margin:0 auto 0 8px;padding:46px 14px 60px 20px;border-left:1px solid #f0f0f3;font-size:12.5px;color:#7a7f8e;position:sticky;top:0;min-height:100vh;align-self:stretch}
 .idline{display:flex;align-items:center;gap:4px;font-size:12px;color:#a9aebb;min-height:24px}
-.idline .cpid{border:0;background:none;color:#b7bbc6;padding:0;width:18px;height:18px;display:inline-flex}.idline .cpid:hover{color:var(--acc)}
-.idline input.idin{width:84px;border:0;background:none;font:inherit;color:#8b909c;padding:0 2px;outline:none;border-radius:4px}.idline input.idin:focus{background:var(--hl)}
+
+.idline .idin{border:0;background:none;font:inherit;color:#8b909c;padding:2px 6px;border-radius:4px;overflow-wrap:anywhere}.idline button.idin:hover{background:var(--hl);color:var(--acc)}.idline button.idin:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 .idline .dt{margin-left:8px;color:#c0c4cf}.idline .grow{flex:1}.idline .nm{opacity:0}.col:hover .idline .nm,.idline .nm:focus{opacity:1}
 .ixbar{display:flex;align-items:center;gap:8px;padding:6px 4px 10px;font-size:13px}.ixbar .grow{flex:1}
 .chip.pick{cursor:pointer}.chip.pick:hover{background:#eef3ff}.chip.pick.on{border-color:#c0392b;background:#fdf1ef}
@@ -324,8 +330,8 @@ button{font-size:14.5px;padding:5px 13px;border-color:#d6d9e1;color:#3d4150}
 .tab{font-size:14.5px;padding:7px 12px 7px 14px;color:#5d6270}.tab.on{color:#23262d;font-weight:600}
 .tab small{color:#8a8f9c}
 .idline{font-size:14px;color:#5d6270;min-height:28px}
-.idline .cpid{width:24px;height:24px}.idline .cpid .ico{width:17px;height:17px}
-.idline input.idin{font-size:14.5px;color:#3d4150;width:96px;font-weight:600}
+
+.idline .idin{font-size:14.5px;color:#3d4150;font-weight:600}
 .idline .dt{color:#8a8f9c;font-size:13px}.idline .gid{font-size:13.5px;font-weight:600}
 .ntitle{font-size:34px;margin:4px 0 12px}.ntitle::placeholder{color:#c3c7d1}
 .col{padding-top:34px}

@@ -563,7 +563,7 @@ function onOpenClick(e) {
   if (e.target.id === 'c-newok') return Chat.createTopicInline();
   if (e.target.id === 'c-newopt') return Chat.newTopicDialog();
   const row = e.target.closest('#list .item');
-  if (selMode && row) return togglePick(row, e.shiftKey);
+  if (selMode && row) { if (row.matches('.note[data-s][data-id]')) togglePick(row, e.shiftKey); return; }
   const t = e.target.closest('[data-topic]'); if (t) return openTopic(t.dataset.topic);
   const n = e.target.closest('[data-id][data-s]');
   if (n && !e.target.closest('.cm-editor')) {
@@ -825,13 +825,12 @@ function openNote(s, id, n, keep, mid) {
   cur = place({ k: 'note', s, id }, keep); mode = 'notes'; lastNote = { s, id };
   if (!inPreview) decided = { k: 'note', s, id };
   if (!$('#q').value) tab = note.noid ? 'u' : s;
-  const kind = note.kind || 'text', noid = !!note.noid, text = kind === 'text', memoGroup = kind === 'memo-group', cp = '<svg class="ico" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15V6a1 1 0 011-1h9"/></svg>';
+  const kind = note.kind || 'text', noid = !!note.noid, text = kind === 'text', memoGroup = kind === 'memo-group';
   $('#pane').innerHTML = `
     <div class="stage"><div class="col${s === 'p' || !text ? ' wide' : ''}">
       <div class="idline">
-        ${noid ? '' : `<button class="cpid" data-act="copyid" title="IDをコピー">${cp}</button>`}
-        <input class="idin" id="f-id" value="${noid ? '' : esc(id)}" placeholder="IDなし" title="${noid ? 'IDを入れると、整理されます' : 'IDを空にすると、IDなしにできます。確認後、再指定もできます'}">
-        ${s === 'd' ? (noid ? '<button class="gid" data-act="giveid">IDを付ける</button>' : memoGroup ? '' : '<button class="gid" data-act="clearid" title="IDを外して、あとから付け直す">IDを消す</button><button class="gid" data-act="giveid" title="索引と本文から探してIDを変更する">索引からIDを探す</button>') : ''}
+        ${noid ? '<span class="idin" id="f-id">IDなし</span>' : `<button class="idin" id="f-id" data-act="copyid" data-user title="IDをコピー" aria-label="ID ${esc(id)} をコピー">${esc(id)}</button>`}
+        ${s === 'd' && noid ? '<button class="gid" data-act="giveid">IDを付ける</button>' : ''}
         ${s === 'p' ? '<span class="dt">紙</span>' : ''}${memoGroup ? '' : L.KINDS[kind] ? `<span class="dt">${L.KINDS[kind]}</span>` : ''}
         ${memoGroup ? `<textarea class="ntitle mgtitle" id="f-title" rows="1" placeholder="タイトル" spellcheck="false">${esc(note.title || '')}</textarea><span class="mgcount" title="元のチャットメモの数">💬 ${(note.data && note.data.memoIds || []).length} 件</span>${Chat.memoGroupSpeakerHtml()}` : s === 'd' ? `<span class="dt">${esc(note.created)}</span>` : ''}
         ${memoGroup ? '' : '<span class="grow"></span>'}${noid ? (s === 'd' && text ? '<button class="nb" data-act="sib" title="IDなしのまま、並列のノートを作る（親にIDが付くと、IDも決まる）">＋ 並列</button><button class="nb" data-act="chi" title="IDなしのまま、分岐のノートを作る（このノートにIDが付くと、IDも決まる）">＋ 分岐</button>' : '') : `<button class="nb" data-act="sib" title="並列のノートを作る（同じ階層の次: ${esc(free(s, L.sibling(id)))}）">＋ 並列 <small>${esc(free(s, L.sibling(id)))}</small></button><button class="nb" data-act="chi" title="分岐のノートを作る（一つ下: ${esc(free(s, L.child(id)))}）">＋ 分岐 <small>${esc(free(s, L.child(id)))}</small></button>`}<button class="ic nm" data-act="mgn" title="右の欄を隠す・出す (Ctrl+\\)"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button><button class="ic nm" data-act="nmenu" title="このノートのメニュー">${'<svg class="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>'}</button>
@@ -851,13 +850,6 @@ function openNote(s, id, n, keep, mid) {
     saveNote(note); renderList(); renderTabs();
   };
   titleField.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing && !e.shiftKey) { e.preventDefault(); if (lastView && lastView.dom.isConnected) { lastView.focus(); lastView.dispatch({ selection: { anchor: 0 } }); } } };
-  $('#f-id').onchange = async e => {
-    const v = e.target.value.trim().toLowerCase();
-    if (v === (noid ? '' : id)) return;
-    if (!v) { if (noid) return; e.target.value = id; if (note.s === 'd') await clearIdFlow(note); else alert('紙のノートはIDを外せません'); return; }
-    const ok = await changeId(note, v);
-    if (!ok) { alert('そのIDは使えません（形が違うか、既にあります）'); e.target.value = noid ? '' : id; }
-  };
   renderTabs(); renderList(); if (!$('#q').value) centerOn();   // タブの移動・リンクで開いたときも、見ているノートが一覧の真ん中に（同じタブにあるとき。検索中は動かさない）
   if (!text) { // なりきりチャット・キャンバス: ノートの中に、それぞれの画面
     if (kind === 'rp') RP.render($('#nbody'), note, mid); else if (kind === 'canvas') CV.render($('#nbody'), note); else if (memoGroup) Chat.renderMemoGroup($('#nbody'), note);
@@ -1024,8 +1016,7 @@ $('#pane').addEventListener('click', async e => {
   if (act === 'sib') create(s, free(s, L.sibling(id)));
   if (act === 'chi') create(s, free(s, L.child(id)));
   if (act === 'giveid') return giveIdDialog(note);
-  if (act === 'clearid' && note && note.s === 'd' && !note.noid) return clearIdFlow(note);
-  if (act === 'copyid') { navigator.clipboard.writeText(note.id); return toast(`IDをコピーしました: ${note.id}`); }
+  if (act === 'copyid') return copyNoteId(note);
   if (act === 'mgn') return toggleMgn();
   if (act === 'nmenu') return noteMenu(a, note);
   if (act === 'kwadd') keywordDialog(note);
@@ -1047,15 +1038,47 @@ function toggleMgn() { mgnHidden = !mgnHidden; try { localStorage.setItem('pkm-m
 document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === '\\' && !e.shiftKey) { e.preventDefault(); toggleMgn(); } });
 // ノートのメニュー（⋯）: 並列・分岐・表・添付・ID・削除
 function noteMenu(btn, note) {
-  // 「⋯」の中は、画面のほかの場所に無いものだけ。並列・分岐・IDを付ける/消す/探す は、上の行にあるボタンにあるので、ここには出さない
-  // （ノート化したチャットメモのノートだけは、上の行を 1 行にまとめたので、IDを消す・探すを、ここに出す）
-  const r = btn.getBoundingClientRect(), { s, id } = note, text = (note.kind || 'text') === 'text', memoGroup = note.kind === 'memo-group';
+  const r = btn.getBoundingClientRect(), { s, id } = note, text = (note.kind || 'text') === 'text';
   popMenu({ clientX: r.right - 190, clientY: r.bottom + 4 }, [
     ...(text ? [['▦ 表を入れる', () => insertTable()], ['📎 ファイルを添付', () => pick(true, f => attach(note, f), '*')]] : []),
     ...(s === 'd' ? [['💬 チャットメモで返信', () => Chat.replyToNote(note)]] : []),
-    ...(s === 'd' && memoGroup ? [['🔎 索引・本文からIDを探す', () => giveIdDialog(note)], ...(!note.noid ? [['🧹 IDを消す（IDなしにする）', () => clearIdFlow(note)]] : [])] : []),
+    ['🔢 IDを変更・解除…', () => idSettingsDialog(note)],
     ['🗑 削除', () => deleteNotes([{ s, id }]), true]
   ]);
+}
+async function copyNoteId(note) {
+  if (!note || note.noid) return;
+  try { await navigator.clipboard.writeText(note.id); toast(`IDをコピーしました: ${note.id}`); }
+  catch { toast('IDをコピーできませんでした'); }
+}
+function idSettingsDialog(note) {
+  dialog(`<h3>IDを変更・解除</h3>
+    <div class="sub">現在のID: <b data-user>${note.noid ? 'IDなし' : esc(note.id)}</b></div>
+    <div class="row"><label for="id-next">新しいID</label><input id="id-next" value="${note.noid ? '' : esc(note.id)}" autocomplete="off" spellcheck="false"></div>
+    <div id="id-error" role="alert"></div>
+    <div class="row"><button id="id-cancel">やめる</button>${note.s === 'd' ? '<button id="id-find">索引・本文からIDを探す</button>' : ''}<button class="p" id="id-apply">変更する</button></div>
+    ${note.s === 'd' && !note.noid ? '<div class="da-sep"></div><button class="danger" id="id-clear">IDを外す（IDなしにする）</button>' : ''}`, close => {
+    const input = $('#id-next'), error = $('#id-error'), apply = $('#id-apply');
+    $('#id-cancel').onclick = close;
+    if ($('#id-find')) $('#id-find').onclick = () => { close(); giveIdDialog(note); };
+    apply.onclick = async () => {
+      const id = input.value.trim().toLowerCase();
+      if (!id) { error.textContent = '新しいIDを入力してください。空欄ではIDは外れません。'; return input.focus(); }
+      if (id === note.id) return close();
+      apply.disabled = true; error.textContent = '';
+      try {
+        if (await changeId(note, id)) close();
+        else error.textContent = 'そのIDは使えません（形が違うか、既にあります）';
+      } catch { error.textContent = '保存できませんでした。入力内容は保持しています。'; }
+      finally { apply.disabled = false; }
+    };
+    if ($('#id-clear')) $('#id-clear').onclick = async () => {
+      try { if (await clearIdFlow(note)) close(); }
+      catch { error.textContent = 'IDを外せませんでした。保存先を確認してください。'; }
+    };
+    input.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); apply.click(); } };
+    input.focus(); input.select();
+  });
 }
 // IDを消す: このノートを指すリンクは、自動でファイルへのリンクに直る
 async function clearIdFlow(note) {
@@ -1067,7 +1090,7 @@ async function clearIdFlow(note) {
   const stem = notes.find(x => x.noid && x.stem === note.stem);
   for (const t of tabs) if (t.k === 'note' && t.s === note.s && t.id === old && stem) t.id = stem.id;
   if (stem) openNote('d', stem.id, null, true); else show(Math.max(0, active));
-  toast('IDを消しました');
+  toast('IDを消しました'); return true;
 }
 // IDなしのノートを作る（kind: text / rp / canvas）。あとでIDを付けて整理する
 // IDなしのノートから、IDなしのまま分岐・並列を作る。親にIDが付いた時に、子のIDも決まる
@@ -1979,7 +2002,7 @@ window.__pkm = { get tabs() { return tabs; }, scan: startScan, get diaries() { r
 
 // ===== 削除・一括削除 =====
 const keyOf = n => n.s + ':' + n.id;
-function visibleRows() { return [...document.querySelectorAll('#list .item')]; }
+function visibleRows() { return [...document.querySelectorAll('#list .item.note[data-s][data-id]')]; }
 function togglePick(row, range) {
   const k = row.dataset.s + ':' + row.dataset.id;
   if (range && lastPick) {
@@ -1990,16 +2013,36 @@ function togglePick(row, range) {
 }
 function renderSelbar() {
   const bar = $('#selbar');
+  bar.classList.toggle('selecting', selMode);
   bar.innerHTML = selMode
-    ? `<span>${picked.size}件を選択</span><span class="grow"></span><button id="sel-all">全部</button><button id="sel-sim" ${picked.size ? '' : 'disabled'} title="選んだノートに似たノートを探す">≈ 似たノート</button><button id="sel-exp" ${picked.size ? '' : 'disabled'} title="選んだノートを、1つの Markdown にまとめる（保存はしない。確認してコピー）">📤 エクスポート</button><button id="sel-del" class="danger" ${picked.size ? '' : 'disabled'}>削除</button><button id="sel-end">やめる</button>`
+    ? `<div class="sel-head"><span>${picked.size}件を選択</span><button id="sel-end" title="複数選択を終了（Esc）">やめる <small>Esc</small></button></div>
+      <div class="sel-actions"><button id="sel-all">全部</button><button id="sel-copy" ${picked.size ? '' : 'disabled'} title="選んだノートのタイトルと本文をコピー">コピー</button><button id="sel-sim" ${picked.size ? '' : 'disabled'} title="選んだノートに似たノートを探す">≈ 似たノート</button><button id="sel-exp" ${picked.size ? '' : 'disabled'} title="選んだノートを、1つの Markdown にまとめる（保存はしない。確認してコピー）">📤 エクスポート</button><button id="sel-del" class="danger" ${picked.size ? '' : 'disabled'}>削除</button></div>`
     : '<button id="sel-start" title="複数のノートを選んで、まとめて削除します">☑ 選択</button>';
-  bar.style.display = (tab === 'i' || mode !== 'notes') && !$('#q').value ? 'none' : 'flex';
+  bar.style.display = !selMode && (tab === 'i' || tab === 'f' || mode !== 'notes') && !$('#q').value ? 'none' : 'flex';
 }
+function endSelection() { selMode = false; picked.clear(); lastPick = null; renderList(); }
+async function copySelection() {
+  const selected = [...picked].map(k => get(k[0], k.slice(2))).filter(Boolean);
+  if (!selected.length) return;
+  selected.sort((a, b) => a.s.localeCompare(b.s) || L.cmpId(a.id, b.id));
+  const text = L.exportMd(selected.map(n => ({ s: n.s, id: n.id, title: n.title || '', body: n.body || '', noid: n.noid })));
+  try { await navigator.clipboard.writeText(text); toast(`${selected.length}件をコピーしました`); }
+  catch { toast('コピーできませんでした'); }
+}
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || !selMode || e.isComposing || e.keyCode === 229) return;
+  const cardEditor = $('#kover');
+  if ($('#modal').style.display === 'flex' || document.querySelector('.idex-cover, #idpop') || (cardEditor && !cardEditor.hidden)) return;
+  e.preventDefault(); e.stopImmediatePropagation(); endSelection();
+}, true);
 $('#selbar').addEventListener('click', e => {
-  const id = e.target.id;
+  const button = e.target.closest('button'); if (!button || button.disabled) return;
+  const id = button.id;
   if (id === 'sel-start') { selMode = true; picked.clear(); lastPick = null; renderList(); }
-  if (id === 'sel-end') { selMode = false; picked.clear(); renderList(); }
+  if (id === 'sel-end') endSelection();
   if (id === 'sel-all') { visibleRows().forEach(r => picked.add(r.dataset.s + ':' + r.dataset.id)); renderList(); }
+  if (id === 'sel-copy') copySelection();
+  if (id === 'sel-sim') startSimilar();
   if (id === 'sel-exp') exportDialog([...picked]);
   if (id === 'sel-del') deleteNotes([...picked].map(k => ({ s: k[0], id: k.slice(2) })));
 });

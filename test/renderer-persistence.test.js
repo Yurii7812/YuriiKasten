@@ -24,6 +24,8 @@ async function client(store, initialStorage = {}) {
   w.Range.prototype.getClientRects = () => [];
   w.Range.prototype.getBoundingClientRect = () => ({ left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 });
   w.confirm = () => true; w.alert = x => { errors.push('alert: ' + x); };
+  flags.clipboard = [];
+  Object.defineProperty(w.navigator, 'clipboard', { value: { writeText: async text => { flags.clipboard.push(text); } } });
   for (const [key, value] of Object.entries(initialStorage)) w.localStorage.setItem(key, value);
   w.api = new Proxy({}, { get(_, key) {
     if (String(key).startsWith('on')) return cb => { callbacks[key] = cb; };
@@ -99,5 +101,65 @@ test('renderer: delayed pasted URL title cannot overwrite a reopened and edited 
     assert.equal(c.text(), 'URL取得待ちの間に書いた新しい文章');
     assert.equal(openVault(f.dir).state().notes.find(n => n.id === '1').body, c.text());
     assert.deepEqual(c.errors, []);
+  } finally { c.close(); f.cleanup(); }
+});
+
+test('renderer: ID copies on click; changing and clearing require the note menu and explicit actions', async () => {
+  const f = fixture(), c = await client(f.store);
+  const $ = selector => c.w.document.querySelector(selector);
+  const settings = () => {
+    c.click('[data-act="nmenu"]');
+    [...c.w.document.querySelectorAll('.popmenu>div')].find(b => b.textContent.includes('IDを変更・解除')).click();
+  };
+  try {
+    c.open('1');
+    assert.equal($('#f-id').tagName, 'BUTTON');
+    assert.equal($('#f-id').textContent, '1');
+    assert.equal($('.idline input'), null); assert.equal($('.cpid'), null);
+    assert.equal($('.idline [data-act="clearid"]'), null);
+    assert.equal($('.idline [data-act="giveid"]'), null);
+    c.click('#f-id'); await tick(); assert.deepEqual(c.flags.clipboard, ['1']);
+    assert.equal(f.store.state().notes.find(n => n.id === '1').body, '最初の文章');
+    settings(); $('#id-next').value = ''; c.click('#id-apply');
+    assert.match($('#id-error').textContent, /空欄ではIDは外れません/);
+    assert.ok(f.store.state().notes.some(n => n.id === '1'));
+    $('#id-next').value = '2'; c.click('#id-apply'); await tick();
+    assert.match($('#id-error').textContent, /そのIDは使えません/);
+    $('#id-next').value = '3'; c.click('#id-apply'); await tick();
+    assert.equal($('#modal').style.display, 'none'); assert.equal($('#f-id').textContent, '3');
+    settings(); c.w.confirm = () => false; c.click('#id-clear'); await tick();
+    assert.ok(f.store.state().notes.some(n => n.id === '3')); assert.equal($('#modal').style.display, 'flex');
+    c.w.confirm = () => true; c.click('#id-clear'); await tick();
+    assert.equal($('#f-id').textContent, 'IDなし'); assert.ok($('.idline [data-act="giveid"]'));
+    assert.equal(f.store.state().notes.find(n => n.noid).body, '最初の文章');
+    assert.deepEqual(c.errors, []);
+  } finally { c.close(); f.cleanup(); }
+});
+
+test('renderer: bulk selection buttons copy, cancel, wrap and exclude topic rows; Esc exits without clearing search', async () => {
+  const f = fixture(); f.store.saveTopic({ name: '索引', entry: { s: 'd', id: '1' }, text: '項目 1 2' });
+  const c = await client(f.store), $ = selector => c.w.document.querySelector(selector);
+  const escape = target => target.dispatchEvent(new c.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  try {
+    c.open('1'); c.click('#sel-start');
+    assert.equal($('#sel-copy').disabled, true);
+    c.click('#list .topicrow'); assert.match($('.sel-head').textContent, /0件/);
+    c.click('#sel-all'); assert.equal(c.w.document.querySelectorAll('#list .ck:checked').length, 2);
+    assert.match($('.sel-head').textContent, /2件/);
+    assert.equal(c.w.getComputedStyle($('.sel-actions')).flexWrap, 'wrap');
+    assert.equal(c.w.getComputedStyle($('#selbar')).flexDirection, 'column');
+    c.click('#sel-copy'); await tick();
+    assert.match(c.flags.clipboard.at(-1), /最初の文章/); assert.match(c.flags.clipboard.at(-1), /別のノート/);
+    c.click('#sel-end small'); assert.ok($('#sel-start')); assert.equal($('#list .ck'), null);
+    c.click('#sel-start'); c.click('#sel-all'); c.click('#sel-exp');
+    assert.equal($('#modal').style.display, 'flex');
+    escape($('#modal')); assert.equal($('#modal').style.display, 'none'); assert.ok($('#sel-end'));
+    $('#q').value = '残す検索語'; escape($('#q'));
+    assert.ok($('#sel-start')); assert.equal($('#q').value, '残す検索語');
+    $('#q').value = ''; $('#q').dispatchEvent(new c.w.Event('input', { bubbles: true }));
+    c.click('#sel-start'); c.open('1');
+    c.w.document.body.dispatchEvent(new c.w.KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true }));
+    assert.ok($('#sel-end')); escape(c.w.document.body); assert.ok($('#sel-start'));
+    await c.callbacks.onFlush(); assert.deepEqual(c.errors, []);
   } finally { c.close(); f.cleanup(); }
 });
