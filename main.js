@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
+const {externalUri} = require('./url-links');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -103,7 +104,8 @@ ipcMain.handle('setFileInfo', (_e, name, info) => v.setFileInfo(name, info));
 // 本文のリンクを開く。ファイルは OS の既定のビューアーで、http(s) は既定のブラウザで
 ipcMain.handle('openPath', (_e, rel) => {
   if (process.env.YURIINOTE_OPENLOG || process.env.YURIIKASTEN_OPENLOG) { fs.appendFileSync(process.env.YURIINOTE_OPENLOG || process.env.YURIIKASTEN_OPENLOG, decodeURIComponent(rel) + '\n'); return ''; } // 試験用: 開かず記録だけ
-  if (/^https?:\/\//.test(rel)) return shell.openExternal(rel);
+  const external = externalUri(rel);
+  if (external) return shell.openExternal(external);
   const root = path.resolve(vault), full = path.resolve(root, decodeURIComponent(rel));
   if (!full.startsWith(root + path.sep)) return 'blocked';
   return shell.openPath(full);
@@ -200,6 +202,16 @@ if (!argv.some(a => ['--version', '--update', '--check', '--install'].includes(a
   const w = new BrowserWindow({
     width: 1200, height: 800, title: 'YuriiNote', backgroundColor: '#ffffff', show: false,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
+  });
+  // 外部Webサイトはアプリの中へ遷移させず、OSの既定ブラウザーで開く。
+  w.webContents.setWindowOpenHandler(({url}) => {
+    const target=externalUri(url); if(target) void shell.openExternal(target);
+    return {action:'deny'};
+  });
+  w.webContents.on('will-navigate',(event,url)=>{
+    if(url===w.webContents.getURL()) return;
+    event.preventDefault();
+    const target=externalUri(url); if(target) void shell.openExternal(target);
   });
   mainWin = w; setInterval(phoneTick, 6000); setTimeout(phoneTick, 3000); w.maximize(); w.once('ready-to-show', () => w.show()); w.loadFile('index.html');
 });
