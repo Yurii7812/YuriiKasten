@@ -1721,7 +1721,7 @@ function settingsDialog() {
 // スマホにアプリを入れる（USB でつないだスマホに、adb で）
 api.onPhoneMsg(m => toast(m));
 async function phoneInstall() {
-  if (!confirm('スマホを USB ケーブルでつないで、「USBデバッグ」をオンにしてから、OK を押してください。\nスマホに YuriiKasten のメモのアプリを入れます。')) return;
+  if (!confirm('スマホを USB ケーブルでつないで、「USBデバッグ」をオンにしてから、OK を押してください。\nスマホに YuriiNote のメモのアプリを入れます。')) return;
   toast('入れています…');
   const r = await api.phoneInstall();
   alert(r.message);
