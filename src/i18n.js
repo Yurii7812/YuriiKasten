@@ -24,7 +24,7 @@ const EN = {
 '設定…': 'Settings…', '⚙ 設定': '⚙ Settings', '設定': 'Settings',
 'スマホのメモを取り込む…（USB）': 'Import phone memos… (USB)',
 'スマホにアプリを入れる…（USB）': 'Install phone app… (USB)',
-'スマホを USB ケーブルでつないで、「USBデバッグ」をオンにしてから、OK を押してください。\nスマホに YuriiKasten のメモのアプリを入れます。': 'Connect the phone with a USB cable, turn on "USB debugging", then press OK.\nThe YuriiNote memo app will be installed on the phone.',
+'スマホを USB ケーブルでつないで、「USBデバッグ」をオンにしてから、OK を押してください。\nスマホに YuriiNote のメモのアプリを入れます。': 'Connect the phone with a USB cable, turn on "USB debugging", then press OK.\nThe YuriiNote memo app will be installed on the phone.',
 'スマホのメモを読んでいます…': 'Reading phone memos…',
 '件を取り込みました。タイトルを付けておくと探しやすくなります': ' item(s) imported. Adding titles makes them easier to find',
 '見た目': 'Appearance', 'テーマ': 'Theme', '明るい': 'Light', '暗い': 'Dark', 'OS に合わせる': 'Match OS',
