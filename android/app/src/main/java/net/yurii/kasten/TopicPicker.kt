@@ -103,14 +103,14 @@ private fun TopicRow(t: String, current: String?, counts: Map<String, Int>, onPi
 
 /** 「上」のトピックを、いくつでも選ぶ（探せる。最近使った順。トピックと過去に一緒に使ったものを先に）。 */
 @Composable
-fun UpsDialog(ordered: List<String>, initial: Set<String>, exclude: String?, onDismiss: () -> Unit, onDone: (List<String>) -> Unit, onCreate: (String) -> Boolean) {
+fun UpsDialog(ordered: List<String>, initial: Set<String>, exclude: String?, onDismiss: () -> Unit, onDone: (List<String>) -> Unit, onCreate: (String) -> Boolean, title: String = "上位トピック（いくつでも）") {
     var query by remember { mutableStateOf("") }
     var creating by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
     var createError by remember { mutableStateOf("") }
     val chosen = remember { mutableStateListOf<String>().also { it.addAll(initial) } }
     val shown = remember(ordered, query) { ordered.filter { it != exclude && matchesQuery(topicLabel(it), query) } }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("上位トピック（いくつでも）") },
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) },
         text = { Column {
             OutlinedTextField(query, { query = it }, placeholder = { Text("探す") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             TextButton(onClick = { creating = !creating; createError = "" }) {
