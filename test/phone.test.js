@@ -1,3 +1,4 @@
+process.env.YURIINOTE_POLL_MS = '1';
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs'), os = require('os'), path = require('path');
@@ -55,6 +56,10 @@ D="${data}"
 case "$*" in
   devices) printf 'List of devices attached\\nPH1\\tdevice\\n' ;;
   *"pm path net.yurii.note"*) echo 'package:/x' ;;
+  *"test -d /sdcard/Android/data/net.yurii.note/files"*) [ -n "$EXT" ] && echo y ;;
+  *"exec-out cat /sdcard/Android/data/net.yurii.note/"*) if [ -n "$EXT" ]; then rel="\${*##*net.yurii.note/}"; cat "$D/$rel" 2>/dev/null || exit 1; else exit 1; fi ;;
+  *"sh -c 'cat > /sdcard/Android/data/net.yurii.note/"*) rel="\$(echo "$*" | sed -E "s#.*net.yurii.note/([^']*)\\.tmp'.*#\\1#")"; cat > "$D/$rel.tmp" ;;
+  *"mv /sdcard/Android/data/net.yurii.note/"*) all="$*"; tail="\${all##*mv }"; set -- $tail; a="\${1##*net.yurii.note/}"; b="\${2##*net.yurii.note/}"; mv "$D/$a" "$D/$b" ;;
   *"exec-out run-as net.yurii.note cat "*) rel="\${*##*cat }"; cat "$D/$rel" ;;
   *"sh -c 'cat > "*) rel="\$(echo "$*" | sed -E "s/.*cat > ([^']*)'.*/\\1/")"; cat > "$D/$rel" ;;
   *"run-as net.yurii.note mv "*) all="$*"; tail="\${all##*mv }"; set -- $tail; mv "$D/$1" "$D/$2" ;;
@@ -153,4 +158,16 @@ test('スマホの紙のIndex: USB で読む・取り込んだ印（rev）を返
   const snap = { version: 1, entries: [{ kw: '瞑想', reading: '', ids: ['6'] }], topics: [{ name: '紙の1', entryId: '1', text: 'GUI 1f' }] };
   assert.ok((await P.sendPaperIndex(snap)).ok);
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(ph.data, 'files/paper_index_pc.json'), 'utf8')), snap);
+});
+
+test('スマホのデータが外部領域（Android/data）にある新しい版でも、読み書きできる（昔の内部領域は run-as のまま）', async () => {
+  const d = tmp(), ph = fakePhone(d); process.env.ADB = ph.adb; process.env.EXT = '1';
+  try {
+    fs.writeFileSync(path.join(ph.data, 'files/entries.json'), JSON.stringify([{ id: 'a', created: 1, topic: '', text: '外部領域のメモ', images: [], parent: null, contexts: [], exported: false, edited: 0 }]));
+    const P = load(), r = await P.pull(); assert.ok(r.ok, r.message); assert.strictEqual(r.data.entries.length, 1); assert.strictEqual(r.data.entries[0].text, '外部領域のメモ');
+    const m = await P.mark([{ id: 'a' }], [], 0); assert.ok(m.ok);
+    assert.strictEqual(JSON.parse(fs.readFileSync(path.join(ph.data, 'files/imported.json'), 'utf8')).entries.length, 1);   // 取り込んだ印が、外部領域に書けた
+    assert.ok((await P.sendPaperIndex({ version: 1, entries: [], topics: [] })).ok);
+    assert.ok(fs.existsSync(path.join(ph.data, 'files/paper_index_pc.json')));
+  } finally { delete process.env.EXT; }
 });

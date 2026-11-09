@@ -53,13 +53,22 @@ async function install(opts = {}, say = () => { }) {
   say(`スマホに入れています…（${serial}）`);
   const r = await run(adb, A(['install', '-r', '-d', apk]), { timeout: 180000 });
   if (r.code !== 0 || !/Success/.test(r.out)) return { ok: false, message: '入れられませんでした:\n' + (r.out + r.err).trim().split('\n').slice(-4).join('\n') };
+  say('アプリを最適化しています…（数十秒）');
+  await run(adb, A(['shell', 'cmd', 'package', 'compile', '-m', 'speed', '-f', PKG]), { timeout: 240000 });   // 事前に最適化しておくと、動きがずっと軽い（だめでも、そのまま使える）
+  if (!(await hasExt({ adb, A }, PKG))) {   // 新しい版は、最初に開いたときに、データを外部領域へ移す（PC が読めるように）。一度だけ、アプリを開く
+    say('アプリを一度開いて、データを移しています…');
+    await run(adb, A(['shell', 'monkey', '-p', PKG, '-c', 'android.intent.category.LAUNCHER', '1']));
+    const ms = Number(process.env.YURIINOTE_POLL_MS) || 1000;
+    for (let i = 0; i < 10 && !(await hasExt({ adb, A }, PKG)); i++) await new Promise(r => setTimeout(r, ms));
+  }
   const note = '';
   if (opts.open !== false) await run(adb, A(['shell', 'monkey', '-p', PKG, '-c', 'android.intent.category.LAUNCHER', '1']));
   return { ok: true, message: 'スマホにアプリを入れました（YuriiNote）。' + note + (ready.length > 1 ? `\n（つながっていたスマホが複数あったので、${serial} に入れました）` : '') };
 }
 
 // ===== スマホのメモを USB で取り込む（Gnosis の \M と同じやり方）=====
-// アプリの中のデータ（files/entries.json・images/・scans/・settings.json）を、adb の run-as で直接読む（デバッグ版の APK だけ）
+// アプリのデータ（files/entries.json・images/・scans/・settings.json）を、adb で直接読む。
+// 新しい版: アプリ専用の外部領域（/sdcard/Android/data/<アプリ>/files）。昔の版（デバッグ版）: 内部の領域を run-as で。どちらでも読める
 const runBuf = (cmd, args, { input, timeout = 120000 } = {}) => new Promise(resolve => {
   const p = cp.spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] }); const out = []; let err = '', done = false;
   const t = setTimeout(() => { if (!done) { p.kill(); resolve({ code: -1, out: Buffer.concat(out), err: err + '（時間切れ）' }); } }, timeout);
@@ -81,21 +90,30 @@ async function ready() {
   if (!pkgs.length) return { error: 'スマホに YuriiNote のアプリが入っていません。「スマホにアプリを入れる…」で入れてください。' };
   return { adb, serial, A, pkgs };
 }
-const cat = (r, rel, pkg) => runBuf(r.adb, r.A(['exec-out', 'run-as', pkg, 'cat', rel]));
-const putFile = async (r, rel, text, pkg) => {   // アプリの権限で、一時ファイルに書いてから置き換える。書けたかを読み返して確かめる（だめなら adb push 経由でもう一度）
-  const want = Buffer.byteLength(text);
+// データの場所: 新しい版は外部領域。外に無ければ（昔の版・まだ移っていない）、内部の領域を run-as で
+const EXT = pkg => `/sdcard/Android/data/${pkg}/`;
+const hasExt = async (r, pkg) => (await run(r.adb, r.A(['shell', `test -d ${EXT(pkg)}files && echo y`]))).out.trim() === 'y';
+const catExt = (r, rel, pkg) => runBuf(r.adb, r.A(['exec-out', 'cat', EXT(pkg) + rel]));
+const catRun = (r, rel, pkg) => runBuf(r.adb, r.A(['exec-out', 'run-as', pkg, 'cat', rel]));
+const cat = async (r, rel, pkg) => { const g = await catExt(r, rel, pkg); return g.code === 0 ? g : catRun(r, rel, pkg); };
+// 一時ファイルに書いてから置き換える。書けたかを読み返して確かめる（だめなら adb push 経由でもう一度）
+const putVia = (mk) => async (r, rel, text, pkg) => {
+  const want = Buffer.byteLength(text), m = mk(pkg, rel);
   const ok = async () => { const g = await cat(r, rel, pkg); return g.code === 0 && g.out.length === want; };
-  const w = await run(r.adb, r.A(['shell', `run-as ${pkg} sh -c 'cat > ${rel}.tmp'`]), { input: text });
-  if (w.code === 0 && (await run(r.adb, r.A(['shell', `run-as ${pkg} mv ${rel}.tmp ${rel}`]))).code === 0 && await ok()) return true;
+  const w = await run(r.adb, r.A(['shell', m.write]), { input: text });
+  if (w.code === 0 && (await run(r.adb, r.A(['shell', m.move]))).code === 0 && await ok()) return true;
   const tmp = path.join(os.tmpdir(), 'yn-' + process.pid + '-' + path.basename(rel)), dev = '/data/local/tmp/yn-' + path.basename(rel);   // 大きいファイルは、こちら
   try {
     fs.writeFileSync(tmp, text);
     if ((await run(r.adb, r.A(['push', tmp, dev]))).code !== 0) return false;
-    const c = await run(r.adb, r.A(['shell', `run-as ${pkg} sh -c 'cat ${dev} > ${rel}.tmp && mv ${rel}.tmp ${rel}'`]));
+    const c = await run(r.adb, r.A(['shell', m.fromDev(dev)]));
     await run(r.adb, r.A(['shell', 'rm', '-f', dev]));
     return c.code === 0 && await ok();
   } finally { try { fs.unlinkSync(tmp); } catch { } }
 };
+const putExt = putVia((pkg, rel) => { const d = EXT(pkg) + rel; return { write: `sh -c 'cat > ${d}.tmp'`, move: `mv ${d}.tmp ${d}`, fromDev: dev => `sh -c 'cat ${dev} > ${d}.tmp && mv ${d}.tmp ${d}'` }; });
+const putRun = putVia((pkg, rel) => ({ write: `run-as ${pkg} sh -c 'cat > ${rel}.tmp'`, move: `run-as ${pkg} mv ${rel}.tmp ${rel}`, fromDev: dev => `run-as ${pkg} sh -c 'cat ${dev} > ${rel}.tmp && mv ${rel}.tmp ${rel}'` }));
+const putFile = async (r, rel, text, pkg) => (await hasExt(r, pkg)) ? putExt(r, rel, text, pkg) : putRun(r, rel, text, pkg);
 const parseJson = (buf, fallback) => { try { return JSON.parse(buf.toString('utf8')); } catch { return fallback; } };
 // スマホのメモ・写真・スキャンを読む。1 つでも読めなければ中止（取り込み済みにしない）
 async function pull() {

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -38,9 +39,9 @@ data class PaperView(val entries: List<PaperEntry>, val topics: List<PaperTopic>
  * 画面に出すのは「PC の分 ＋ スマホで足した分 − スマホで消した分」。PC が取り込んだと分かれば、スマホの分は PC の分に入ったものとして空にする。
  */
 class PaperStore(private val ctx: Context) {
-    private val localFile get() = File(ctx.filesDir, "paper_index.json")
-    private val pcFile get() = File(ctx.filesDir, "paper_index_pc.json")
-    private val ackFile get() = File(ctx.filesDir, "paper_index_ack.json")
+    private val localFile get() = File(Storage.dir(ctx), "paper_index.json")
+    private val pcFile get() = File(Storage.dir(ctx), "paper_index_pc.json")
+    private val ackFile get() = File(Storage.dir(ctx), "paper_index_ack.json")
 
     private class Local(var rev: Int, val entries: MutableList<PaperEntry>, val removed: MutableList<Pair<String, String>>, val topics: MutableList<PaperTopic>)
 
@@ -71,7 +72,7 @@ class PaperStore(private val ctx: Context) {
         o.put("entries", JSONArray().also { a -> l.entries.forEach { a.put(JSONObject().put("kw", it.kw).put("reading", it.reading).put("ids", JSONArray(it.ids))) } })
         o.put("removed", JSONArray().also { a -> l.removed.forEach { a.put(JSONObject().put("kw", it.first).put("id", it.second)) } })
         o.put("topics", JSONArray().also { a -> l.topics.forEach { a.put(JSONObject().put("name", it.name).put("entryId", it.entryId).put("text", it.text)) } })
-        val tmp = File(ctx.filesDir, "paper_index.json.tmp"); tmp.writeText(o.toString()); tmp.renameTo(localFile)
+        val tmp = File(Storage.dir(ctx), "paper_index.json.tmp"); tmp.writeText(o.toString()); tmp.renameTo(localFile)
     }
 
     private fun readPc(): Pair<List<PaperEntry>, List<PaperTopic>> {
@@ -114,6 +115,18 @@ class PaperStore(private val ctx: Context) {
         l.rev += 1; writeLocal(l)
     }
 
+    /** キーワードの行を丸ごと消す（番号 1 つずつを消す操作は、わざと作らない）。 */
+    fun removeEntry(kw: String) {
+        view().entries.firstOrNull { it.kw == kw }?.ids?.forEach { removeId(kw, it) }
+    }
+
+    /** キーワードの行を直す（名前・番号）。名前を変えたときは、古い行の番号は全部外れる。 */
+    fun replaceEntry(oldKw: String, newKw: String, ids: List<String>) {
+        val old = view().entries.firstOrNull { it.kw == oldKw }?.ids ?: emptyList()
+        old.filter { oldKw != newKw.trim() || it !in ids }.forEach { removeId(oldKw, it) }
+        addEntry(newKw, ids)
+    }
+
     /** 紙のトピックIndex を、作る・直す。 */
     fun saveTopic(name: String, entryId: String, text: String) {
         val l = readLocal(); val n = name.trim(); if (n.isEmpty() || entryId.isEmpty()) return
@@ -130,7 +143,7 @@ fun parsePaperIds(raw: String): Pair<List<String>, List<String>> {
     return toks.filter { PaperId.isValid(it) }.distinct() to toks.filter { !PaperId.isValid(it) }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun PaperIndexScreen(onClose: () -> Unit) {
     val ctx = LocalContext.current
@@ -139,7 +152,9 @@ fun PaperIndexScreen(onClose: () -> Unit) {
     var tab by remember { mutableStateOf(0) }                          // 0 キーワード / 1 トピックIndex
     var addEntry by remember { mutableStateOf(false) }
     var editTopic by remember { mutableStateOf<PaperTopic?>(null) }    // 直す・作るトピックIndex（name が空なら新しく）
-    var removeAsk by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var menuFor by remember { mutableStateOf<PaperEntry?>(null) }      // 長押しした行（直す・削除）
+    var editEntry by remember { mutableStateOf<PaperEntry?>(null) }
+    var deleteEntry by remember { mutableStateOf<PaperEntry?>(null) }
     fun reload() { view = store.view() }
     BackHandler(onBack = onClose)
     Scaffold(topBar = {
@@ -156,16 +171,19 @@ fun PaperIndexScreen(onClose: () -> Unit) {
                 FilterChip(tab == 1, { tab = 1 }, { Text("トピックIndex ${view.topics.size}") }, shape = RoundedCornerShape(16.dp))
             }
             if (tab == 0) {
-                if (view.entries.isEmpty()) Text("紙のIndex はまだありません。下のボタンで、キーワードと紙の番号（例: 1a 2b）を足せます。", Modifier.padding(16.dp), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (view.entries.isEmpty()) Text("紙のIndex はまだありません。下のボタンで、キーワードと紙の番号（例: 1a 2b）を足せます。（直す・削除は、行を長押し）", Modifier.padding(16.dp), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 LazyColumn(contentPadding = PaddingValues(12.dp, 8.dp, 12.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(view.entries, key = { it.kw }) { e ->
-                        Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
+                        // 番号 1 つずつは、押しても消えない。行を長押しして、キーワードを直す・削除する
+                        Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 1.dp,
+                            modifier = Modifier.fillMaxWidth().combinedClickable(onClick = {}, onLongClick = { menuFor = e })) {
                             Column(Modifier.padding(12.dp)) {
                                 Text(e.kw, fontSize = 17.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
-                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
                                     e.ids.forEach { id ->
-                                        AssistChip(onClick = { removeAsk = e.kw to id }, label = { Text(id) },
-                                            trailingIcon = { Icon(Icons.Filled.Close, "外す", Modifier.size(16.dp)) })
+                                        Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                                            Text(id, Modifier.padding(horizontal = 10.dp, vertical = 4.dp), fontSize = 14.sp)
+                                        }
                                     }
                                 }
                             }
@@ -208,10 +226,37 @@ fun PaperIndexScreen(onClose: () -> Unit) {
             dismissButton = { TextButton(onClick = { addEntry = false }) { Text("やめる") } })
     }
 
-    removeAsk?.let { (kw, id) ->
-        AlertDialog(onDismissRequest = { removeAsk = null }, title = { Text("外しますか？") }, text = { Text("「$kw」から、紙の番号 $id を外します。") },
-            confirmButton = { TextButton(onClick = { store.removeId(kw, id); removeAsk = null; reload() }) { Text("外す") } },
-            dismissButton = { TextButton(onClick = { removeAsk = null }) { Text("やめる") } })
+    // 長押しのメニュー: キーワードを直す／削除
+    menuFor?.let { e ->
+        AlertDialog(onDismissRequest = { menuFor = null }, title = { Text(e.kw) },
+            text = {
+                Column {
+                    TextButton(onClick = { editEntry = e; menuFor = null }, modifier = Modifier.fillMaxWidth()) { Text("✏️ キーワードを直す", fontSize = 17.sp, modifier = Modifier.fillMaxWidth()) }
+                    TextButton(onClick = { deleteEntry = e; menuFor = null }, modifier = Modifier.fillMaxWidth()) { Text("🗑 削除", fontSize = 17.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.fillMaxWidth()) }
+                }
+            },
+            confirmButton = {}, dismissButton = { TextButton(onClick = { menuFor = null }) { Text("閉じる") } })
+    }
+    editEntry?.let { e ->
+        var kw by remember(e) { mutableStateOf(e.kw) }
+        var raw by remember(e) { mutableStateOf(e.ids.joinToString(" ")) }
+        val (ok, bad) = parsePaperIds(raw)
+        AlertDialog(onDismissRequest = { editEntry = null }, title = { Text("✏️ キーワードを直す") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(kw, { kw = it }, label = { Text("キーワード") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(raw, { raw = it }, label = { Text("紙の番号（空白で区切る）") }, modifier = Modifier.fillMaxWidth())
+                    if (bad.isNotEmpty()) Text("番号にできません: " + bad.joinToString("、") + "（例: 1a2）", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                }
+            },
+            confirmButton = { TextButton(enabled = kw.isNotBlank() && ok.isNotEmpty() && bad.isEmpty(), onClick = { store.replaceEntry(e.kw, kw, ok); editEntry = null; reload() }) { Text("決定") } },
+            dismissButton = { TextButton(onClick = { editEntry = null }) { Text("やめる") } })
+    }
+    deleteEntry?.let { e ->
+        AlertDialog(onDismissRequest = { deleteEntry = null }, title = { Text("削除しますか？") },
+            text = { Text("紙のIndex から「${e.kw}」を削除します。番号 ${e.ids.joinToString(" ")} も、このキーワードから外れます。") },
+            confirmButton = { TextButton(onClick = { store.removeEntry(e.kw); deleteEntry = null; reload() }) { Text("削除", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { deleteEntry = null }) { Text("やめる") } })
     }
 
     editTopic?.let { t ->

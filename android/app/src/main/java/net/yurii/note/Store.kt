@@ -184,9 +184,9 @@ fun mergePcMemos(entries: List<Entry>, memos: List<PcMemo>, deleted: Set<String>
  * PC の Gnosis が USB（adb の run-as）で直接読み、取り込んだ id を imported.json に書き戻す。
  */
 class Store(private val ctx: Context) {
-    private val file get() = File(ctx.filesDir, "entries.json")
-    private val settingsFile get() = File(ctx.filesDir, "settings.json")
-    val imageDir: File by lazy { File(ctx.filesDir, "images").apply { mkdirs() } }
+    private val file get() = File(Storage.dir(ctx), "entries.json")
+    private val settingsFile get() = File(Storage.dir(ctx), "settings.json")
+    val imageDir: File by lazy { File(Storage.dir(ctx), "images").apply { mkdirs() } }
 
     fun load(): List<Entry> {
         if (!file.exists()) return emptyList()
@@ -197,14 +197,14 @@ class Store(private val ctx: Context) {
     fun save(list: List<Entry>) {
         val arr = JSONArray()
         list.forEach { arr.put(toJson(it)) }
-        val tmp = File(ctx.filesDir, "entries.json.tmp")
+        val tmp = File(Storage.dir(ctx), "entries.json.tmp")
         tmp.writeText(arr.toString())
         check(tmp.renameTo(file)) { "メモを保存できませんでした" }
     }
 
     /** PC の Gnosis が取り込んだ id（PC が書き戻す）。 */
     fun importedIds(entries: List<Entry>? = null): Set<String> {
-        val f = File(ctx.filesDir, "imported.json")
+        val f = File(Storage.dir(ctx), "imported.json")
         if (!f.exists()) return (entries ?: load()).filter { it.pcId != null }.map { it.id }.toSet()
         return try {
             val imported = JSONObject(f.readText()).optJSONArray("entries") ?: JSONArray()
@@ -219,12 +219,12 @@ class Store(private val ctx: Context) {
     }
 
     /** 書きかけ（送る前の文章）。アプリを閉じても・OS に終了されても消えないよう、書くたびにファイルへ。 */
-    private val draftFile get() = File(ctx.filesDir, "draft.txt")
+    private val draftFile get() = File(Storage.dir(ctx), "draft.txt")
     fun loadDraft(): String = try { draftFile.takeIf { it.exists() }?.readText().orEmpty() } catch (e: Exception) { "" }
     fun saveDraft(text: String) {
         try {
             if (text.isEmpty()) { draftFile.delete(); return }
-            val tmp = File(ctx.filesDir, "draft.txt.tmp"); tmp.writeText(text); tmp.renameTo(draftFile)
+            val tmp = File(Storage.dir(ctx), "draft.txt.tmp"); tmp.writeText(text); tmp.renameTo(draftFile)
         } catch (e: Exception) { }
     }
 
@@ -267,7 +267,7 @@ class Store(private val ctx: Context) {
 
     /** PC の Gnosis にある時系列記録の名前（PC が \M のときに files/records.json へ書く）。表記揺れを防ぐため、ここから選ぶ。 */
     fun loadRecords(): List<String> {
-        val f = File(ctx.filesDir, "records.json")
+        val f = File(Storage.dir(ctx), "records.json")
         if (!f.exists()) return emptyList()
         return try {
             val a = JSONObject(f.readText()).optJSONArray("records") ?: return emptyList()
@@ -277,7 +277,7 @@ class Store(private val ctx: Context) {
 
     /** PC のチャットメモにあるトピック名（USB で取り込むたびに、PC が records.json の topics へ書く）。スマホにも同じトピックが並ぶ。 */
     fun loadPcTopics(): List<String> {
-        val f = File(ctx.filesDir, "records.json")
+        val f = File(Storage.dir(ctx), "records.json")
         if (!f.exists()) return emptyList()
         return try {
             val a = JSONObject(f.readText()).optJSONArray("topics") ?: return emptyList()
@@ -287,7 +287,7 @@ class Store(private val ctx: Context) {
 
     /** PC のチャットメモ・日のノート（USB で取り込むたびに、PC が files/pc_memos.json に全部書く）。 */
     fun loadPc(): Pair<List<PcMemo>, List<PcDay>> {
-        val f = File(ctx.filesDir, "pc_memos.json")
+        val f = File(Storage.dir(ctx), "pc_memos.json")
         if (!f.exists()) return Pair(emptyList(), emptyList())
         return try {
             val o = JSONObject(f.readText())
@@ -298,10 +298,10 @@ class Store(private val ctx: Context) {
     }
     /** PC で消した、スマホで書いたメモの id（PC が pc_memos.json の removed に書く）。スマホからも消す。 */
     fun loadPcRemoved(): Set<String> {
-        val f = File(ctx.filesDir, "pc_memos.json"); if (!f.exists()) return emptySet()
+        val f = File(Storage.dir(ctx), "pc_memos.json"); if (!f.exists()) return emptySet()
         return try { val a = JSONObject(f.readText()).optJSONArray("removed") ?: return emptySet(); (0 until a.length()).map { a.getString(it) }.toSet() } catch (e: Exception) { emptySet() }
     }
-    private val pcDeletedFile get() = File(ctx.filesDir, "pc_deleted.json")
+    private val pcDeletedFile get() = File(Storage.dir(ctx), "pc_deleted.json")
     fun loadPcDeleted(): Set<String> = try {
         val a = JSONObject(pcDeletedFile.readText()).optJSONArray("ids") ?: JSONArray(); (0 until a.length()).map { a.getString(it) }.toSet()
     } catch (e: Exception) { emptySet() }

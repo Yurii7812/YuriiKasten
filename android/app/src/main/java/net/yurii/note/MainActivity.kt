@@ -326,10 +326,10 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>, sharedState:
     }
     // PC が USB でメモを書き込んだら、アプリを開いたままでも、すぐ取り込む（2 秒ごとに、ファイルの更新を見る）
     LaunchedEffect(Unit) {
-        var seen = File(ctx.filesDir, "pc_memos.json").lastModified()
+        var seen = File(Storage.dir(ctx), "pc_memos.json").lastModified()
         while (true) {
             delay(2000)
-            val now = File(ctx.filesDir, "pc_memos.json").lastModified()
+            val now = File(Storage.dir(ctx), "pc_memos.json").lastModified()
             if (now != seen) {
                 seen = now
                 val cur = entries.toList(); val merged = store.syncPc(cur)

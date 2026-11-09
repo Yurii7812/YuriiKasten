@@ -57,7 +57,7 @@ data class Scan(val name: String, val id: String, val imported: Boolean = false)
  * 取り込み済みの名前は PC が scans_done.json で返す → 印を付けるだけで写真は残す（見返せる。消すのは本人）。
  */
 class ScanStore(private val ctx: Context) {
-    val dir: File by lazy { File(ctx.filesDir, "scans").apply { mkdirs() } }
+    val dir: File by lazy { File(Storage.dir(ctx), "scans").apply { mkdirs() } }
     private val index get() = File(dir, "scans.json")
 
     fun load(): List<Scan> {
@@ -118,7 +118,7 @@ class ScanStore(private val ctx: Context) {
     }
 
     private fun dropImported() {
-        val f = File(ctx.filesDir, "scans_done.json")
+        val f = File(Storage.dir(ctx), "scans_done.json")
         if (!f.exists()) return
         try {
             val done = JSONArray(f.readText())

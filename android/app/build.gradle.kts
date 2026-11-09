@@ -25,11 +25,12 @@ android {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("debug")
         }
-        // PC の \M は adb の run-as でスマホのデータを読むので、デバッグ可能なままにする。そのうえで R8（コードの最適化）を効かせて、
-        // 普通のデバッグ版より軽く・速くする（Compose はデバッグ版だと特に遅い）。gnosis#apk_install はこれを入れる
+        // PC はスマホのデータを、アプリ専用の外部領域（Android/data/<アプリ>/files）から adb で読み書きする（Storage.kt）ので、
+        // デバッグ可能にしない。デバッグ可能だと、端末が事前の最適化（AOT）をしてくれず、Compose がとても遅い。
+        // そのうえで R8（コードの最適化）を効かせて、軽く・速くする。
         create("fast") {
             initWith(getByName("release"))
-            isDebuggable = true
+            isDebuggable = false
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
