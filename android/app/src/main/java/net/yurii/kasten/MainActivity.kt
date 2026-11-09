@@ -675,7 +675,10 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>, sharedState:
                     LazyRow(Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(pendingImages.toList()) { name ->
                             Box {
-                                AsyncImage(File(store.imageDir, name), null, Modifier.size(64.dp), contentScale = ContentScale.Crop)
+                                if (isPicture(name)) AsyncImage(File(store.imageDir, name), null, Modifier.size(64.dp), contentScale = ContentScale.Crop)
+                                else Surface(Modifier.size(width=140.dp,height=64.dp).clickable { openSharedFile(ctx,store,name) },color=MaterialTheme.colorScheme.surfaceVariant) {
+                                    Text("📎 " + name.substringAfterLast('-'),Modifier.padding(8.dp),fontSize=12.sp,maxLines=2,overflow=TextOverflow.Ellipsis)
+                                }
                                 IconButton(onClick = { pendingImages.remove(name) }, Modifier.size(24.dp).align(Alignment.TopEnd)) {
                                     Icon(Icons.Filled.Cancel, "外す")
                                 }
@@ -1288,6 +1291,7 @@ private fun MemoSheet(state: MutableState<String?>, byId: Map<String, Entry>, ac
 private fun Bubble(e: Entry, done: Boolean, byId: Map<String, Entry>, store: Store, selecting: Boolean, selected: Boolean, selectionMode: Boolean,
                    open: Boolean, onToggleOpen: (() -> Unit)?, onTap: () -> Unit, onLong: () -> Unit, onJump: (String) -> Unit,
                    alignStart: Boolean = false) {
+    val ctx = LocalContext.current
     // 日記も他のメモと同じ色（トピックは右下の小さな文字で分かる）
     // 吹き出し: やわらかい青、角は丸く（話している側の下の角だけ小さく）。取り込み済みは薄くして、目立たせない
     val colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else Color(0xFFEDF1FF))
@@ -1305,8 +1309,12 @@ private fun Bubble(e: Entry, done: Boolean, byId: Map<String, Entry>, store: Sto
                         modifier = if (c in byId) Modifier.clickable { onJump(c) }.padding(vertical = 2.dp) else Modifier)
                 }
                 e.images.forEach { name ->
-                    AsyncImage(File(store.imageDir, name), null, Modifier.padding(vertical = 4.dp).heightIn(max = 220.dp).fillMaxWidth(),
+                    if (isPicture(name)) AsyncImage(File(store.imageDir, name), null, Modifier.padding(vertical = 4.dp).heightIn(max = 220.dp).fillMaxWidth(),
                         contentScale = ContentScale.Fit)
+                    else TextButton(onClick = { openSharedFile(ctx,store,name) }, Modifier.padding(vertical=4.dp)) {
+                        Icon(Icons.Filled.AttachFile,null)
+                        Text("ファイル: " + name.substringAfterLast('-'),maxLines=2)
+                    }
                 }
                 if (e.text.isNotEmpty()) {
                     // [表示名](memo:ID) は表示名だけを下線つきで見せる。押して飛ぶのは下の「リンク:」の行。
