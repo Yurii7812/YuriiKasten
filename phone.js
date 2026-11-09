@@ -106,6 +106,7 @@ async function pull() {
     const d = one.data;
     all.entries.push(...d.entries.filter(e => !all.entries.some(x => x.id === e.id))); Object.assign(all.images, d.images);
     all.scans.index.push(...d.scans.index.filter(x => !all.scans.index.some(y => y.name === x.name))); Object.assign(all.scans.files, d.scans.files); Object.assign(all.topicModes, d.topicModes); all.pcDeleted.push(...(d.pcDeleted || []));
+    if (d.paperIndex) { const a = all.paperIndex || (all.paperIndex = { entries: [], removed: [], topics: [], rev: 0 }); a.entries.push(...(d.paperIndex.entries || [])); a.removed.push(...(d.paperIndex.removed || [])); a.topics.push(...(d.paperIndex.topics || [])); a.rev = Math.max(a.rev, d.paperIndex.rev || 0); }
   }
   return { ok: true, data: all };
 }
@@ -129,13 +130,15 @@ async function pullOne(r, pkg) {
   }
   const st = await cat(r, 'files/settings.json', pkg), topicModes = (st.code === 0 && parseJson(st.out, {}).topicModes) || {};
   const pd = await cat(r, 'files/pc_deleted.json', pkg), pcDeleted = (pd.code === 0 && parseJson(pd.out, {}).ids) || [];   // スマホで消した、PC から来たメモ
-  return { ok: true, data: { entries, images, scans, topicModes, pcDeleted } };
+  const pi = await cat(r, 'files/paper_index.json', pkg), paperIndex = pi.code === 0 ? parseJson(pi.out, null) : null;   // スマホで書いた紙のIndex・紙のトピックIndex
+  return { ok: true, data: { entries, images, scans, topicModes, pcDeleted, paperIndex } };
 }
 // 取り込んだメモ（原本のまま）と、取り込んだスキャンの名前を、スマホへ返す → スマホに「取り込み済み」と出て、そのメモだけ消せるようになる
-async function mark(importedEntries, scansDone) {
+async function mark(importedEntries, scansDone, paperRev) {
   const r = await ready(); if (r.error) return { ok: false, message: r.error };
   for (const pkg of r.pkgs) {
     if (scansDone && scansDone.length && !await putFile(r, 'files/scans_done.json', JSON.stringify(scansDone), pkg)) return { ok: false, message: 'スマホへ、取り込み済みの印を返せませんでした' };
+    if (paperRev && !await putFile(r, 'files/paper_index_ack.json', JSON.stringify({ rev: paperRev }), pkg)) return { ok: false, message: 'スマホへ、紙のIndexの取り込み済みの印を返せませんでした' };
     if (!await putFile(r, 'files/imported.json', JSON.stringify({ version: 2, entries: importedEntries }), pkg)) return { ok: false, message: 'スマホへ、取り込み済みの印を返せませんでした' };
   }
   return { ok: true };
@@ -144,6 +147,12 @@ async function mark(importedEntries, scansDone) {
 async function sendRecords(names, topics = []) {
   const r = await ready(); if (r.error) return { ok: false, message: r.error };
   let ok = true; for (const pkg of r.pkgs) ok = (await putFile(r, 'files/records.json', JSON.stringify({ version: 2, records: names.filter(n => n && n !== '日記'), topics: [...new Set(topics)].filter(n => n && n !== '日記' && !names.includes(n)) }), pkg)) && ok;
+  return { ok };
+}
+// PC の紙のIndex・紙のトピックIndex を、スマホへ渡す（スマホで見られる・足せる）
+async function sendPaperIndex(data) {
+  const r = await ready(); if (r.error) return { ok: false, message: r.error };
+  let ok = true; for (const pkg of r.pkgs) ok = (await putFile(r, 'files/paper_index_pc.json', JSON.stringify(data), pkg)) && ok;
   return { ok };
 }
 // PC のチャットメモ（スマホで書いたもの以外）と日のノートを、スマホへ全部渡す（メモは共有）
@@ -167,4 +176,4 @@ async function installedSha(serial) {
 }
 // 入れようとしている APK の指紋。前に入れたものと違えば、更新が必要（バージョン番号を上げ忘れても、分かる）
 function apkSha() { const f = apkPath(); if (!f) return null; try { return require('crypto').createHash('sha256').update(fs.readFileSync(f)).digest('hex'); } catch { return null; } }
-module.exports = { listDevices, apkSha, installedSha, sendPcMemos, install, findAdb, apkPath, parseDevices, PKG, pull, mark, sendRecords };
+module.exports = { listDevices, apkSha, installedSha, sendPaperIndex, sendPcMemos, install, findAdb, apkPath, parseDevices, PKG, pull, mark, sendRecords };

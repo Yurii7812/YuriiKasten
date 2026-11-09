@@ -256,6 +256,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>, sharedState:
     var moreMenu by remember { mutableStateOf(false) }
     var pcDaysOpen by remember { mutableStateOf(false) }   // PC の日のノート（日記・時系列記録）を見る
     var scanOpen by remember { mutableStateOf(false) }             // 紙のスキャンの画面
+    var paperOpen by remember { mutableStateOf(false) }            // 紙のIndex・紙のトピックIndex の画面
     var bigInput by remember { mutableStateOf(false) }             // 入力欄を大きくしている
     var focusTick by remember { mutableStateOf(0) }                // 増やすと入力欄を選んでキーボードを出す
     var rangeAnchor by remember { mutableStateOf<String?>(null) }  // 範囲選択の起点（最後に選んだメモ）
@@ -291,6 +292,7 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>, sharedState:
     var renameFor by remember { mutableStateOf<String?>(null) }    // 名前を変えるトピック
     var deleteTopicFor by remember { mutableStateOf<String?>(null) } // 消すトピック
     if (scanOpen) { ScanScreen(onClose = { scanOpen = false }); return }
+    if (paperOpen) { PaperIndexScreen(onClose = { paperOpen = false }); return }
     if (pcDaysOpen) { PcDaysScreen(days = remember { store.loadPc().second }, onClose = { pcDaysOpen = false }); return }
     val prompt by promptState
     val focus = remember { FocusRequester() }
@@ -609,6 +611,9 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>, sharedState:
                                 moreMenu = false; settings = settings.copy(expandAll = !settings.expandAll); store.saveSettings(settings); expanded.clear()
                             })
                             if (store.loadPc().second.isNotEmpty()) DropdownMenuItem(text = { Text("PC の日のノート（日記・時系列記録）") }, leadingIcon = { Icon(Icons.Filled.Event, null) }, onClick = { moreMenu = false; pcDaysOpen = true })
+                            DropdownMenuItem(text = { Text("紙のIndex") }, leadingIcon = { Icon(Icons.Filled.MenuBook, null) }, onClick = {
+                                moreMenu = false; paperOpen = true
+                            })
                             DropdownMenuItem(text = { Text("紙のスキャン") }, leadingIcon = { Icon(Icons.Filled.CameraAlt, null) }, onClick = {
                                 moreMenu = false; scanOpen = true
                             })

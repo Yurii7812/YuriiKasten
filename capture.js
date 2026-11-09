@@ -17,7 +17,7 @@ const saveState = (v, st) => fs.writeFileSync(stateFile(v), JSON.stringify(st, n
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 function importCapture(v, data) {
-  const st = loadState(v), sum = { notes: 0, chats: 0, days: 0, appended: 0, scans: 0, blankScans: 0, already: 0, updated: 0, removed: 0 };
+  const st = loadState(v), sum = { notes: 0, chats: 0, days: 0, appended: 0, scans: 0, blankScans: 0, already: 0, updated: 0, removed: 0, paperIndex: 0, paperTopics: 0 };
   const names = new Map();   // スマホの写真の名前 → vault に入れた名前
   const saveImages = list => (list || []).filter(n => data.images[n]).map(n => {
     if (!names.has(n)) names.set(n, v.addFiles([{ name: n, bytes: [...data.images[n]] }])[0]);
@@ -69,6 +69,16 @@ function importCapture(v, data) {
     }
   }
   if (chatTouched) v.saveDoc('C_チャット', chat);
+  // スマホで書いた紙のIndex・紙のトピックIndex（同じものを何度取り込んでも、増えない。消した分は、消す）
+  const pidx = data.paperIndex;
+  if (pidx) {
+    for (const e of pidx.entries || []) if (e && e.kw && (e.ids || []).length) { v.addPaperIndex({ kw: e.kw, reading: e.reading || '', ids: e.ids }); sum.paperIndex += e.ids.length; }
+    for (const x of pidx.removed || []) if (x && x.kw && x.id) v.removePaperIndex({ kw: x.kw, id: x.id });
+    for (const t of pidx.topics || []) if (t && t.name && t.entryId) {
+      const cur = v.state().topics.find(x => x.name === t.name);
+      if (!cur || (cur.entry && cur.entry.s === 'p')) { if (v.saveTopic({ name: t.name, entry: { s: 'p', id: t.entryId }, keyword: '', text: t.text || '' }, cur ? t.name : undefined) !== false) sum.paperTopics++; }
+    }
+  }
   // 紙のスキャン（番号つき）
   const done = [];
   for (const sc of (data.scans && data.scans.index) || []) {
@@ -92,12 +102,22 @@ function importedEntries(v) {
 function summaryText(sum) {
   const parts = [];
   if (sum.chats) parts.push(`チャットメモに ${sum.chats} 件`); if (sum.days) parts.push(`日記・記録にも ${sum.days} 件`); if (sum.appended) parts.push(`まとめのノートにも ${sum.appended} 件`);
+  if (sum.paperIndex) parts.push(`紙のIndex ${sum.paperIndex} 件`); if (sum.paperTopics) parts.push(`紙のトピックIndex ${sum.paperTopics} 件`);
   if (sum.scans) parts.push(`紙のスキャン ${sum.scans} 枚`); if (sum.updated) parts.push(`直したメモ ${sum.updated} 件`); if (sum.removed) parts.push(`消したメモ ${sum.removed} 件`);
   let t = parts.length ? '取り込みました: ' + parts.join('、') + '。' : '新しく取り込むものはありませんでした。';
   if (sum.blankScans) t += `\n番号の無いスキャン ${sum.blankScans} 枚は、スマホで番号を付けてから取り込めます。`;
   return t;
 }
 // スマホへ渡す、PC のメモ全部と日のノート（スマホで見られる・直せる。スマホからこの PC のメモに戻った分は、取り込むときに反映）
+// スマホへ渡す、PC の紙のIndex と、入口が紙のトピックIndex（スマホで見られる・足せる）
+function paperIndexForPhone(v) {
+  const s = v.state(), d = (s.docs || {})['K_paperindex'] || { entries: [] };
+  return {
+    version: 1,
+    entries: (d.entries || []).map(e => ({ kw: e.kw, reading: e.reading || '', ids: [...(e.ids || [])] })),
+    topics: s.topics.filter(t => t.entry && t.entry.s === 'p').map(t => ({ name: t.name, entryId: t.entry.id, text: t.text || '' })),
+  };
+}
 function pcMemos(v) {
   const s = v.state(), chat = (s.docs || {})['C_チャット'] || {};
   const alive = new Set((chat.messages || []).map(m => m.id)), st = loadState(v);
@@ -108,4 +128,4 @@ function pcMemos(v) {
     days: (s.diaries || []).map(d => ({ kind: d.kind || '日記', date: d.date, body: d.body || '' })),
   };
 }
-module.exports = { pcMemos, importCapture, importedEntries, summaryText, loadState };
+module.exports = { paperIndexForPhone, pcMemos, importCapture, importedEntries, summaryText, loadState };

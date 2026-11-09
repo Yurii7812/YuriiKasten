@@ -117,3 +117,40 @@ test('自動取り込み用: つながっているスマホの一覧と、APK �
   assert.deepStrictEqual(await P.listDevices(), [{ serial: 'ABC123', state: 'device' }]);
   const sha = P.apkSha(); assert.ok(sha === null || /^[0-9a-f]{64}$/.test(sha));
 });
+
+test('スマホで書いた紙のIndex・紙のトピックIndex を取り込む（何度でも同じ・消した分は消える）／PC の分をスマホへ渡す形', () => {
+  const C = require('../capture'), { openVault } = require('../store'), v = openVault(tmp());
+  const data = pi => ({ entries: [], images: {}, scans: { index: [], files: {} }, topicModes: {}, pcDeleted: [], paperIndex: pi });
+  const pi = { rev: 3, entries: [{ kw: '断片メモ', reading: 'だんぺんめも', ids: ['4', '4a'] }, { kw: '瞑想', ids: ['6'] }], removed: [],
+    topics: [{ name: '紙の1', entryId: '1', text: 'GUIとCUI 1f\nまとめ 1b' }] };
+  const out = C.importCapture(v, data(pi));
+  assert.strictEqual(out.sum.paperIndex, 3); assert.strictEqual(out.sum.paperTopics, 1);
+  const ent = k => v.state().docs['K_paperindex'].entries.find(e => e.kw === k);
+  assert.deepStrictEqual(ent('断片メモ').ids, ['4', '4a']); assert.deepStrictEqual(ent('瞑想').ids, ['6']);
+  const t = v.state().topics.find(x => x.name === '紙の1'); assert.deepStrictEqual(t.entry, { s: 'p', id: '1' }); assert.match(t.text, /GUIとCUI 1f/);
+  C.importCapture(v, data(pi));                                        // もう一度取り込んでも、増えない
+  assert.deepStrictEqual(ent('断片メモ').ids, ['4', '4a']);
+  C.importCapture(v, data({ rev: 4, entries: [], removed: [{ kw: '断片メモ', id: '4a' }], topics: [{ name: '紙の1', entryId: '1', text: '直した 1c' }] }));   // 消す・直す
+  assert.deepStrictEqual(ent('断片メモ').ids, ['4']);
+  assert.match(v.state().topics.find(x => x.name === '紙の1').text, /直した 1c/);
+  const snap = C.paperIndexForPhone(v);                                // スマホへ返す形
+  assert.deepStrictEqual(snap.entries.find(e => e.kw === '断片メモ').ids, ['4']);
+  assert.deepStrictEqual(snap.topics, [{ name: '紙の1', entryId: '1', text: '直した 1c' }]);
+});
+
+test('スマホの紙のIndex: USB で読む・取り込んだ印（rev）を返す・PC の紙のIndex をスマホへ渡す', async () => {
+  const d = tmp(), ph = fakePhone(d); process.env.ADB = ph.adb;
+  const w = (rel, x) => fs.writeFileSync(path.join(ph.data, rel), x);
+  w('files/entries.json', '[]');
+  w('files/paper_index.json', JSON.stringify({ version: 1, rev: 5, entries: [{ kw: '瞑想', ids: ['6'] }], removed: [{ kw: '常識', id: '4' }], topics: [{ name: '紙の1', entryId: '1', text: 'GUI 1f' }] }));
+  const P = load(), r = await P.pull(); assert.ok(r.ok, r.message);
+  assert.strictEqual(r.data.paperIndex.rev, 5);
+  assert.deepStrictEqual(r.data.paperIndex.entries, [{ kw: '瞑想', ids: ['6'] }]);
+  assert.deepStrictEqual(r.data.paperIndex.removed, [{ kw: '常識', id: '4' }]);
+  assert.strictEqual(r.data.paperIndex.topics[0].name, '紙の1');
+  const m = await P.mark([], [], 5); assert.ok(m.ok);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(ph.data, 'files/paper_index_ack.json'), 'utf8')), { rev: 5 });
+  const snap = { version: 1, entries: [{ kw: '瞑想', reading: '', ids: ['6'] }], topics: [{ name: '紙の1', entryId: '1', text: 'GUI 1f' }] };
+  assert.ok((await P.sendPaperIndex(snap)).ok);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(ph.data, 'files/paper_index_pc.json'), 'utf8')), snap);
+});

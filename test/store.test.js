@@ -557,3 +557,24 @@ test('日記: その日にチャットメモがあれば、今日のチャット
   v.saveDoc('C_チャット', doc);   // 何度保存しても、1 つだけ
   assert.strictEqual((v.state().diaries.find(d => d.date === '2026-11-09').body.match(/C_2026-11-09\.md/g) || []).length, 1);
 });
+
+test('古い画面からの保存: ほかで増えたメモを失わず、足し合わせる（消したメモは消えたまま）', () => {
+  const v = openVault(tmp());
+  const mk = (id, t, text) => ({ id, topic: '', t, text });
+  let r = v.saveDoc('C_チャット', { topics: [], messages: [mk('a', 1, 'A'), mk('b', 2, 'B')], trash: [] });
+  assert.ok(r.ok && r.rev === 1 && !r.merged);
+  const base = JSON.parse(JSON.stringify(v.state().docs['C_チャット']));        // 画面が持っている版（_rev 1）
+  // 別の経路（スマホの取り込みなど）で c が増える → 版 2
+  const other = JSON.parse(JSON.stringify(base)); other.messages.push(mk('c', 3, 'C スマホから'));
+  r = v.saveDoc('C_チャット', other); assert.strictEqual(r.rev, 2);
+  // 古い画面（_rev 1）が、b を消して保存 → c は残り、b は消えたまま、画面に知らせる
+  const stale = JSON.parse(JSON.stringify(base)); stale.messages = stale.messages.filter(m => m.id !== 'b'); stale.trash = [{ ...mk('b', 2, 'B'), deleted: 9 }];
+  r = v.saveDoc('C_チャット', stale);
+  assert.strictEqual(r.merged, true); assert.ok(r.rev >= 3);
+  const ids = v.state().docs['C_チャット'].messages.map(m => m.id);
+  assert.deepStrictEqual(ids, ['a', 'c']);
+  // 版が合っている保存は、ふつうに保存される
+  const fresh = JSON.parse(JSON.stringify(v.state().docs['C_チャット'])); fresh.messages.push(mk('d', 4, 'D'));
+  r = v.saveDoc('C_チャット', fresh); assert.strictEqual(r.merged, false);
+  assert.deepStrictEqual(v.state().docs['C_チャット'].messages.map(m => m.id), ['a', 'c', 'd']);
+});

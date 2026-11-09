@@ -146,7 +146,7 @@ const nameProblem = (name, current = '') => {
 
 export function init(docs) {
   const d = docs['C_チャット'] || {};
-  doc = { topics: d.topics || [], messages: d.messages || [], converted: d.converted || {}, trash: d.trash || [], noted: d.noted || {}, mirror: d.mirror || {}, upperByTopic: d.upperByTopic || {}, target: { topic: (d.target && d.target.topic) || '', ups: (d.target && d.target.ups) || [] }, viewMode: d.viewMode === 'day' ? 'day' : 'all', selfName: d.selfName || '私', importedRp: d.importedRp || {} };
+  doc = { _rev: d._rev || 0, topics: d.topics || [], messages: d.messages || [], converted: d.converted || {}, trash: d.trash || [], noted: d.noted || {}, mirror: d.mirror || {}, upperByTopic: d.upperByTopic || {}, target: { topic: (d.target && d.target.topic) || '', ups: (d.target && d.target.ups) || [] }, viewMode: d.viewMode === 'day' ? 'day' : 'all', selfName: d.selfName || '私', importedRp: d.importedRp || {} };
   if (!doc.topics.some(t => t.name === FRAGMENT)) doc.topics.push({ name: FRAGMENT, type: 'bubble', stamp: true, entry: null });   // 断片メモは標準
   roleLibrary = ((docs['K_roles'] || {}).roles || []).map(r => ({ ...r }));
   speakerView = 'self';
@@ -169,7 +169,15 @@ const refreshMemoNotePreviews = () => {
   if (!ctx.notes) return;
   for (const n of ctx.notes()) if (n.kind === 'memo-group') n.body = MemoGroup.body(n.data, doc);
 };
-const save = () => { refreshMemoNotePreviews(); ctx.later('doc:C', () => ctx.api.saveDoc('C_チャット', doc)); };
+const save = () => { refreshMemoNotePreviews(); ctx.later('doc:C', async () => {
+  const r = await ctx.api.saveDoc('C_チャット', doc);
+  if (r && r.rev) doc._rev = r.rev;
+  if (r && r.merged) {   // 画面が古かった（ほかで増えたメモがあった）: 足し合わせた中身を読み直す
+    const st = await ctx.api.state(); init(st.docs);
+    if (ctx.cur() && ctx.cur().k === 'chat') render();
+    ctx.renderList(); toast('ほかで増えたメモを、取り込みました');
+  }
+}); };
 const topic = name => doc.topics.find(t => t.name === name);
 const msg = id => doc.messages.find(m => m.id === id);
 // トピックは並列（フォルダではない）。メモは所属トピック1つと、複数の上位トピックを持てる。保存形式は topic / ups のまま。

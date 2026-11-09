@@ -61,6 +61,14 @@ function snapshotBefore(vault, file, next) {
     for (const n of names.slice(0, Math.max(0, names.length + 1 - HIST_KEEP))) fs.unlinkSync(path.join(dir, n));
   } catch { }
 }
+// 古い画面からの保存（その間に、ほかの経路で増えたメモがある）: チャットメモは、増えた分を失わないように足し合わせる
+function mergeStaleDoc(name, cur, obj) {
+  if (name !== 'C_チャット') return obj;   // ほかの文書は、最後に保存したものが勝つ（上書き前の控えがある）
+  const known = new Set([...(obj.messages || []), ...(obj.trash || [])].map(m => m.id));
+  const extra = (cur.messages || []).filter(m => !known.has(m.id));   // 古い画面が知らないメモ（消したメモは trash にあるので、ここには入らない）
+  if (!extra.length) return obj;
+  return { ...obj, messages: [...(obj.messages || []), ...extra].sort((a, b) => (a.t || 0) - (b.t || 0)) };
+}
 // 壊れた JSON を読めなかったとき: 壊れたものは .history に残し、読める一番新しい控えから戻す
 function recoverDoc(vault, file, warnings) {
   const rel = path.basename(file), dir = path.join(vault, HIST, rel);
@@ -649,7 +657,12 @@ function openVault(vault) {
     // ===== JSON の文書（チャット・なりきり・役・キャンバス）=====
     saveDoc(name, obj) {
       if (!/^(C|K)_[^\\/]+$/.test(name)) return false;
-      docs.set(name, obj); put(abs(name + '.json'), JSON.stringify(obj, null, 1)); if (name === 'C_チャット') rebuild(); if (name === 'K_settings' && obj && obj.dayStart !== undefined) L.setDayStart(obj.dayStart); return true;
+      // 版（_rev）: 画面が持っている版より、保存先の版が新しければ「古い画面からの保存」。増えたメモを失わないように足し合わせて、画面に知らせる
+      const cur = docs.get(name); let out = obj, merged = false;
+      if (cur && obj && typeof obj._rev === 'number' && typeof cur._rev === 'number' && obj._rev < cur._rev) { out = mergeStaleDoc(name, cur, obj); merged = out !== obj; }
+      if (out && typeof out === 'object') out._rev = Math.max((cur && cur._rev) || 0, (obj && obj._rev) || 0) + 1;
+      docs.set(name, out); put(abs(name + '.json'), JSON.stringify(out, null, 1)); if (name === 'C_チャット') rebuild(); if (name === 'K_settings' && out && out.dayStart !== undefined) L.setDayStart(out.dayStart);
+      return { ok: true, rev: out && out._rev, merged };
     },
     deleteDoc(name) { if (!docs.has(name)) return false; docs.delete(name); removeFile(name + '.json'); return true; },
     setReading(k, r) { if (r) readings[k] = r; else delete readings[k]; rebuild(); return true; },
