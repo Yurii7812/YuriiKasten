@@ -2,6 +2,10 @@ import { EditorView, Decoration, ViewPlugin, WidgetType, keymap, placeholder } f
 import { EditorState, RangeSetBuilder, StateField } from '@codemirror/state';
 import { history, defaultKeymap, historyKeymap } from '@codemirror/commands';
 import L from '../lib.js';
+import LinkCore from '../link-core.js';
+import TopicRanking from '../topic-ranking.js';
+import * as LC from './linked-content.js';
+import * as ReferencePicker from './reference-picker.js';
 import { mdExtensions, tableTemplate, searchExt, setSearch } from './md.js';
 import { ctx } from './shared.js';
 import * as Chat from './chat.js';
@@ -141,7 +145,7 @@ function durableSave(key, kind, payload, write, done = () => {}) {
   });
   const revision = saves.revision;
 }
-const saveNote = n => durableSave(noteKey(n), 'note', pubNote(n), x => api.saveNote(x), r => { if (r.updated) n.updated = r.updated; });
+const saveNote = n => { durableSave(noteKey(n), 'note', pubNote(n), x => api.saveNote(x), r => { if (r.updated) n.updated = r.updated; }); setTimeout(() => LC.refresh(), 0); };
 const saveTopic = t => durableSave('t' + t.name, 'topic', t, x => api.saveTopic(x));
 const saveDiary = d => durableSave(diaryKey(d), 'diary', { date: d.date, kind: d.kind || '日記', title: d.title, body: d.body }, x => api.saveDiary(x), (_r, x) => { Chat.dayEdited(x.kind, x.date, x.body); renderTabs(); });
 const saveDocument = (key, name, doc, done) => durableSave(key, 'doc', { name, doc }, x => api.saveDoc(x.name, x.doc), done);
@@ -155,6 +159,8 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) flush
 if (window.api.onFlush) window.api.onFlush(() => flush());
 if (window.api.onFileDup) window.api.onFileDup(dups => toast(dups.length === 1 ? `「${dups[0].orig}」は既にあります（${dups[0].existing}）` : `${dups.length} 件のファイルは、既にあります`));   // 同じ中身のファイルは、二重に取り込まない
 installMermaidObserver();
+ReferencePicker.attachTextareas();
+LC.install();
 
 // ===== エディタ（:1 や (1) をその場でリンクに）=====
 function links(mode, space) {
@@ -265,6 +271,7 @@ const images = space => {
   const build = state => {
     const b = new RangeSetBuilder();
     for (const m of state.doc.toString().matchAll(/!\[[^\]\n]*\]\(([^)\s]*)\)/g)) {
+      if (/^(link|memo|note):/.test(m[1]) || /^\d{14}(?:-\d+)?\.md$/.test(m[1])) continue;
       b.add(state.doc.lineAt(m.index + m[0].length).to, state.doc.lineAt(m.index + m[0].length).to, Decoration.widget({ widget: new ImgWidget(m[1]), block: true, side: 1 }));
     }
     return b.finish();
@@ -317,11 +324,12 @@ function editor(parent, doc, mode, space, onChange, ph, read) {
   const binding = { read, syncing: false };
   const view = lastView = new EditorView({
     parent, state: EditorState.create({
-      doc, extensions: [history(), keymap.of([...defaultKeymap, ...historyKeymap]), EditorView.lineWrapping, ...(mode === 'note' ? [urlPasteTitle] : []),
-        placeholder(ph), ...(mode === 'note' ? [...mdExtensions, searchExt] : []), links(mode, space), ...(mode === 'note' ? [images(space)] : []), EditorView.updateListener.of(u => { if (u.docChanged && !binding.syncing) onChange(u.state.doc.toString()); })]
+      doc, extensions: [history(), ...(mode === 'note' ? ReferencePicker.extension(space) : []), keymap.of([...defaultKeymap, ...historyKeymap]), EditorView.lineWrapping, ...(mode === 'note' ? [urlPasteTitle] : []),
+        placeholder(ph), ...(mode === 'note' ? [...mdExtensions, searchExt] : []), links(mode, space), ...(mode === 'note' ? [images(space), LC.decorations(cur?.k === 'note' ? 'note:' + get(cur.s, cur.id)?.stem : cur?.k === 'diary' ? 'day:' + cur.kind + ':' + cur.date : 'embedded', space)] : []), EditorView.updateListener.of(u => { if (u.docChanged && !binding.syncing) onChange(u.state.doc.toString()); })]
     })
   });
   if (read) editorBindings.set(view, binding);
+  LC.registerView(view);
   return view;
 }
 function jump(view, pos) {
@@ -330,7 +338,7 @@ function jump(view, pos) {
 }
 // 本文のリンクの行き先。アプリの中のもの（なりきり会話・日記）は中で開き、それ以外は既定のアプリで開く
 function openLink(rel) {
-  if (rel.startsWith('memo:')) return Chat.gotoMemo(rel.slice(5));
+  if (/^(link|memo|reply|note):/.test(rel)) return LC.openUri(rel);
   if (UrlLinks.externalUri(rel)) return api.openPath(UrlLinks.externalUri(rel)); // #フラグメントとクエリを保持
   let path = rel, hash = '';
   const i = rel.indexOf('#'); if (i >= 0) { path = rel.slice(0, i); hash = rel.slice(i + 1); }
@@ -938,7 +946,8 @@ const parentHtml = note => { const p = parentNote(note); return p ? `<div class=
 // 右パネルの順番: 🏷 キーワード → 📑 自トピック → 🗂️ トピック → 🌳 親 → 🌱 子 → 🔗 バックリンク → 💬 チャットメモ
 function renderMeta(note) {
   const el = $('#margin'); if (!el) return;
-  if (note.noid) { el.innerHTML = parentHtml(note) + childrenHtml(note) + '<div class="hint">🆔 IDなしのノートです。<br>「IDを付ける」と、キーワードや索引、バックリンクが使えます。</div>'; return; }
+  const bundles = LC.allLinks().filter(l => l.targets.some(t => t.kind === 'note' && t.stem === note.stem && t.s === note.s));
+  if (note.noid) { el.innerHTML = parentHtml(note) + childrenHtml(note) + (bundles.length ? `<div class="sec">${metaLabel('🔗', 'バックリンク', bundles.length)}${bundles.map(l => `<div class="mt"><a class="tl" data-link-object="${esc(l.id)}">${esc(l.title)}</a></div>`).join('')}</div>` : '') + '<div class="hint">🆔 IDなしのノートです。<br>「IDを付ける」と、キーワードや索引、バックリンクが使えます。</div>'; return; }
   const tops = topics.map(t => ({ t, kws: L.mergeTopic(t).rows.filter(r => r[note.s].some(x => L.splitAnchor(x).id === note.id)).map(r => r.kw) })).filter(x => x.kws.length); // 自分のキーワードがあるものだけ
   const bl = backlinks(note), memoReplies = Chat.noteBacklinks(note);
   el.innerHTML =
@@ -947,9 +956,9 @@ function renderMeta(note) {
     `<div class="sec">${metaLabel('🗂️', 'トピック', tops.length || '', 'tadd', '索引に入れる・作る')}${tops.length ? tops.map(x => `<div class="mt topic-index-entry"><a class="tl" data-topic="${esc(x.t.name)}">${esc(topicLabel(x.t))}</a><div class="topic-index-keys">${x.kws.map(kw => `<span>${esc(kw)}</span>`).join('、')}</div></div>`).join('') : '<div class="msub">どの索引にも入っていません</div>'}</div>` +
     parentHtml(note) +
     childrenHtml(note) +
-    (bl.length ? `<div class="sec">${metaLabel('🔗', 'バックリンク', bl.length)}${bl.map(x => x.m
+    (bl.length || bundles.length ? `<div class="sec">${metaLabel('🔗', 'バックリンク', bl.length + bundles.length)}${bl.map(x => x.m
       ? `<div class="bl" data-s="${x.m.s}" data-id="${esc(x.m.id)}"><div class="bh"><b>${esc(titleOf(x.m))}</b><em>${esc(x.m.id)}</em></div><p>${x.c}</p></div>`
-      : `<div class="bl" data-diary="${x.d.date}"><div class="bh"><b>${x.d.date.slice(5)}（${L.weekday(x.d.date)}）</b><em>日記</em></div><p>${x.c}</p></div>`).join('')}</div>` : '') +
+      : `<div class="bl" data-diary="${x.d.date}"><div class="bh"><b>${x.d.date.slice(5)}（${L.weekday(x.d.date)}）</b><em>日記</em></div><p>${x.c}</p></div>`).join('')}${bundles.map(l => `<div class="mt"><a class="tl" data-link-object="${esc(l.id)}">${esc(l.title)}</a></div>`).join('')}</div>` : '') +
     (memoReplies.length ? `<div class="sec">${metaLabel('💬', 'チャットメモ', memoReplies.length)}${memoReplies.map(m => `<div class="bl" data-cmemo="${esc(m.id)}"><div class="bh"><b>${esc(m.topic || '未所属')}</b><em>${esc((m.text || '').slice(0, 25))}</em></div></div>`).join('')}</div>` : '');
 }
 // 🏷 キーワードを足す窓: 入力・今までのキーワードの候補・読み（自動で入る。違っていれば直す）
@@ -999,6 +1008,7 @@ async function refreshDiaries() {
   syncEditors();
 }
 $('#pane').addEventListener('click', async e => {
+  const objectLink = e.target.closest('[data-link-object]'); if (objectLink) return LC.detail(objectLink.dataset.linkObject);
   const memoLink = e.target.closest('[data-cmemo]');
   if (memoLink) { e.preventDefault(); Chat.gotoMemo(memoLink.dataset.cmemo); return; }
   const del = e.target.closest('[data-kwdel]');
@@ -1042,6 +1052,9 @@ function noteMenu(btn, note) {
   popMenu({ clientX: r.right - 190, clientY: r.bottom + 4 }, [
     ...(text ? [['▦ 表を入れる', () => insertTable()], ['📎 ファイルを添付', () => pick(true, f => attach(note, f), '*')]] : []),
     ...(s === 'd' ? [['💬 チャットメモで返信', () => Chat.replyToNote(note)]] : []),
+    ['🔗 リンクを作成（選択範囲／全体）', () => LC.edit([currentLinkTarget(note)])],
+    ['@ チャットメモをメンション', () => pickMemoRelation(note, false)],
+    ['↩ チャットメモへリプライ', () => pickMemoRelation(note, true)],
     ['🔢 IDを変更・解除…', () => idSettingsDialog(note)],
     ['🗑 削除', () => deleteNotes([{ s, id }]), true]
   ]);
@@ -1050,6 +1063,31 @@ async function copyNoteId(note) {
   if (!note || note.noid) return;
   try { await navigator.clipboard.writeText(note.id); toast(`IDをコピーしました: ${note.id}`); }
   catch { toast('IDをコピーできませんでした'); }
+}
+function highlightMemoRange(id, range) {
+  const bubble = [...document.querySelectorAll('[data-m]')].find(e => e.dataset.m === id), body = bubble?.querySelector('.b-body');
+  if (!body) return;
+  bubble.scrollIntoView({ block: 'center' }); bubble.classList.add('flash');
+  const text = body.textContent, from = text.indexOf(range.quote);
+  if (from < 0 || text.lastIndexOf(range.quote) !== from) return;
+  const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT), nodes = []; let node, offset = 0;
+  while ((node = walker.nextNode())) { nodes.push({node,from:offset,to:offset+node.textContent.length}); offset += node.textContent.length; }
+  const a = nodes.find(n => from >= n.from && from < n.to), end = from + range.quote.length, b = nodes.find(n => end > n.from && end <= n.to);
+  if (a && b) { const selected = document.createRange(); selected.setStart(a.node, from - a.from); selected.setEnd(b.node, end - b.from); const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(selected); }
+}
+function currentLinkTarget(note) {
+  const selection = cur?.k === 'note' && cur.id === note.id && lastView?.dom.isConnected ? lastView.state.selection.main : null;
+  return LC.targetNote(note, selection && !selection.empty ? selection : undefined);
+}
+function pickMemoRelation(note, reply) {
+  const view = lastView, selection = view?.dom.isConnected ? view.state.selection.main : null;
+  LC.chooseMemo(m => {
+    if (!view?.dom.isConnected || !selection) return toast('元のノートを開いてからもう一度選択してください');
+    const label = LinkCore.safeTitle(m.text.split('\n')[0]);
+    const text = reply ? `[↩ ${label}](reply:${m.id}) ` : `:[${label}](memo:${m.id}) `;
+    view.dispatch({ changes: { from: selection.from, to: selection.to, insert: text }, selection: { anchor: selection.from + text.length } });
+    view.focus();
+  });
 }
 function idSettingsDialog(note) {
   dialog(`<h3>IDを変更・解除</h3>
@@ -1113,6 +1151,8 @@ $('#new').onclick = e => {
   const r = $('#new').getBoundingClientRect();
   popMenu({ clientX: r.left, clientY: r.bottom + 4 }, [
     ['📝 ノート', () => createNoid('text')],
+    ['🔗 リンクを作成', () => LC.edit()],
+    ['🔗 リンク一覧', () => LC.browse()],
     ['🗺 キャンバス', () => createNoid('canvas')],
     ['📷 スキャンを取り込む（紙）', () => $('#imp').click()]
   ]);
@@ -1122,22 +1162,7 @@ $('#new').onclick = e => {
 // 「近いもの」: 同じキーワードの行・番号の近さ・リンクでつながるノート・最近使ったもの。理由も添える
 const recentTopics = () => { try { return JSON.parse(localStorage.getItem('pkm-topic-recent') || '[]'); } catch { return []; } };
 const rememberTopic = name => { try { localStorage.setItem('pkm-topic-recent', JSON.stringify([name, ...recentTopics().filter(x => x !== name)].slice(0, 12))); } catch { } };
-function topicRank(note) {
-  const out = new Map(), add = (t, n, why) => { const r = out.get(t.name) || { score: 0, why: [] }; r.score += n; if (!r.why.includes(why)) r.why.push(why); out.set(t.name, r); };
-  const root = L.root(note.id), rec = recentTopics();
-  const linked = new Set([...L.tokens(note.body || '').filter(x => x.k === 'ref').map(x => x.id), ...backlinks(note).map(b => b.m.id)]);
-  for (const t of topics) {
-    const m = L.mergeTopic(t), ids = m.rows.flatMap(r => r[note.s]);
-    if (m.rows.some(r => note.keywords.includes(r.kw))) add(t, 10, 'キーワード');
-    const e = t.entry;
-    if (e && e.s === note.s && (e.id === note.id || note.id.startsWith(e.id) || e.id.startsWith(note.id))) add(t, 8, '親・子');
-    else if (e && e.s === note.s && L.root(e.id) === root) add(t, 5, '同じ系統');
-    else if (ids.some(i => L.root(i) === root)) add(t, 3, '同じ系統');
-    if (ids.some(i => linked.has(i)) || (e && linked.has(e.id))) add(t, 4, '関連');
-    const ri = rec.indexOf(t.name); if (ri >= 0) add(t, 3 - ri * .1, '最近');
-  }
-  return out;
-}
+function topicRank(note, query = '') { return TopicRanking.rank(note, topics, notes, recentTopics(), query); }
 // このノートを索引に追加（検索して選び、キーワードを入れる）。新しく作ることもできる
 function topicAddDialog(note) {
   const entry = topicOf(note.s, note.id), name = `${note.s === 'p' ? '紙 ' : ''}${note.id}`;
@@ -1152,12 +1177,13 @@ function topicAddDialog(note) {
     <div class="da-bar"><span class="grow"></span><button id="ta-cancel">やめる</button><button id="ta-ok" class="p">🗂️ 入れる</button></div></div>`;
   $('#modal').style.display = 'flex';
   const close = () => { $('#modal').style.display = 'none'; };
-  const rank = topicRank(note);
+  let rank = topicRank(note);
   const draw = () => {
     const q = $('#ta-q').value.trim().toLowerCase();
     const hit = t => !q || t.name.toLowerCase().includes(q) || L.mergeTopic(t).rows.some(r => r.kw.toLowerCase().includes(q));
-    const sc = t => (rank.get(t.name) || { score: 0 }).score;
-    const list = topics.filter(hit).sort((a, b) => sc(b) - sc(a) || a.name.localeCompare(b.name, 'ja'));
+    rank = topicRank(note, q);
+    const sc = t => rank.get(t.name)?.near ? 1 : 0;
+    const list = topics.filter(hit).sort((a, b) => TopicRanking.compare(rank, a, b));
     if (sel && !list.includes(sel)) sel = null;
     if (!sel && list.length) choose(list[0], false);
     const row = t => { const r = rank.get(t.name); return `<div class="ta-row${t === sel ? ' on' : ''}" data-name="${esc(t.name)}">${esc(stripId(t.name))}${t.entry ? `<small> ${t.entry.s === 'p' ? '紙' : ''}${esc(t.entry.id)}</small>` : ''}${r ? r.why.map(w => `<em>${esc(w)}</em>`).join('') : ''}</div>`; };
@@ -1875,6 +1901,7 @@ function loaded(st) {
   loadSettings(st); graphDoc = (st.docs || {})['K_graph'] || {};
   if (pendingLang) { settings.lang = pendingLang; pendingLang = null; saveSettings(); }
   vault = st.vault; recovery = new Persistence.RecoveryJournal(localStorage, vault); restoreRecovery(st);
+  LC.init(st.docs || {});
   ({ notes, topics, vault } = st); readings = st.readings || {}; diaries = st.diaries || []; records = st.records || records; Chat.init(st.docs || {}); RP.init(st.docs || {}); Chat.migrateLegacyRoleplay(); PI.init(st.docs || {}); cur = null; tabs = []; active = -1; refreshFiles();
   $('#vault').textContent = '📁 ' + vault.split('/').pop(); $('#vault').title = vault + '\n（Brave では Index.md を開くと全部たどれます）';
   try {
@@ -1932,11 +1959,14 @@ function settingsDialog() {
       <div class="srow"><span>本文の文字の大きさ</span><input type="range" id="s-body" min="12" max="28" step="1" value="${sw.bodySize}"><output id="s-body-o">${sw.bodySize}px</output></div>
       <div class="srow"><span>画面の文字（フォント）</span><input type="text" id="s-uifont" placeholder="空なら OS の標準。例: Noto Sans JP" value="${esc(sw.uiFont)}" style="flex:1"></div>
       <div class="srow"><span>本文のフォント</span><select id="s-bf"><option value="default"${sw.bodyFont === 'default' ? ' selected' : ''}>画面と同じ</option><option value="serif"${sw.bodyFont === 'serif' ? ' selected' : ''}>明朝</option><option value="mono"${sw.bodyFont === 'mono' ? ' selected' : ''}>等幅</option><option value="custom"${sw.bodyFont === 'custom' ? ' selected' : ''}>好きな名前</option></select><input type="text" id="s-bfc" placeholder="フォント名" value="${esc(sw.bodyFontCustom)}" style="flex:1"></div></div>
+    <div class="sec"><b>URLプレビュー</b><div class="srow"><button id="s-url-refresh">URLプレビュー情報を再取得</button><span id="s-url-progress" role="status"></span></div></div>
     <div class="sec"><b>スマホ</b><div class="srow"><span>つないだら、自動で取り込む・アプリを更新する</span><label class="nm-sw"><input type="checkbox" id="s-autophone" ${sw.autoPhone !== false ? 'checked' : ''}><i></i></label></div><div class="srow"><button id="s-phone">スマホにアプリを入れる…（USB）</button></div></div>
     <div class="sec"><b>アプリ</b><div class="srow"><span id="s-ver" class="sub"></span><button id="s-upd">更新を確認</button><button id="s-short">ショートカットを作る</button><button id="s-gh">GitHub を開く</button></div></div>
     <div class="row"><span class="grow"></span><button class="p" id="s-close">閉じる</button></div></div>`, close => {
     const set = (k, v) => { settings[k] = v; saveSettings(); };
     api.appInfo().then(i => { $('#s-ver').textContent = 'YuriiNote ' + i.version; $('#s-upd').onclick = () => checkUpdate(i); $('#s-short').style.display = i.platform === 'win32' ? 'none' : ''; });
+    $('#s-url-refresh').onclick = async () => { $('#s-url-progress').textContent = '取得中…'; try { const p = await api.urlRefresh(); $('#s-url-progress').textContent = `${p.done}/${p.total}件・失敗${p.failed}件`; } catch { $('#s-url-progress').textContent = '取得できませんでした'; } };
+    api.urlStatus?.().then(p => { if (p && $('#s-url-progress')) $('#s-url-progress').textContent = `${p.done}/${p.total}件・失敗${p.failed}件`; });
     $('#s-close').onclick = close; $('#modal').onkeydown = e => { if (e.key === 'Escape') close(); };
     $('#s-lang').onchange = e => { set('lang', e.target.value); close(); settingsDialog(); };
     $('#s-vault').onclick = async () => { await flush(); const st = await api.chooseVault(); if (st) { close(); loaded(st); } };
@@ -1955,6 +1985,7 @@ function settingsDialog() {
 }
 // スマホにアプリを入れる（USB でつないだスマホに、adb で）
 api.onPhoneMsg(m => toast(m));
+api.onUrlProgress?.(p => { const el = $('#s-url-progress'); if (el) el.textContent = `${p.done}/${p.total}件・失敗${p.failed}件`; });
 async function phoneInstall() {
   if (!confirm('スマホを USB ケーブルでつないで、「USBデバッグ」をオンにしてから、OK を押してください。\nスマホに YuriiNote のメモのアプリを入れます。')) return;
   toast('入れています…');
@@ -2016,7 +2047,7 @@ function renderSelbar() {
   bar.classList.toggle('selecting', selMode);
   bar.innerHTML = selMode
     ? `<div class="sel-head"><span>${picked.size}件を選択</span><button id="sel-end" title="複数選択を終了（Esc）">やめる <small>Esc</small></button></div>
-      <div class="sel-actions"><button id="sel-all">全部</button><button id="sel-copy" ${picked.size ? '' : 'disabled'} title="選んだノートのタイトルと本文をコピー">コピー</button><button id="sel-sim" ${picked.size ? '' : 'disabled'} title="選んだノートに似たノートを探す">≈ 似たノート</button><button id="sel-exp" ${picked.size ? '' : 'disabled'} title="選んだノートを、1つの Markdown にまとめる（保存はしない。確認してコピー）">📤 エクスポート</button><button id="sel-del" class="danger" ${picked.size ? '' : 'disabled'}>削除</button></div>`
+      <div class="sel-actions"><button id="sel-all">全部</button><button id="sel-link" ${picked.size ? '' : 'disabled'}>リンクを作成</button><button id="sel-copy" ${picked.size ? '' : 'disabled'} title="選んだノートのタイトルと本文をコピー">コピー</button><button id="sel-sim" ${picked.size ? '' : 'disabled'} title="選んだノートに似たノートを探す">≈ 似たノート</button><button id="sel-exp" ${picked.size ? '' : 'disabled'} title="選んだノートを、1つの Markdown にまとめる（保存はしない。確認してコピー）">📤 エクスポート</button><button id="sel-del" class="danger" ${picked.size ? '' : 'disabled'}>削除</button></div>`
     : '<button id="sel-start" title="複数のノートを選んで、まとめて削除します">☑ 選択</button>';
   bar.style.display = !selMode && (tab === 'i' || tab === 'f' || mode !== 'notes') && !$('#q').value ? 'none' : 'flex';
 }
@@ -2032,7 +2063,7 @@ async function copySelection() {
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape' || !selMode || e.isComposing || e.keyCode === 229) return;
   const cardEditor = $('#kover');
-  if ($('#modal').style.display === 'flex' || document.querySelector('.idex-cover, #idpop') || (cardEditor && !cardEditor.hidden)) return;
+  if ($('#modal').style.display === 'flex' || document.querySelector('.idex-cover, #idpop, .reference-picker') || (cardEditor && !cardEditor.hidden)) return;
   e.preventDefault(); e.stopImmediatePropagation(); endSelection();
 }, true);
 $('#selbar').addEventListener('click', e => {
@@ -2042,6 +2073,7 @@ $('#selbar').addEventListener('click', e => {
   if (id === 'sel-end') endSelection();
   if (id === 'sel-all') { visibleRows().forEach(r => picked.add(r.dataset.s + ':' + r.dataset.id)); renderList(); }
   if (id === 'sel-copy') copySelection();
+  if (id === 'sel-link') LC.edit([...picked].map(k => get(k[0], k.slice(2))).filter(Boolean).map(n => LC.targetNote(n)));
   if (id === 'sel-sim') startSimilar();
   if (id === 'sel-exp') exportDialog([...picked]);
   if (id === 'sel-del') deleteNotes([...picked].map(k => ({ s: k[0], id: k.slice(2) })));
@@ -2140,7 +2172,14 @@ function restoreRecovery(st) {
 }
 // チャット・なりきり・キャンバスの部品に、アプリの機能を渡す
 Object.assign(ctx, {
-  api, later, flush, place, renderTabs, openLink, applyState, readings: () => readings, lastNote: () => lastNote,
+  api, later, flush, place,
+  renderMemoGroupPlain: LC.legacyGroup,
+  memoReferenceBacklinks: LC.memoBacklinks,
+  highlightMemo: (id, range) => { setTimeout(() => highlightMemoRange(id, range), 30); },
+  enhanceRendered: LC.enhance, searchReferences: LC.search, memos: () => Chat.messages(), diaries: () => diaries, gotoMemo: id => Chat.gotoMemo(id),
+  selectRange: (from, to) => { if (lastView?.dom.isConnected) { lastView.dispatch({ selection: { anchor: from, head: to }, effects: EditorView.scrollIntoView(from, { y: 'center' }) }); lastView.focus(); } },
+  createLink: (targets) => LC.edit(targets), targetMemo: LC.targetMemo, addNote: n => notes.push(n),
+  renderChanged: () => LC.refresh(), renderTabs, openLink, applyState, readings: () => readings, lastNote: () => lastNote,
  renderList, pick, get, free, refreshDiaries, records: () => records, openNote, openDiary, getDiary,
   exploreId: callback => openIdExplorer({ onChoose: id => { callback(id); return true; } }),
   setCur: c => { cur = c; }, setMode: m => { mode = m; }, cur: () => cur, notes: () => notes, vault: () => vault,

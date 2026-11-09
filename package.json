@@ -1,6 +1,6 @@
 {
   "name": "yuriinote",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "YuriiNote — 紙のPKM（ツェッテルカステン）をデジタルで",
   "main": "main.js",
   "scripts": {
@@ -57,7 +57,12 @@
       "index.html",
       "dist/app.js",
       "build/icon.png",
-      "package.json"
+      "package.json",
+      "url-preview.js",
+      "link-core.js",
+      "topic-bulk.js",
+      "topic-ranking.js",
+      "reference-search.js"
     ],
     "asarUnpack": [
       "node_modules/kuromoji/dict/**"

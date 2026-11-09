@@ -6,6 +6,8 @@ import L from '../lib.js';
 import Relations from '../chat-relations.js';
 import TopicPrefs from '../chat-topic-preferences.js';
 import MemoGroup from '../memo-group.js';
+import Bulk from '../topic-bulk.js';
+import LinkCore from '../link-core.js';
 import TopicNav from '../chat-topic-navigation.js';
 import MigrateRoleplay from '../migrate-roleplay.js';
 import * as TopicGraph from './chat-topic-graph.js';
@@ -170,7 +172,7 @@ const refreshMemoNotePreviews = () => {
   if (!ctx.notes) return;
   for (const n of ctx.notes()) if (n.kind === 'memo-group') n.body = MemoGroup.body(n.data, doc);
 };
-const save = () => { refreshMemoNotePreviews(); ctx.saveDocument('doc:C', 'C_チャット', doc, async (r, _snapshot, current) => {
+const save = () => { refreshMemoNotePreviews(); setTimeout(() => ctx.renderChanged?.(), 0); ctx.saveDocument('doc:C', 'C_チャット', doc, async (r, _snapshot, current) => {
   if (r && r.rev) doc._rev = r.rev;
   if (r && r.merged && current()) {   // 画面が古かった（ほかで増えたメモがあった）: 足し合わせた中身を読み直す
     const st = await ctx.api.state(); if (!current()) return; init(st.docs);
@@ -180,6 +182,7 @@ const save = () => { refreshMemoNotePreviews(); ctx.saveDocument('doc:C', 'C_チ
 }); };
 const topic = name => doc.topics.find(t => t.name === name);
 const msg = id => doc.messages.find(m => m.id === id);
+export const messages = () => doc.messages;
 // トピックは並列（フォルダではない）。メモは所属トピック1つと、複数の上位トピックを持てる。保存形式は topic / ups のまま。
 const upsOf = m => m.ups || [];
 const inView = Relations.inTopic;
@@ -322,6 +325,7 @@ export function render() {
             <label class="c-speaker-label">表示・投稿キャラ <select id="c-speaker"><option value="self"${speakerView==='self'?' selected':''}>${esc(doc.selfName)}</option>${roleLibrary.filter(r => !r.archived).map(r => '<option value="'+esc(r.id)+'"'+(speakerView===r.id?' selected':'')+'>'+esc(r.name)+'</option>').join('')}<option value="none"${speakerView==='none'?' selected':''}>選択なし（全員右）</option></select></label>
 
             <button data-c="topic-graph">🕸 トピックグラフ</button>
+            ${!be ? '<button data-c="select">複数選択</button>' : ''}
             <button data-c="roles">キャラクター管理</button>
             ${be ? '<button data-c="openbe">ノートを開く</button>' : ''}
             ${t || (isRec(view) && view !== DIARY) ? '<button data-c="conf">⚙ 設定</button>' : ''}
@@ -334,8 +338,8 @@ export function render() {
       <div id="c-target" class="c-target" ${sourceIds ? 'style="display:none"' : ''}></div>
       <div id="c-reply" class="c-reply" style="display:none"></div>
       ${sourceIds ? '' : `<div class="c-compose"><div id="c-mention" class="rp-mention" style="display:none"></div>
-        <textarea id="c-in" rows="1" placeholder="書く（Enter で送る・Shift+Enter で改行）" title="@ で、別のメモやノートを入れられます"></textarea>
-        <div class="c-tools"><button data-c="find-reply" id="c-find-reply" class="${replyBrowse ? 'on' : ''}" title="${replyBrowse ? '探すをやめる' : '返信先を探す'}">${replyBrowse ? '✕' : '🔍'}</button><button data-tg="up" title="上位トピックを追加">↑</button><button data-c="attach" title="ファイルや画像を付ける">📎</button></div></div>`}
+        <textarea id="c-in" rows="1" placeholder="書く（Enter で送る・Shift+Enter で改行）" title=": でメモ・ノートを検索。Enterで前置、Shift+Enterで後置"></textarea>
+        <div class="c-tools"><button data-c="find-reply" id="c-find-reply" class="${replyBrowse ? 'on' : ''}" title="${replyBrowse ? '探すをやめる' : '返信先を探す'}">${replyBrowse ? '✕' : '🔍'}</button><button data-tg="up" title="トピックの操作・下位トピック作成">💬</button><button data-c="attach" title="ファイルや画像を付ける">📎</button></div></div>`}
     </div>`;
   paint(true); selbar(); showReply(); showTarget();
   // 上の帯の「絞り込み」と「表示・操作」は、どちらか一方だけ開く（開いたら、もう一方を閉じる）
@@ -360,7 +364,7 @@ function fit(inp) { const big = inp.id === 'c-in', min = big ? 40 : 0, max = 180
 const wk = d => `${d}（${L.weekday(d)}）`;
 const noteLabel = stem => { const n = ctx.notes().find(x => x.stem === stem); return n ? (n.noid ? 'IDなし' : n.id) : null; };
 // 本文: メンション（[@…](memo:ID)）は、押すとそのメモへ
-const body = text => renderMd(text);
+const body = (text, owner = '') => renderMd(text, {owner});
 const firstLine = t => (t || '').replace(/\[@[^\]]*\]\(memo:[^)]*\)\s*/g, '').split('\n').find(x => x.trim()) || '';
 // 返信のメモに、元のメモを引用として出す（押すと、元のメモへ）
 export const repliesOf = Relations.repliesOf;   // 返信先（いくつでも。昔の 1 つだけの形も読む）
@@ -500,7 +504,7 @@ function showChildren() {
   const section = (label,kind,items,selected) => '<div class="c-filter-row"><span class="sub">' + label + '</span>' +
     items.map(r => '<button type="button" class="' + (selected.has(r.name) ? 'on' : '') + '" data-topic-filter="' + kind +
       '" data-filter-name="' + esc(r.name) + '" aria-pressed="' + selected.has(r.name) + '">' + esc(r.name) + ' ' + r.count + '</button>').join('') +
-    '<button type="button" data-add-topic-filter="' + kind + '" title="トピックを探して追加">＋</button></div>';
+    '</div>';
   const chosen = [...new Set([...upperFilter, ...childFilter])];
   const names = chosen.map(esc).join('・');
   box.innerHTML = '<details class="c-filter"' + (filterOpen ? ' open' : '') + '>' +
@@ -562,20 +566,20 @@ function paint(toBottom) {
   const box = $('#c-msgs'); if (!box) return; const keepTop = box.scrollTop;
   const list = entries(), showTopic = view === '*'; let lastDay = '';
   box.innerHTML = list.length ? list.map(e => {
-    if (e.kind === 'line') return `<div class="bub" data-i="${e.i}"><div class="b-body md">${body(e.text)}</div><div class="b-foot"><span class="b-left"></span><span class="b-time">${e.time}</span></div></div>`;
+    if (e.kind === 'line') return `<div class="bub" data-i="${e.i}"><div class="b-body md">${body(e.text,"day-line:"+view+":"+e.i)}</div><div class="b-foot"><span class="b-left"></span><span class="b-time">${e.time}</span></div></div>`;
     const m = e.m, d = dayOfMsg_(m), head = viewMode === 'all' && d !== lastDay ? `<div class="dsep">${wk(d)}</div>` : ''; lastDay = d;
     const tags = (doc.noted[m.id] || []).map(st => ({ st, label: noteLabel(st) })).filter(x => x.label).map(x => `<span class="ntag" data-stem="${esc(x.st)}" title="ノート化されたメモを開く">📝 ${esc(x.label)}</span>`).join('');
     const picked = sel && sel.has(m.id);
     const rk = recKindsOf(m)[0], dayLink = rk ? `<span class="gday" data-gday="${esc(rk)}|${dayOfMsg_(m)}" title="その日のノートを開く">📔 ${esc(rk === DIARY ? '日記' : rk)}</span>` : '';
     return `${head}<div class="bub${m.actor && speakerView !== 'none' && m.actor !== speakerView ? ' other-speaker' : ''}${sel ? ' pick' : ''}${picked ? ' picked' : ''}" data-m="${m.id}">
-      <div class="b-meta">${esc(actorName(m.actor))}</div>${quoteHtml(m)}<div class="b-body md">${body(m.text)}</div>
+      <div class="b-meta">${esc(actorName(m.actor))}</div>${quoteHtml(m)}<div class="b-body md">${body(m.text,"memo:"+m.id)}<div class="memo-reference-backlinks">${ctx.memoReferenceBacklinks?.(m)||''}</div></div>
       <div class="b-foot"><span class="b-left">${sel ? `<input type="checkbox" class="bck" ${picked ? 'checked' : ''}> ` : ''}${m.topic && !dayLink && (showTopic || m.topic !== view) ? `<span class="b-tp" data-goto="${esc(m.topic)}">${esc(m.topic)}</span> ` : ''}${upsOf(m).filter(u => u !== view).map(u => `<span class="b-up" data-goto="${esc(u)}">↑${esc(u)}</span>`).join(' ')}${dayLink}${tags ? ' ' + tags : ''}</span><span class="b-time">${hm(m.t)}</span></div><span class="b-rep" data-rep="${m.id}" title="返信">↩</span><span class="b-rep b-rep-e" data-redit-btn="${m.id}" title="返信先を編集（足す・外す）">⇆</span></div>`;
   }).join('') : '<div class="none">まだありません。下の欄に書くと、ここに並びます</div>';
   box.scrollTop = toBottom ? box.scrollHeight : keepTop;   // 編集・選択をやめても、見ていた場所にとどまる（開いたとき・送ったときだけ、いちばん下へ）
 }
 function selbar() {
   const b = $('#c-selbar'); if (!b) return;
-  b.innerHTML = sel ? `<span>${sel.size} 件選択</span><span class="grow"></span><button data-c="selall">全部</button><button data-c="selclear" title="選択を全部外す" ${sel.size ? '' : 'disabled'}>解除</button><button data-c="selcopy" ${sel.size ? '' : 'disabled'}>コピー</button><button data-c="selmove" title="所属・上位トピックを変える" ${sel.size ? '' : 'disabled'}>トピック</button><button data-c="selspeaker" title="話した人を変える" ${sel.size ? '' : 'disabled'}>話者</button><button data-c="seldel" class="danger" ${sel.size ? '' : 'disabled'}>消す</button><button class="p" data-c="tonote" ${sel.size ? '' : 'disabled'}>ノート化</button><button data-c="selno">やめる</button>` : '';
+  b.innerHTML = sel ? `<span>${sel.size} 件選択</span><span class="grow"></span><button data-c="selall">全部</button><button data-c="selclear" title="選択を全部外す" ${sel.size ? '' : 'disabled'}>解除</button><button data-c="selcopy" ${sel.size ? '' : 'disabled'}>コピー</button><button data-c="selmove" title="所属・上位トピックを変える" ${sel.size ? '' : 'disabled'}>トピック</button><button data-c="selspeaker" title="話した人を変える" ${sel.size ? '' : 'disabled'}>話者</button><button data-c="seldel" class="danger" ${sel.size ? '' : 'disabled'}>消す</button><button data-c="sellink" ${sel.size ? '' : 'disabled'}>リンクを作成</button><button class="p" data-c="tonote" ${sel.size ? '' : 'disabled'}>ノート化</button><button data-c="selno">やめる</button>` : '';
   b.style.display = sel ? 'flex' : 'none';
 }
 
@@ -614,18 +618,7 @@ function send() {
 let mn = [];
 let mtx = null;   // いま @ の候補を出している入力欄と、その候補の枠（送る欄・編集中の欄）
 function mentionOff() { mn = []; const b = mtx ? mtx.box : $('#c-mention'); if (b) b.style.display = 'none'; }
-function mentionList(inp0, box0) {
-  if (inp0) mtx = { inp: inp0, box: box0 }; else mtx = { inp: $('#c-in'), box: $('#c-mention') };
-  const inp = mtx.inp, box = mtx.box; if (!inp || !box) return;
-  const before = inp.value.slice(0, inp.selectionStart), m = before.match(/@([^\s@]{0,20})$/);
-  if (!m) return mentionOff();
-  const q = m[1].toLowerCase();
-  const memos = doc.messages.filter(x => !q || x.text.toLowerCase().includes(q)).sort((a, b) => b.t - a.t).slice(0, 5).map(x => ({ kind: 'memo', m: x }));
-  const notes = ctx.notes().filter(n => !n.noid && (!q || n.id.includes(q) || (n.title || '').toLowerCase().includes(q) || (n.body || '').toLowerCase().includes(q))).slice(0, 4).map(n => ({ kind: 'note', n }));
-  mn = [...memos, ...notes];
-  box.innerHTML = mn.map((x, i) => `<div class="mn${i === 0 ? ' on' : ''}" data-mn="${i}">${x.kind === 'memo' ? `💬 ${first(x.m.text)} <small>${hm(x.m.t)}</small>` : `📝 ${esc(x.n.id)} ${esc((x.n.title || x.n.body.split('\n')[0] || '').slice(0, 24))}`}</div>`).join('');
-  box.style.display = mn.length ? 'block' : 'none';
-}
+function mentionList() { mentionOff(); } // Reference search now uses ':'; stored @ links remain readable.
 function pickMention(i) {
   const x = mn[i]; if (!x) return;
   const inp = mtx ? mtx.inp : $('#c-in'), pos = inp.selectionStart, tok = x.kind === 'memo' ? `[@${(x.m.text.split('\n')[0] || '').replace(/[\[\]()]/g, '').slice(0, 14)}](memo:${x.m.id}) ` : `:${x.n.id} `;
@@ -637,9 +630,10 @@ function pickMention(i) {
 function menuFor(e, bub) {
   const be = backend();
   if (bub.dataset.m) {
-    const m = msg(bub.dataset.m);
+    const m = msg(bub.dataset.m), linkRange = selectedMemoRange(bub, msg(bub.dataset.m));
     popMenu(e, [
       ['☑ 選択', () => { sel = new Set([m.id]); lastSel = m.id; paint(); selbar(); }],
+      ['🔗 リンクを作成', () => ctx.createLink([ctx.targetMemo(m, linkRange)])],
       ['📝 ノート化', () => toNoteDialog([m])],
       ['✎ 編集', () => editMsg(bub, m)],
       ['🏷 トピックを変える', () => moveDialog(m)],
@@ -749,36 +743,54 @@ function speakerDialog(ms) {
   });
 }
 function setTopicsDialog(ms) {
-  const one = ms.length === 1 ? ms[0] : null;
-  let topicSel = one ? one.topic : null, upsSel = new Set(one ? upsOf(one) : []), upsTouched = !!one;
-  const names = recentNames(one ? one.topic : undefined);
-  const pendingTopics = [];
-  dialog(`<h3>${ms.length > 1 ? ms.length + ' 件の' : ''}所属・上位トピックを変える</h3><input id="sd-q" placeholder="トピックを探す" style="width:100%;margin-bottom:6px"><div class="sd-cols"><div><div class="sub">所属トピック</div><div id="sd-t" class="sd-list"></div><div class="row" style="gap:4px;margin-top:6px"><input id="sd-new-t" style="min-width:0;flex:1" placeholder="新しい所属トピック"><button id="sd-create-t" type="button">＋ 作る</button></div></div><div><div class="sub">上位トピック（いくつでも）</div><div id="sd-u" class="sd-list"></div><div class="row" style="gap:4px;margin-top:6px"><input id="sd-new-u" style="min-width:0;flex:1" placeholder="新しい上位トピック"><button id="sd-create-u" type="button">＋ 作る</button></div></div></div><div class="row"><button class="p" id="sd-ok">決定</button><button id="sd-no">やめる</button></div>`, close => {
-    const draw = () => {
-      const q = $('#sd-q').value.trim().toLowerCase(), f = n => !q || topicLabel(n).toLowerCase().includes(q);
-      $('#sd-t').innerHTML = ['', ...names].filter(f).map(n => `<div class="sdi${topicSel === n ? ' on' : ''}" data-t="${esc(n)}">${esc(topicLabel(n))}</div>`).join('');
-      $('#sd-u').innerHTML = names.filter(f).map(n => `<div class="sdi${upsSel.has(n) ? ' on' : ''}" data-u="${esc(n)}">${upsSel.has(n) ? '☑ ' : '☐ '}${esc(topicLabel(n))}</div>`).join('');
+  const counts=Bulk.aggregate(ms), names=[...new Set([...recentNames(),...counts.keys()])];
+  let mode='add',primary=null, additions=new Set(),replacement=new Set(counts.keys()),pending=[];
+  const calculate=()=>Bulk.assign(ms,mode==='add'?[...additions]:[...replacement],mode,primary);
+  dialog(`<div class="topic-bulk"><h3>${ms.length} 件のトピックを編集</h3><fieldset><legend>編集方式</legend><label><input type="radio" name="sd-mode" value="add" checked>加算方式（既存の割当を保持）</label><label><input type="radio" name="sd-mode" value="replace">書き換え方式（選択した集合に統一）</label></fieldset>
+    <p class="sub">☑ 全対象に所属　▣ 一部に所属　☐ 未所属。加算方式では既存のトピックを削除しません。</p>
+    <label>所属トピック<select id="sd-primary"><option value="__keep">変更しない</option><option value="">未所属</option>${names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('')}</select></label>
+    <input id="sd-q" placeholder="トピックを探す"><div id="sd-u" class="sd-list"></div>
+    <div class="row"><input id="sd-new-u" placeholder="新しいトピック"><button id="sd-create-u">作成して選択</button></div>
+    <details><summary>保存後の割当を確認</summary><div id="sd-preview"></div></details><div id="sd-error" role="alert"></div>
+    <div class="row"><button class="p" id="sd-ok">保存</button><button id="sd-no">キャンセル</button></div></div>`,close=>{
+    const draw=()=>{
+      const q=$('#sd-q').value.trim().toLowerCase();
+      $('#sd-u').innerHTML=names.filter(n=>!q||n.toLowerCase().includes(q)).map(n=>{
+        const count=counts.get(n)||0,checked=mode==='replace'?replacement.has(n):count===ms.length||additions.has(n),partial=mode==='add'&&count>0&&count<ms.length&&!additions.has(n);
+        return `<label class="sdi"><input type="checkbox" data-u="${esc(n)}"${checked?' checked':''} data-partial="${partial}"><span data-user>${esc(topicLabel(n))}</span><small>${count}/${ms.length}件${partial?'（一部）':''}</small></label>`;
+      }).join('');
+      document.querySelectorAll('#sd-u [data-partial="true"]').forEach(x=>{x.indeterminate=true;});
+      $('#sd-preview').innerHTML=calculate().map((m,i)=>`<p data-user>${esc(firstLine(ms[i].text).slice(0,40))}: ${esc(Bulk.members(ms[i]).join('・')||'未所属')} → ${esc(Bulk.members(m).join('・')||'未所属')}</p>`).join('');
     };
-    draw(); $('#sd-q').oninput = draw; $('#sd-q').focus();
-    // 所属・上位の選択画面内で作成し、作ったトピックを即座に選択する。
-    const create = kind => {
-      const input = $('#sd-new-' + kind), name = input.value.trim();
-      { const bad = nameProblem(name); if (bad) return alert(bad); }
-      doc.topics.push({ name, type: 'bubble', stamp: true, entry: null });
-      names.unshift(name);
-      if (kind === 't') topicSel = name;
-      else { upsSel.add(name); upsTouched = true; }
-      input.value = ''; $('#sd-q').value = ''; draw();
+    $('#sd-q').oninput=draw;$('#sd-primary').onchange=e=>{primary=e.target.value==='__keep'?null:e.target.value;draw();};
+    document.querySelectorAll('[name=sd-mode]').forEach(x=>x.onchange=()=>{mode=x.value;draw();});
+    $('#sd-u').onchange=e=>{const n=e.target.dataset.u;if(n===undefined)return;if(mode==='add'){if(counts.get(n)===ms.length)toast('既存の割当を外す場合は、書き換え方式を選んでください');else additions.has(n)?additions.delete(n):additions.add(n);}else replacement.has(n)?replacement.delete(n):replacement.add(n);draw();};
+    $('#sd-create-u').onclick=()=>{const input=$('#sd-new-u'),name=input.value.trim(),bad=nameProblem(name);if(bad||names.includes(name)){ $('#sd-error').textContent=bad||'同じ名前が存在します';return;}pending.push({name,type:'bubble',stamp:true,entry:null});names.unshift(name);additions.add(name);replacement.add(name);input.value='';$('#sd-q').value='';draw();};
+    $('#sd-new-u').onkeydown=e=>{if(e.key==='Enter'&&!e.isComposing){e.preventDefault();$('#sd-create-u').click();}};
+    $('#sd-no').onclick=close;
+    $('#sd-ok').onclick=async()=>{
+      const button=$('#sd-ok');button.disabled=true;
+      try{
+        if(mode==='replace'&&!confirm('選択した全対象の既存トピックを、表示されている集合に書き換えます。よろしいですか？'))return;
+        const next=calculate();doc.topics.push(...pending);pending=[];
+        for(let i=0;i<ms.length;i++)Object.assign(ms[i],next[i]);
+        save();await ctx.flush();const stored=await ctx.api.state();init(stored.docs||{},true);close();paint();showTarget();ctx.renderList();
+      }catch(e){$('#sd-error').textContent='保存できませんでした。割当を保持して再試行できます。';}finally{button.disabled=false;}
     };
-    for (const kind of ['t', 'u']) {
-      $('#sd-create-' + kind).onclick = () => create(kind);
-      $('#sd-new-' + kind).onkeydown = e => {
-        if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); create(kind); }
-      };
-    }
-    $('#modal .box').onclick = e => { const t = e.target.closest('[data-t]'), u = e.target.closest('[data-u]'); if (t) { topicSel = t.dataset.t; draw(); } if (u) { upsTouched = true; if (upsSel.has(u.dataset.u)) upsSel.delete(u.dataset.u); else upsSel.add(u.dataset.u); draw(); } };
-    $('#sd-no').onclick = close;
-    $('#sd-ok').onclick = () => { doc.topics.push(...pendingTopics); const now = Date.now(); for (const m of ms) { if (topicSel !== null) m.topic = topicSel; if (upsTouched) { const list = [...upsSel].filter(x => x !== m.topic); if (list.length) m.ups = list; else delete m.ups; } m.edited = now; } save(); close(); paint(); showTarget(); ctx.renderList(); };
+    draw();$('#sd-q').focus();
+  });
+}
+function selectedMemoRange(bub,m) {
+  const selected=window.getSelection();if(!selected||selected.isCollapsed||!bub.contains(selected.anchorNode)||!bub.contains(selected.focusNode))return undefined;
+  const quote=selected.toString(),at=m.text.indexOf(quote);if(!quote||at<0||m.text.lastIndexOf(quote)!==at){toast('表示上の範囲は、リンク編集の「範囲」で確認してください');return undefined;}
+  return {from:at,to:at+quote.length};
+}
+function createChildTopic() {
+  const parent=topic(view)?.name || doc.target.topic;
+  if(!parent)return toast('上位にするトピックを開いてください');
+  dialog(`<h3>下位トピックを作成</h3><p data-user>上位: ${esc(parent)}</p><input id="child-name" placeholder="新しい下位トピックの名前"><p class="sub">このトピックで書くメモは、上位の設定を引き継ぎます。</p><div id="child-error" role="alert"></div><div class="row"><button id="child-ok">作成</button><button id="child-no">キャンセル</button></div>`,close=>{
+    $('#child-no').onclick=close;$('#child-ok').onclick=async()=>{const name=$('#child-name').value.trim(),bad=nameProblem(name);if(bad){$('#child-error').textContent=bad;return;}doc.topics.push({name,type:'bubble',stamp:true,entry:null});doc.upperByTopic[name]=[parent];save();await ctx.flush();close();open(name);};
+    $('#child-name').onkeydown=e=>{if(e.key==='Enter'&&!e.isComposing){e.preventDefault();$('#child-ok').click();}};$('#child-name').focus();
   });
 }
 
@@ -788,39 +800,7 @@ const range = ms => { const f = ms[0], l = ms[ms.length - 1], d1 = dayOfMsg_(f),
 const source = m => `[${dayOfMsg_(m)} ${hm(m.t)}](${dayFile(dayOfMsg_(m))}#m-${m.id})`;
 // ノート化: チャットメモ1件でも複数件でも、実体は一つのノートとしてID・索引で管理。
 // 元のメモ本文をノートにコピーせず、メモの内部IDだけを記録する。
-function toNoteDialog(explicitMemos) {
-  const ms = explicitMemos || chosen(); if (!ms.length) return;
-  const rootFree = () => { const r = ctx.notes().filter(n => n.s === 'd' && /^\d+$/.test(n.id)).map(n => +n.id); return ctx.free('d', String((r.length ? Math.max(...r) : 0) + 1)); };
-  dialog(`<h3>${ms.length} 件のメモをノート化</h3>
-    <div class="sub">元のチャットメモは残り、専用のノート画面にそのまま表示されます。内容のコピーは作りません。</div>
-    <label>タイトル <input id="as-title" style="width:100%" placeholder="例: ヘーゲルの君主制論" value="${esc(firstLine(ms[0].text).slice(0, 45))}"></label>
-    <label class="rad"><input type="radio" name="as" value="noid" checked> IDなし（あとで付ける）</label>
-    <label class="rad"><input type="radio" name="as" value="id"> IDを付ける <input id="as-id" style="width:100px" value="${esc(rootFree())}"></label>
-    <label class="rad"><input type="radio" name="as" value="parent"> 親ノートのID（分岐として付ける） <input id="as-parent" style="width:100px" placeholder="例: 1a"></label>
-    <button type="button" id="as-explore">索引・本文を検索してIDを探す</button>
-    <div class="row"><button class="p" id="as-ok">ノート化</button><button id="as-no">やめる</button></div>`, close => {
-    $('#as-id').onfocus = () => { document.querySelector('input[name=as][value=id]').checked = true; };
-    $('#as-parent').onfocus = () => { document.querySelector('input[name=as][value=parent]').checked = true; };
-    $('#as-no').onclick = close;
-    $('#as-explore').onclick = () => ctx.exploreId(id => { $('#as-id').value = id; document.querySelector('input[name=as][value=id]').checked = true; });
-    $('#as-ok').onclick = async () => {
-      const kind = document.querySelector('input[name=as]:checked').value; let id = null;
-      if (kind === 'parent') {
-        const p = $('#as-parent').value.trim().toLowerCase();
-        if (!ctx.get('d', p)) return alert(`デジタルのノート ${p || '（空）'} がありません`);
-        id = ctx.free('d', L.child(p));
-      } else if (kind === 'id') {
-        id = $('#as-id').value.trim().toLowerCase();
-        if (!L.isId(id) || /^\d{8,}$/.test(id)) return alert('IDの形が違います（例: 12 や 3a）');
-        if (ctx.get('d', id)) return alert(`ノート ${id} は既にあります`);
-      }
-      const title = $('#as-title').value.trim();
-      // 失敗したときは画面を閉じずに再試行できるようにする。
-      const note = await makeMemoGroup(ms, id, title);
-      if (note) close();
-    };
-  });
-}
+function toNoteDialog(explicitMemos) { const ms = explicitMemos || chosen(); if (ms.length) ctx.createLink(ms.map(m => ctx.targetMemo(m))); }
 async function makeMemoGroup(ms, id, title) {
   const data = { memoIds: ms.map(m => m.id) };
   await ctx.flush(); // 生成時点で元のメモの保存を先に完了させる
@@ -843,13 +823,14 @@ export function memoGroupSpeakerHtml() {
 }
 document.addEventListener('change', e => { if (e.target.matches && e.target.matches('[data-mg-speaker]') && mgCur) { speakerView = e.target.value; renderMemoGroup(mgCur.el, mgCur.note); } });
 export function renderMemoGroup(el, note) {
+  if (ctx.renderMemoGroupPlain) { ctx.renderMemoGroupPlain(el,note); return; }
   mgCur = { el, note };
   const rows = MemoGroup.entries(note.data, doc);
   el.innerHTML = `<div class="chat memo memo-note">
     <div class="memo-note-messages">${rows.map(({ id, memo: m }) => m
       ? `<div class="bub${m.actor && speakerView!=='none' && m.actor!==speakerView ? ' other-speaker' : ''}" data-source-memo="${esc(id)}">
           <div class="b-meta">${esc(actorName(m.actor))}</div>${quoteHtml(m)}
-          <div class="b-body md">${body(m.text)}</div>
+          <div class="b-body md">${body(m.text,"memo:"+m.id)}<div class="memo-reference-backlinks">${ctx.memoReferenceBacklinks?.(m)||''}</div></div>
           <div class="b-foot"><span class="b-left">${m.topic ? esc(m.topic) : '未所属'}${upsOf(m).length ? '　↑ ' + upsOf(m).map(esc).join('、') : ''}</span><span class="b-time">${esc(MemoGroup.at(m.t))}</span></div>
           <button class="memo-note-source" data-source-memo-open="${esc(id)}" title="元のメモを開く">↗</button>
         </div>`
@@ -952,11 +933,10 @@ function recConfDialog() {
 function confDialog() {
   if (!topic(view) && isRec(view)) return recConfDialog();
   const t = topic(view), n = countOf(view);
-  dialog(`<h3>トピックの設定</h3>
-    <div class="sub">名前</div><input id="cf-name" value="${esc(t.name)}">
+  dialog(`<div class="topic-settings"><h3>トピックの設定</h3><p class="sub">${n} 件のメモ。名前の変更は所属・上位の参照にも反映されます。</p><section><label for="cf-name">トピック名</label><input id="cf-name" value="${esc(t.name)}"></section>
     ${t.type === 'whole' ? `<div class="sub">全体型（ノート ${esc(t.entry && t.entry.id)}）</div>
     <label class="rad"><input type="checkbox" id="cf-stamp" ${t.stamp ? 'checked' : ''}> 時刻（HH:MM）を付ける（全体型の行）</label>` : ''}
-    <div class="row"><button class="p" id="cf-ok">決定</button><button id="cf-no">やめる</button><span class="grow"></span><button class="danger" id="cf-del">このトピックを消す</button></div>`, close => {
+    <div class="row"><button class="p" id="cf-ok">決定</button><button id="cf-no">キャンセル</button></div><details class="topic-danger"><summary>削除</summary><p>中のメモは残り、未所属へ移ります。</p><button class="danger" id="cf-del">このトピックを消す</button></details></div>`, close => {
     $('#cf-no').onclick = close;
     $('#cf-ok').onclick = () => {
       const name = $('#cf-name').value.trim();
@@ -1041,10 +1021,11 @@ document.addEventListener('click', e => {
     if (a === 'selcopy') { const text = entries().filter(x => x.kind === 'msg' && sel.has(x.m.id)).map(x => x.m.text).join('\n\n'); navigator.clipboard.writeText(text).then(() => toast(`${sel.size} 件をコピーしました`)); }
     if (a === 'selall') { sel = new Set(entries().filter(x => x.kind === 'msg').map(x => x.m.id)); paint(); selbar(); }
     if (a === 'tonote') toNoteDialog();
+    if (a === 'sellink') ctx.createLink(chosen().map(m=>ctx.targetMemo(m)));
     return;
   }
   const tg = e.target.closest('[data-tg]'); if (tg) {
-    openPicker(tg, { multi: true, selected: doc.target.ups, near: doc.target.topic, exclude: [doc.target.topic], onPick: list => { TopicPrefs.selectUpper(doc, list); save(); showTarget(); } });
+    const r=tg.getBoundingClientRect(); popMenu({clientX:r.left,clientY:r.bottom}, [['上位トピックを選ぶ', () => openPicker(tg, { multi: true, selected: doc.target.ups, near: doc.target.topic, exclude: [doc.target.topic], onPick: list => { TopicPrefs.selectUpper(doc, list); save(); showTarget(); } })], ['新しい下位トピックを作成', () => createChildTopic()]]);
     return;
   }
   const tgx = e.target.closest('[data-tgx]'); if (tgx) { TopicPrefs.selectUpper(doc, doc.target.ups.filter(u => u !== tgx.dataset.tgx)); save(); showTarget(); return; }

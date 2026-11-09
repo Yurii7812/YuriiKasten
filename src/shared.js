@@ -21,7 +21,7 @@ md.renderer.rules.fence = (tokens, idx, options, env, self) => {
   return oldFence ? oldFence(tokens, idx, options, env, self) : self.renderToken(tokens, idx, options);
 };
 // :1a や 1a: は、ノートへのリンクにする（pkm: で始まるリンク）
-export function renderMd(text) {
+export function renderMd(text, options = {}) {
   let src = text || '', out = '', last = 0;
   // Mermaidの図コード内にある :1 等をノート参照に書き換えると構文が壊れるので除外。
   const fences = UrlLinks.fencedRanges(src);
@@ -33,12 +33,13 @@ export function renderMd(text) {
   el.innerHTML = md.render(out + src.slice(last));
   for (const i of el.querySelectorAll('img')) { // 画像は保存フォルダの中のファイル
     const s = i.getAttribute('src') || '';
-    if (!/^(https?:|data:|file:)/.test(s)) try { i.src = new URL(s, vaultUrl()).href; } catch { }
+    if (!/^(https?:|data:|file:|link:|memo:|note:)/.test(s) && !/^\d{14}(?:-\d+)?\.md$/.test(s)) try { i.src = new URL(s, vaultUrl()).href; } catch { }
   }
   for (const a of el.querySelectorAll('a')) {
     const h = a.getAttribute('href') || '';
     if (h.startsWith('pkm:')) a.dataset.ref = h.slice(4); else a.dataset.file = h;   // pkm:紙デジタル:ID
   }
+  ctx.enhanceRendered?.(el, { ...options, text: src });
   return el.innerHTML;
 }
 // 表示した Markdown の中のリンクを押したとき（ノートへ飛ぶ・ファイルや外のリンクは既定のアプリで開く）

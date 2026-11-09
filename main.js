@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, nativeImage } = require('electron');
 const {externalUri} = require('./url-links');
 const fs = require('fs');
 const path = require('path');
@@ -41,15 +41,15 @@ const suggestVault = () => path.join(os.homedir(), 'YuriiNote');
 const foundVaults = () => ['YuriiNote', 'YuriiKasten', 'PaperPKM'].map(n => path.join(os.homedir(), n)).filter(p => { try { return fs.statSync(p).isDirectory() && fs.readdirSync(p).some(f => /^\d{14}\.md$|^D_|^\.pkm-layout$/.test(f)); } catch { return false; } });
 let vault = process.env.YURIINOTE_VAULT || process.env.YURIIKASTEN_VAULT || process.env.PAPER_PKM_VAULT || readCfg().vault || null;
 if (process.platform === 'linux' && process.env.APPIMAGE) app.commandLine.appendSwitch('no-sandbox'); // AppImage ではサンドボックス用の権限が付けられない
-let v = null;
-const open = () => { v = store.openVault(vault); return v.state(); };
+let v = null, urlPreviews = null;
+const open = () => { v = store.openVault(vault); urlPreviews = require('./url-preview').createService(v, { fetcher: url => require('./url-preview').fetchMetadata(url, { thumbnailer: bytes => { const image = nativeImage.createFromBuffer(bytes), size = image.getSize(); if (!size.width || !size.height) throw new Error('画像を読めません'); return image.resize(size.width >= size.height ? { width: Math.min(128, size.width) } : { height: Math.min(128, size.height) }).toPNG(); } }), onProgress: p => { if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('urlProgress', p); } }); const service = urlPreviews; setTimeout(() => service.refresh().catch(() => {}), 0); return v.state(); };
 
 ipcMain.handle('load', () => vault ? open() : { firstRun: true, suggest: suggestVault(), found: foundVaults() });
 // 初めて起動したとき: 選んだフォルダ（無ければ作る）を保存先にする
 ipcMain.handle('useVault', (_e, p) => { if (!p || typeof p !== 'string') return null; vault = path.resolve(p.replace(/^~/, os.homedir())); fs.mkdirSync(vault, { recursive: true }); writeCfg({ ...readCfg(), vault }); return open(); });
 ipcMain.handle('state', () => v.state());
 ipcMain.handle('trashList', () => v.trashList());
-ipcMain.handle('trashRestore', (_e, f) => { const ok = v.trashRestore(f); if (ok) v = store.openVault(vault); return ok ? v.state() : false; });
+ipcMain.handle('trashRestore', (_e, f) => { const ok = v.trashRestore(f); return ok ? open() : false; });
 
 // ===== 同期（ラズパイの同期サーバーと。設定が無ければ何もしない）=====
 let mainWin = null;
@@ -70,7 +70,10 @@ async function runPhoneImport() {
   return { ok: true, state: v.state(), sum: out.sum, message: C.summaryText(out.sum) + (sent && sent.ok ? `\nスマホへ、PC のメモ ${pcm.memos.length} 件と、日のノート ${pcm.days.length} 件を送りました。` : '\n（PC のメモを、スマホへ送れませんでした。もう一度つないでみてください）') + (m.ok ? '\nスマホには「取り込み済み」の印を返しました。もう要らないメモは、スマホの中から消せます（PC のノートは消えません）。' : '\n（取り込み済みの印は、スマホへ返せませんでした。もう一度、USB でつないでみてください）') };
 }
 ipcMain.handle('phoneImport', () => runPhoneImport());
-ipcMain.handle('urlTitle', (_e, url) => require('./urltitle').fetchTitle(String(url || '')));   // リンクの表示名を、ページの題から自動で
+ipcMain.handle('urlTitle', async (_e, url) => { try { return (await urlPreviews.get(String(url || ''))).title || ''; } catch { return ''; } });
+ipcMain.handle('urlPreview', (_e, url, force) => urlPreviews.get(String(url || ''), !!force));
+ipcMain.handle('urlRefresh', () => urlPreviews.refresh(true));
+ipcMain.handle('urlStatus', () => urlPreviews.status());   // リンクの表示名を、ページの題から自動で
 // スマホが USB でつながったら、自動で: アプリが古ければ更新 → メモを取り込む（設定の「スマホ」でオフにできる）
 let phoneBusy = false, phoneSeen = null;
 async function phoneTick() {

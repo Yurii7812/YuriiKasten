@@ -364,7 +364,7 @@ const now = (d = new Date()) => {
 const parseTime = c => { const m = (c || '').match(/^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2})(?::(\d{2}))?)?/); return m ? new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)) : null; };
 
 module.exports = {
-  MDLINK, ID, isId, splitAnchor, tok, cmpId, sibling, child, parentIn, root,
+  codeRanges, MDLINK, ID, isId, splitAnchor, tok, cmpId, sibling, child, parentIn, root,
   tokens, anchorPos, selfTarget, bodyToMd, mdToBody,
   fzRange, fzSubtree, exportMd, defOf, topicText, legacyTopicText, parseIdTok, isNoid, noidStem, isStem, STEM, fmParse, fmDump, parseTime, KINDS, deriveBody, setDayStart, todayStr, dayOf, weekday, isDate, addToSection, normDay, diaryTree, topicLine, mergeTopic, addToTopic, removeFromTopic, toHira, kanaRow, ROWS, byReading, kwAnchor, fileName, splitKw, now
 };
