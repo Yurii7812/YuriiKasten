@@ -20,6 +20,7 @@ let lastSel = null;
 let cq = '', tq = '';
 let childFilter = new Set(); // 下位トピックによる絞り込み（OR）
 let upperFilter = new Set(); // 上位トピックによる絞り込み（OR）
+const FUNNEL = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>';   // 絞り込みの印（文字のかわり）
 let filterOpen = false;      // 絞り込みの欄を開いているか（描き直しても保つ）
 let lastTopicSelection = null;
 let speakerView = 'self'; // 選択中のキャラは右。「選択なし」なら全員右
@@ -36,7 +37,8 @@ let draft = '';
 const drafts = new Map(), DRAFT_KEY = 'pkm-chat-drafts';
 (function loadDrafts() { try { const o = JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}'); for (const k in o) if (o[k]) drafts.set(k, o[k]); } catch { } })();
 const persistDrafts = () => { try { const o = {}; drafts.forEach((v, k) => { if (v) o[k] = v; }); localStorage.setItem(DRAFT_KEY, JSON.stringify(o)); } catch { } };
-const setDraft = v => { draft = v; if (v) drafts.set(view, v); else drafts.delete(view); persistDrafts(); };
+let editingId = null, editText = '', editBackup = null;   // 下の入力欄で、メモを直している途中（Enter で完了・Esc でやめる）
+const setDraft = v => { if (editingId) { editText = v; return; } draft = v; if (v) drafts.set(view, v); else drafts.delete(view); persistDrafts(); };
 draft = drafts.get(view) || '';
 const DIARY = '日記';
 const recKinds = () => (ctx.records ? ctx.records() : []).map(r => r.name).filter(n => n !== DIARY);   // 夢などの時系列記録の種類（日記と同じように使える）
@@ -200,7 +202,7 @@ export function listHtml() {
     .filter(x => x.name && !stdNames.has(x.name) && !seen.has(x.name) && seen.add(x.name))
     .sort((x, y) => (lu.get(y.name) || 0) - (lu.get(x.name) || 0));
   const hit = x => !q || x.label.toLowerCase().includes(q), stdShown = std.filter(hit), restShown = rest.filter(hit);
-  return `<div id="clist"><div class="dtop"><button class="p" id="c-new">＋ トピック</button><button id="c-topic-graph">🕸 トピックグラフ</button><input id="c-tq" class="ctq" placeholder="トピックを探す" value="${esc(tq)}"></div>`
+  return `<div id="clist"><div class="dtop"><button class="p" id="c-new" title="トピックを追加">＋</button><button id="c-topic-graph" title="トピックグラフ">🕸</button><input id="c-tq" class="ctq" placeholder="トピックを探す" value="${esc(tq)}"></div>`
     + stdShown.map(t => row(t.name, t.label, t.n, t.icon)).join('') + (stdShown.length && restShown.length ? '<div class="csep"></div>' : '') + restShown.map(t => row(t.name, t.label, t.n, t.icon)).join('') + '</div>';
 }
 
@@ -235,6 +237,7 @@ function entries() {
 
 // ===== 画面 =====
 export function open(name, keep, savedSourceIds, savedGraph) {
+  if (editingId) cancelEdit();
   graphOpen = !!savedGraph;
   childFilter = new Set(); upperFilter = new Set(); lastTopicSelection = null;
   if (!replyBrowse) { if (draft) drafts.set(view, draft); else drafts.delete(view); persistDrafts(); }   // いまの書きかけを、そのトピックに残す
@@ -299,7 +302,7 @@ function render() {
         <span class="grow"></span>
         ${sourceIds ? '<button data-c="source-clear">フィルター解除・すべて</button>' : ''}
         <div id="c-children" class="c-children"></div>
-        <details class="chat-tools chat-view-menu"><summary title="検索・表示切替・キャラ・その他">︙ 表示・操作</summary>
+        <details class="chat-tools chat-view-menu"><summary title="表示・操作（検索・日ごと・キャラ・設定）">⋮</summary>
           <div class="chat-tools-menu wide">
             <span class="sub">${sourceIds ? `ノート化した ${sourceIds.size} 件だけを表示` : isRec(view) ? '日記にも、時刻つきの行で入ります' : view === '*' ? '書いたものは「未選択」に入ります' : t && t.type === 'whole' ? '全体で1つのノート' : ''}</span>
             <input id="c-search" class="csearch" placeholder="このチャットメモの中を検索" value="${esc(cq)}">
@@ -320,8 +323,9 @@ function render() {
       <div id="c-redit" class="c-redit" style="display:none"></div>
       <div id="c-target" class="c-target" ${sourceIds ? 'style="display:none"' : ''}></div>
       <div id="c-reply" class="c-reply" style="display:none"></div>
-      ${sourceIds ? '' : `<div class="c-compose"><div id="c-mention" class="rp-mention" style="display:none"></div><button data-c="find-reply">↩ 探す</button><button data-c="attach" title="ファイルや画像を付ける">📎</button>
-        <textarea id="c-in" rows="1" placeholder="書く（Enter で送る、Shift+Enter で改行。@ で、別のメモやノートを入れる）"></textarea><button class="p" data-c="send">送る</button></div>`}
+      ${sourceIds ? '' : `<div class="c-compose"><div id="c-mention" class="rp-mention" style="display:none"></div>
+        <textarea id="c-in" rows="1" placeholder="書く（Enter で送る・Shift+Enter で改行）" title="@ で、別のメモやノートを入れられます"></textarea>
+        <div class="c-tools"><button data-c="find-reply" id="c-find-reply" class="${replyBrowse ? 'on' : ''}" title="${replyBrowse ? '探すをやめる' : '返信先を探す'}">${replyBrowse ? '✕' : '🔍'}</button><button data-tg="up" title="上位トピックを追加">↑</button><button data-c="attach" title="ファイルや画像を付ける">📎</button></div></div>`}
     </div>`;
   paint(true); selbar(); showReply(); showTarget();
   // 上の帯の「絞り込み」と「表示・操作」は、どちらか一方だけ開く（開いたら、もう一方を閉じる）
@@ -340,9 +344,9 @@ function render() {
       document.querySelectorAll('#pane .chat-head details[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; });
     }, true);
   }
-  const inp = $('#c-in'); if (inp) { inp.value = draft; fit(inp); inp.focus(); }
+  const inp = $('#c-in'); if (inp) { inp.value = editingId ? editText : draft; fit(inp); inp.focus(); }
 }
-function fit(inp) { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 180) + 'px'; inp.style.overflowY = inp.scrollHeight > 180 ? 'auto' : 'hidden'; }
+function fit(inp) { const big = inp.id === 'c-in', min = big ? 40 : 0, max = 180; inp.style.height = 'auto'; inp.style.height = Math.max(min, Math.min(inp.scrollHeight, max)) + 'px'; inp.style.overflowY = inp.scrollHeight > max ? 'auto' : 'hidden'; }
 const wk = d => `${d}（${L.weekday(d)}）`;
 const noteLabel = stem => { const n = ctx.notes().find(x => x.stem === stem); return n ? (n.noid ? 'IDなし' : n.id) : null; };
 // 本文: メンション（[@…](memo:ID)）は、押すとそのメモへ
@@ -354,9 +358,56 @@ const quoteHtml = m => (m.noteReplies || []).map(ref=>{ const n=ctx.notes().find
 // 入力欄の上の「返信先」
 // 書き込み先: 所属トピックと上位トピック（複数可）。変更しない限り次のメモにも引き継ぐ。
 const topicLabel = n => n === '' ? '未所属' : n === DIARY ? '日記' : n;
+// 「↩ 探す」: 別のトピックを見ながら返信先を探す状態。もう一度押す・Esc でやめられる
+function updateFindBtn() { const b = $('#c-find-reply'); if (!b) return; b.textContent = replyBrowse ? '✕' : '🔍'; b.title = replyBrowse ? '探すをやめる' : '返信先を探す'; b.classList.toggle('on', !!replyBrowse); }
+function cancelBrowse() { replyBrowse = null; updateFindBtn(); toast('返信先を探すのをやめました'); }
+// 「↩ 探す」: メモ・ノートを文字で探して、返信先に足す（複数選べる。選んだものは入力欄の上に並び、×で外せる）
+function replyPicker(anchor) {
+  document.querySelectorAll('.tgpick').forEach(x => x.remove());
+  const box = document.createElement('div'); box.className = 'tgpick rppick';
+  box.innerHTML = '<input class="tgs" placeholder="返信先を探す（メモ・ノートの文字、ID）"><div class="tgl"></div><div class="row" style="margin:6px 0 0"><span class="sub rp-n"></span><span class="grow"></span><button type="button" class="rp-browse" title="左のトピック一覧で別のトピックを開きながら、メモの ↩ を押して選びます">トピックを見ながら探す</button><button type="button" class="p rp-done">完了</button></div>';
+  const inp = box.querySelector('.tgs'), list = box.querySelector('.tgl');
+  const noteTitle = n => esc((n.title || (n.body || '').split('\n').find(x => x.trim()) || '').replace(/^#+\s*/, '').slice(0, 26));
+  const draw = () => {
+    const q = inp.value.trim().toLowerCase();
+    const memos = doc.messages.filter(x => !q || (x.text || '').toLowerCase().includes(q)).sort((a, b) => b.t - a.t).slice(0, q ? 20 : 8);
+    const notes = ctx.notes().filter(n => n.stem && (!q || (n.id || '').toLowerCase().includes(q) || (n.title || '').toLowerCase().includes(q) || (n.body || '').toLowerCase().includes(q))).slice(0, q ? 20 : 6);
+    const onM = id => replyTos.includes(id), onN = stem => noteReplyTos.some(x => x.stem === stem);
+    list.innerHTML = memos.map(m => `<div class="tgi${onM(m.id) ? ' on' : ''}" data-rm="${esc(m.id)}">${onM(m.id) ? '☑ ' : '☐ '}💬 ${first(m.text)} <small>${hm(m.t)}</small></div>`).join('')
+      + notes.map(n => `<div class="tgi${onN(n.stem) ? ' on' : ''}" data-rn="${esc(n.stem)}">${onN(n.stem) ? '☑ ' : '☐ '}📝 ${n.noid ? '' : esc(n.id) + ' '}${noteTitle(n)}</div>`).join('')
+      || '<div class="sub" style="padding:6px">見つかりません</div>';
+    box.querySelector('.rp-n').textContent = (replyTos.length + noteReplyTos.length) ? `${replyTos.length + noteReplyTos.length} 件を返信先に` : '';
+  };
+  list.addEventListener('click', e => {
+    const rm = e.target.closest('[data-rm]'), rn = e.target.closest('[data-rn]');
+    if (rm) { const id = rm.dataset.rm; if (replyTos.includes(id)) replyTos = replyTos.filter(x => x !== id); else replyTos.push(id); }
+    else if (rn) { const note = ctx.notes().find(n => n.stem === rn.dataset.rn); if (!note) return; if (noteReplyTos.some(x => x.stem === note.stem)) noteReplyTos = noteReplyTos.filter(x => x.stem !== note.stem); else noteReplyTos.push({ s: note.s, id: note.id, stem: note.stem }); }
+    else return;
+    showReply(); draw(); inp.focus();
+  });
+  const close = () => { box.remove(); document.removeEventListener('mousedown', away, true); const i = $('#c-in'); if (i) i.focus(); };
+  const away = e => { if (!box.contains(e.target) && !anchor.contains(e.target)) { box.remove(); document.removeEventListener('mousedown', away, true); } };
+  box.querySelector('.rp-done').onclick = close;
+  // トピックを行き来しながら探す（書きかけと書き込み先は、そのまま）。見つけたメモの ↩ を押すと、返信先に足されて戻る
+  box.querySelector('.rp-browse').onclick = () => {
+    box.remove(); document.removeEventListener('mousedown', away, true);
+    replyBrowse = { topic: doc.target.topic, ups: [...doc.target.ups] }; updateFindBtn();
+    toast('返信先を探し中：別のトピックのメモの ↩ を押す（やめるには Esc）');
+  };
+  inp.addEventListener('input', draw);
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+    else if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); const f = list.querySelector('[data-rm],[data-rn]'); if (f) f.click(); }
+  });
+  draw();
+  const r = anchor.getBoundingClientRect(); box.style.width = '360px'; box.style.left = Math.max(8, Math.min(r.left, innerWidth - 380)) + 'px'; box.style.bottom = Math.max(8, innerHeight - r.top + 6) + 'px';
+  document.body.append(box); setTimeout(() => document.addEventListener('mousedown', away, true), 0); inp.focus();
+}
 function showTarget() {
   const el = $('#c-target'); if (!el) return; const t = doc.target;
-  el.innerHTML = `<span class="tg-l">所属トピック: ${esc(topicLabel(t.topic))}</span><span class="tg-l">上位トピック</span>${t.ups.map(u => `<span class="tg tg-up" data-tgx="${esc(u)}" title="外す">${esc(u)} ×</span>`).join('')}<span class="tg tg-add" data-tg="up" title="上位トピックを追加">＋ 上位トピック</span>`;
+  // 入力欄の上は「↑ 上位トピック名」だけ（所属は上の見出しで分かる）。上位が無いときは、何も出さない。名前を押すと外れる
+  el.innerHTML = t.ups.length ? `<span class="tg-l">↑</span>${t.ups.map(u => `<span class="tg tg-up" data-tgx="${esc(u)}" title="外す">${esc(u)} ×</span>`).join('')}` : '';
+  el.style.display = t.ups.length ? '' : 'none';
 }
 // 選ぶ窓（探せる。最近使った順。「上」は、そこで過去に使ったものが先）。multi は、押すごとに入れる・外す
 function openPicker(anchor, { multi, selected, near, exclude = [], extra = [], onPick }) {
@@ -389,9 +440,11 @@ function openPicker(anchor, { multi, selected, near, exclude = [], extra = [], o
 const actorName = id => id && id !== 'self' ? (roleLibrary.find(r=>r.id===id)?.name || '不明なキャラ') : doc.selfName;
 function showReply() {
   const el = $('#c-reply'); if (!el) return; const os = replyTos.map(id => msg(id)).filter(Boolean); replyTos = os.map(o => o.id);
-  if (!os.length && !noteReplyTos.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  if (!os.length && !noteReplyTos.length && !editingId) { el.style.display = 'none'; el.innerHTML = ''; return; }
   const targets=noteReplyTos.map(r=>({ref:r,n:ctx.notes().find(n=>n.stem===r.stem)}));
+  const em = editingId && msg(editingId);
   el.style.display = ''; el.innerHTML = '<div class="rq-list">' +
+    (em ? '<div class="rq rq-edit"><b>✎ 編集中（Enter で完了・Esc でやめる）</b><span>'+esc(firstLine(em.text).slice(0,100))+'</span><button data-c="edit-cancel" title="編集をやめる">×</button></div>' : '') +
     os.map(o => '<div class="rq"><b>'+esc(o.topic ? o.topic + ' ・ ' : '')+hm(o.t)+'</b><span>'+esc(firstLine(o.text).slice(0,120))+'</span><button data-c="rcancel" data-id="'+esc(o.id)+'">×</button></div>').join('') +
     targets.map(x=>'<div class="rq"><b>ノートへ返信</b><span>'+esc(x.n?.title || x.ref.id || '（元ノートなし）')+'</span><button data-c="cancel-note-reply" data-stem="'+esc(x.ref.stem)+'">×</button></div>').join('') + '</div>';
 }
@@ -399,9 +452,11 @@ function showReply() {
 export function startReply(id) {
   if (editCtx) { if (id !== editCtx.m.id && !editCtx.reps.includes(id)) editCtx.reps.push(id); editCtx.redraw(); return; }
   if (redit) { toggleReplyOf(redit, id); return; }
-  if (replyBrowse) {doc.target={topic:replyBrowse.topic,ups:[...replyBrowse.ups]};replyBrowse=null;}
+  if (replyBrowse) {doc.target={topic:replyBrowse.topic,ups:[...replyBrowse.ups]};replyBrowse=null;updateFindBtn();}
   if (!replyTos.includes(id)) replyTos.push(id); showReply(); showTarget(); const i = $('#c-in'); if (i) i.focus();
 }
+// その日のチャットメモを、チャットメモの画面で（「すべて」の日ごと表示）。日記の「今日のチャットメモ一覧」から
+export function openDay(date) { viewMode = 'day'; day = date; doc.viewMode = 'day'; open('*'); }
 export function replyToNote(note) {
   if(!note || !note.stem) return;
   if(!noteReplyTos.some(x=>x.stem===note.stem))
@@ -439,7 +494,7 @@ function showChildren() {
   const chosen = [...new Set([...upperFilter, ...childFilter])];
   const names = chosen.map(esc).join('・');
   box.innerHTML = '<details class="c-filter"' + (filterOpen ? ' open' : '') + '>' +
-    '<summary>絞り込み' + (chosen.length ? '<span class="c-filter-count">' + chosen.length + '</span><span class="c-filter-now">' + names + '</span>' : '') + '</summary>' +
+    '<summary title="絞り込み（上位・下位トピック）">' + FUNNEL + (chosen.length ? '<span class="c-filter-count">' + chosen.length + '</span><span class="c-filter-now">' + names + '</span>' : '') + '</summary>' +
     '<div class="c-filter-body">' +
     section('上位トピック','upper',relations.upper,upperFilter) +
     section('下位トピック','lower',relations.lower,childFilter) +
@@ -510,11 +565,21 @@ function paint(toBottom) {
 }
 function selbar() {
   const b = $('#c-selbar'); if (!b) return;
-  b.innerHTML = sel ? `<span>${sel.size} 件を選択</span><span class="grow"></span><button data-c="selall">全部</button><button data-c="selclear" ${sel.size ? '' : 'disabled'}>選択解除</button><button data-c="selcopy" ${sel.size ? '' : 'disabled'}>コピー</button><button data-c="selmove" ${sel.size ? '' : 'disabled'}>所属・上位トピック</button><button data-c="selspeaker" ${sel.size ? '' : 'disabled'}>話した人</button><button data-c="seldel" class="danger" ${sel.size ? '' : 'disabled'}>消す</button><button class="p" data-c="tonote" ${sel.size ? '' : 'disabled'}>ノート化</button><button data-c="selno">やめる</button>` : '';
+  b.innerHTML = sel ? `<span>${sel.size} 件選択</span><span class="grow"></span><button data-c="selall">全部</button><button data-c="selclear" title="選択を全部外す" ${sel.size ? '' : 'disabled'}>解除</button><button data-c="selcopy" ${sel.size ? '' : 'disabled'}>コピー</button><button data-c="selmove" title="所属・上位トピックを変える" ${sel.size ? '' : 'disabled'}>トピック</button><button data-c="selspeaker" title="話した人を変える" ${sel.size ? '' : 'disabled'}>話者</button><button data-c="seldel" class="danger" ${sel.size ? '' : 'disabled'}>消す</button><button class="p" data-c="tonote" ${sel.size ? '' : 'disabled'}>ノート化</button><button data-c="selno">やめる</button>` : '';
   b.style.display = sel ? 'flex' : 'none';
 }
 
 // ===== 送る =====
+// 送ったメモの URL に、ページの題を自動でつける（毎回自分で表示名を打たなくていいように）。題が取れなければ、そのまま
+import UrlLinks from '../url-links.js';
+let bareNext = false;   // Ctrl+Shift+V で貼った（裸で入れる）: 次に送るメモは、題をつけない
+document.addEventListener('keydown', e => { if (e.target && e.target.id === 'c-in' && (e.ctrlKey || e.metaKey) && e.shiftKey && (e.key || '').toLowerCase() === 'v') bareNext = true; });
+async function titleMemo(m) {
+  if (bareNext) { bareNext = false; return; }
+  const before = m.text;
+  const after = await UrlLinks.withUrlTitles(before, u => ctx.api.urlTitle(u));
+  if (after !== before && m.text === before && msg(m.id)) { m.text = after; save(); paint(); }
+}
 function send() {
   const inp = $('#c-in'), text = inp.value.trim(); if (!text) return;
   const be = backend(), now = Date.now();
@@ -525,7 +590,8 @@ function send() {
     const upsT = doc.target.ups.filter(u => u && u !== doc.target.topic); if (upsT.length) m.ups = [...upsT];
     const rs = replyTos.filter(id => msg(id)); if (rs.length) m.replies = rs; replyTos = [];
     if (noteReplyTos.length) m.noteReplies=noteReplyTos.map(x=>({...x})); noteReplyTos=[];
-    doc.messages.push(m); if (replyBrowse) { replyBrowse=null; } save();
+    doc.messages.push(m); if (replyBrowse) { replyBrowse=null; updateFindBtn(); } save();
+    titleMemo(m);   // 裸の URL は、ページの題つきのリンクに（送ったあと、取れたものから）
     for (const kind of recKindsOf(m)) {   // 日記・時系列記録の、その日のノートにも（時刻つきの行）。日記を上位にしたメモも入る
       const date = L.dayOf(L.now(new Date(now))), line = `${hm(now)} ${text.replace(/\n{2,}/g, '\n')}`;
       ctx.api.appendToDay(kind, date, line).then(d => { const k = kind + '|' + date, mr = doc.mirror[k] || (doc.mirror[k] = { blocks: [], map: [] }); mr.blocks = blocks(d && d.body != null ? d.body : line); mr.map.push({ blk: line, part: text.replace(/\n{2,}/g, '\n'), memo: m.id }); save(); ctx.refreshDiaries(); });
@@ -606,7 +672,36 @@ function editBox(bub, text, onSave, m) {
   b.querySelector('[data-ok]').onclick = () => { mentionOff(); pickReply = null; editCtx = null; onSave(ta.value.trim(), reps); };
   b.querySelector('[data-no]').onclick = () => { mentionOff(); pickReply = null; editCtx = null; paint(); };
 }
-function editMsg(bub, m) { editBox(bub, m.text, (v, reps) => { if (v) { const old = m.text; m.text = v; if (reps && reps.length) m.replies = reps; else delete m.replies; delete m.reply; m.edited = Date.now(); save(); memoToDay(m, old, false); } paint(); }, m); }   // edited: スマホと共有するとき、新しい方が勝つ
+// 編集: そのメモの文章を、下のいつもの入力欄に出して直す。Enter で完了・Esc（または ×）でやめる。返信先も同じ欄で足したり外したりできる
+function editMsg(bub, m) { startEdit(m); }
+function startEdit(m) {
+  if (editingId) cancelEdit();
+  const inp = $('#c-in'); if (!inp) return;
+  editBackup = { replyTos: replyTos.slice(), noteReplyTos: noteReplyTos.map(x => ({ ...x })) };
+  editingId = m.id; editText = m.text;
+  replyTos = repliesOf(m).filter(id => id !== m.id); noteReplyTos = (m.noteReplies || []).map(x => ({ ...x }));
+  inp.value = m.text; fit(inp); inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length);
+  showReply();
+}
+function endEdit() {
+  editingId = null; editText = '';
+  replyTos = editBackup ? editBackup.replyTos : []; noteReplyTos = editBackup ? editBackup.noteReplyTos : []; editBackup = null;
+  const inp = $('#c-in'); if (inp) { inp.value = draft; fit(inp); }
+  showReply();
+}
+function cancelEdit() { if (editingId) endEdit(); }
+function finishEdit() {
+  const inp = $('#c-in'), m = msg(editingId); if (!inp) return;
+  if (!m) return cancelEdit();
+  const v = inp.value.trim();
+  if (!v) { toast('空にはできません（消すときは、メモを右クリック →「消す」）'); return; }
+  const old = m.text; m.text = v;
+  if (replyTos.length) m.replies = replyTos.slice(); else delete m.replies;
+  delete m.reply;
+  if (noteReplyTos.length) m.noteReplies = noteReplyTos.map(x => ({ ...x })); else delete m.noteReplies;
+  m.edited = Date.now();   // スマホと共有するとき、新しい方が勝つ
+  endEdit(); save(); memoToDay(m, old, false); paint(); ctx.renderList();
+}   // edited: スマホと共有するとき、新しい方が勝つ
 function editLine(bub, i) {
   const be = backend(), list = parts(be.get()), e = entries()[i];
   editBox(bub, e.text, v => { if (v) list[i] = (e.time ? e.time + ' ' : '') + v.replace(/\n{2,}/g, '\n'); else list.splice(i, 1); be.set(list.join('\n\n')); paint(); });
@@ -731,20 +826,25 @@ async function makeMemoGroup(ms, id, title) {
 
 // ノート化されたノートの中央画面。各吹き出しは C_チャット.json の実際のメモを読む。
 // 右側の索引・子・バックリンクは通常のノート画面が描画する。
+let mgCur = null;   // いま見ているノート化メモ（キャラを変えたとき、描き直す）
+// ノートの上の 1 行に入れる、表示するキャラの選択（案A）
+export function memoGroupSpeakerHtml() {
+  return `<select class="mgspk" data-mg-speaker title="表示するキャラ"><option value="self"${speakerView==='self'?' selected':''}>${esc(doc.selfName)}</option>${roleLibrary.map(r=>'<option value="'+esc(r.id)+'"'+(speakerView===r.id?' selected':'')+'>'+esc(r.name)+'</option>').join('')}<option value="none"${speakerView==='none'?' selected':''}>選択なし</option></select>`;
+}
+document.addEventListener('change', e => { if (e.target.matches && e.target.matches('[data-mg-speaker]') && mgCur) { speakerView = e.target.value; renderMemoGroup(mgCur.el, mgCur.note); } });
 export function renderMemoGroup(el, note) {
+  mgCur = { el, note };
   const rows = MemoGroup.entries(note.data, doc);
   el.innerHTML = `<div class="chat memo memo-note">
-    <div class="memo-note-head">元のチャットメモ ${rows.length} 件 <label>表示するキャラ <select data-mg-speaker><option value="self"${speakerView==='self'?' selected':''}>${esc(doc.selfName)}</option>${roleLibrary.map(r=>'<option value="'+esc(r.id)+'"'+(speakerView===r.id?' selected':'')+'>'+esc(r.name)+'</option>').join('')}<option value="none"${speakerView==='none'?' selected':''}>選択なし</option></select></label><span class="sub">本文は元のメモと共通です。編集するときは「元のメモ」を開きます。</span></div>
     <div class="memo-note-messages">${rows.map(({ id, memo: m }) => m
       ? `<div class="bub${m.actor && speakerView!=='none' && m.actor!==speakerView ? ' other-speaker' : ''}" data-source-memo="${esc(id)}">
           <div class="b-meta">${esc(actorName(m.actor))}</div>${quoteHtml(m)}
           <div class="b-body md">${body(m.text)}</div>
           <div class="b-foot"><span class="b-left">${m.topic ? esc(m.topic) : '未所属'}${upsOf(m).length ? '　↑ ' + upsOf(m).map(esc).join('、') : ''}</span><span class="b-time">${esc(MemoGroup.at(m.t))}</span></div>
-          <button class="memo-note-source" data-source-memo-open="${esc(id)}">元のメモを開く</button>
+          <button class="memo-note-source" data-source-memo-open="${esc(id)}" title="元のメモを開く">↗</button>
         </div>`
       : `<div class="bub missing">元のチャットメモ ${esc(id)} は見つかりません</div>`).join('')}</div>
   </div>`;
-  el.querySelector('[data-mg-speaker]')?.addEventListener('change', e=>{ speakerView=e.target.value; renderMemoGroup(el,note); });
   el.onclick = e => {
     const noteRef=e.target.closest('[data-reply-note]'); if(noteRef){const n=ctx.notes().find(n=>n.stem===noteRef.dataset.replyNote);if(n)ctx.openNote(n.s,n.id);return;}
     const q = e.target.closest('[data-qm]');
@@ -893,11 +993,12 @@ document.addEventListener('click', e => {
     const a = c.dataset.c;
     if (a === 'topic-graph') { openTopicGraph(); return; }
     if (a === 'topic-graph-close') { graphOpen = false; ctx.cur().topicGraph = false; render(); ctx.renderTabs(); return; }
-    if (a === 'send') send();
+    if (a === 'send') { if (editingId) finishEdit(); else send(); }
+    if (a === 'edit-cancel') cancelEdit();
     if (a === 'vall' || a === 'vday') { viewMode = a === 'vday' ? 'day' : 'all'; doc.viewMode = viewMode; if (viewMode === 'day') day = ''; save(); render(); }
     if (a === 'dprev' || a === 'dnext') { const ds = [...new Set(filteredMessages().map(dayOfMsg_))].sort(), i = ds.indexOf(day || L.todayStr()); const n = ds[a === 'dprev' ? (i < 0 ? ds.length - 1 : i - 1) : i + 1]; if (n) { day = n; render(); } }
     if (a === 'attach') ctx.pick(true, attach, '*');
-    if (a === 'find-reply') {replyBrowse={topic:doc.target.topic,ups:[...doc.target.ups]};toast('左のトピック一覧で返信先を探し、↩ を押してください');return;}
+    if (a === 'find-reply') { if (replyBrowse) return cancelBrowse(); replyPicker(e.target.closest('button')); return; }
     if (a === 'roles') {charactersDialog();return;}
     if (a === 'conf') confDialog();
     if (a === 'openbe') backend().open();
@@ -969,12 +1070,14 @@ document.addEventListener('keydown', e => {
   if (e.target.id === 'c-in' && !e.target.closest('.rp')) {
     if (mn.length && !e.isComposing && e.keyCode !== 229 && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey))) { e.preventDefault(); return pickMention(0); }
     if (e.key === 'Escape' && mn.length) { mentionOff(); return; }
+    if (e.key === 'Escape' && editingId) { e.preventDefault(); cancelEdit(); return; }
     if (e.key === 'Escape' && (replyTos.length || noteReplyTos.length)) { e.preventDefault(); replyTos = []; noteReplyTos=[]; showReply(); }
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); send(); }
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); if (editingId) finishEdit(); else send(); }
   }
 });
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape' || !ctx.cur() || ctx.cur().k !== 'chat') return;
+  if (replyBrowse && !document.querySelector('#modal[style*="flex"], .tgpick, .b-edit')) { e.preventDefault(); cancelBrowse(); return; }
   if (pickReply) { pickReply = null; const eb = document.querySelector('.b-edit'); if (eb) eb.dispatchEvent(new Event('input')); return; }
   if (document.querySelector('#modal[style*="flex"], .tgpick, .b-edit, .idex-cover')) return;
   if (e.target.closest && e.target.closest('input, textarea, [contenteditable]') && e.target.id !== 'c-in') return;

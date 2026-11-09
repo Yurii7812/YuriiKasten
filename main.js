@@ -66,6 +66,7 @@ async function runPhoneImport() {
   return { ok: true, state: v.state(), sum: out.sum, message: C.summaryText(out.sum) + (sent && sent.ok ? `\nスマホへ、PC のメモ ${pcm.memos.length} 件と、日のノート ${pcm.days.length} 件を送りました。` : '\n（PC のメモを、スマホへ送れませんでした。もう一度つないでみてください）') + (m.ok ? '\nスマホには「取り込み済み」の印を返しました。もう要らないメモは、スマホの中から消せます（PC のノートは消えません）。' : '\n（取り込み済みの印は、スマホへ返せませんでした。もう一度、USB でつないでみてください）') };
 }
 ipcMain.handle('phoneImport', () => runPhoneImport());
+ipcMain.handle('urlTitle', (_e, url) => require('./urltitle').fetchTitle(String(url || '')));   // リンクの表示名を、ページの題から自動で
 // スマホが USB でつながったら、自動で: アプリが古ければ更新 → メモを取り込む（設定の「スマホ」でオフにできる）
 let phoneBusy = false, phoneSeen = null;
 async function phoneTick() {

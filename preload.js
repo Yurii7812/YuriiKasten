@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer: r } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   load: () => r.invoke('load'),
+  urlTitle: u => r.invoke('urlTitle', u),   // URL のページの題（リンクの表示名の自動入力）
   // ウィンドウを閉じる前に、書きかけの保存を済ませる（済んだら main へ知らせる）
   onFlush: cb => r.on('flush-now', async () => { try { await cb(); } finally { r.send('flush-done'); } }),
   state: () => r.invoke('state'),

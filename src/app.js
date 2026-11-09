@@ -36,10 +36,11 @@ const allKeywords = () => [...new Set(notes.flatMap(n => n.keywords))].sort(L.by
 const yomi = k => readings[k] && readings[k] !== k ? `<small class="yomi">${esc(readings[k])}</small>` : '';
 const kwTopic = k => topics.find(t => t.keyword === k);
 // そのキーワードのトピックIndex があれば赤い点（押すと開く）。IDが2つ以上でまだ無ければ「作る」
-// 左の一覧の並べ替えと表示（デジタル・紙・未整理・日記で共通。覚えておく）
+// 左の一覧の並べ替えと表示。ノート（デジタル・紙・未整理）と日記は、並び順をそれぞれ別に覚える
 const prefs = (() => { try { return JSON.parse(localStorage.getItem('pkm-list-prefs') || '{}'); } catch { return {}; } })();
 let sortBy = prefs.by || 'fz', sortDir = prefs.dir || 'asc', listView = prefs.view || 'list';
-const savePrefs = () => { try { localStorage.setItem('pkm-list-prefs', JSON.stringify({ by: sortBy, dir: sortDir, view: listView })); } catch { } };
+let diarySortDir = prefs.diaryDir || prefs.dir || 'asc';   // 日記の並び（ノートの並びとは別。日記は日付順なので、向きだけ）
+const savePrefs = () => { try { localStorage.setItem('pkm-list-prefs', JSON.stringify({ by: sortBy, dir: sortDir, view: listView, diaryDir: diarySortDir })); } catch { } };
 let ixEdit = false;   // グローバルIndexの編集モード（赤い点を付けるIDを選ぶ）
 const pickChips = (k, v, t) => { const dd = t && dotOf(t, k); return [['d', v.d], ['p', v.p]].map(([s, l]) => l.map(id => { const on = dd && dd.s === s && dd.id === id; return `<span class="chip ${s} pick${on ? ' on' : ''}" data-pk="${esc(k)}" data-ps="${s}" data-pid="${esc(id)}" title="${on ? '点を外す' : 'ここに赤い点を付ける'}">${on ? '<i class="dotabove">●</i>' : ''}${s === 'p' ? '紙' : ''}${esc(id)}</span>`; }).join('')).join(''); };
 // 「キーワード ID ID(p) …」の 1 行。入口の側と違う ID には、(p) か (d) を付ける
@@ -93,7 +94,7 @@ installMermaidObserver();
 function links(mode, space) {
   const build = view => {
     const b = new RangeSetBuilder(), text = view.state.doc.toString();
-    const add = (from, to, data, ok) => b.add(from, to, Decoration.mark({ class: 'lk' + (ok ? '' : ' miss'), attributes: { 'data-l': JSON.stringify(data) } }));
+    const add = (from, to, data, ok) => b.add(from, to, Decoration.mark({ class: 'lk' + (data && data.t === 'ref' ? ' ref' : '') + (ok ? '' : ' miss'), attributes: { 'data-l': JSON.stringify(data) } }));
     if (mode === 'note') {
       const items = [];
       for (const t of L.tokens(text)) {
@@ -124,7 +125,7 @@ function links(mode, space) {
           const nt = /^\s*-\s+:[0-9a-z]+\s*$/.test(line) && get(d.s, d.id);
           if (nt) { rs.push(Decoration.replace({ widget: new TitleWidget(titleOf(nt), d) }).range(f, t)); continue; }
         }
-        rs.push(Decoration.mark({ class: 'lk' + (cls ? ' ' + cls : '') + (ok ? '' : ' miss'), attributes: { 'data-l': JSON.stringify(d) } }).range(f, t));
+        rs.push(Decoration.mark({ class: 'lk' + (cls ? ' ' + cls : '') + (d && d.t === 'ref' ? ' ref' : '') + (ok ? '' : ' miss'), attributes: { 'data-l': JSON.stringify(d) } }).range(f, t));
         if (cls === 'file' && !(sel.from <= t && sel.to >= f)) {
           const open = text[f] === '!' ? 2 : 1, close = text.lastIndexOf('](', t);
           if (close === f + open) { // ![](ファイル名): 説明文が空なので、ファイル名を見せる
@@ -207,10 +208,37 @@ const images = space => {
 // 開いているノートの本文に、検索した語の印を付ける（md.js の searchHighlight が読む）
 function searchMark() { if (lastView && lastView.dom.isConnected) lastView.dispatch({ effects: setSearch.of(searchQ) }); }
 let lastView = null;
+// URL を貼ったら、ページの題を取ってきて [題](URL) にする（取れるまでは URL のまま。選んでいた文字があれば、その文字が表示名）
+let plainPaste = false;   // Ctrl+Shift+V（書式なしで貼る）: 題をつけず、URL をそのまま（裸で）入れる
+const urlPasteTitle = EditorView.domEventHandlers({
+  keydown(e) { if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key || '').toLowerCase() === 'v') { plainPaste = true; setTimeout(() => { plainPaste = false; }, 600); } return false; },
+  paste(e, view) {
+    if (plainPaste) { plainPaste = false; return false; }
+    const t = (e.clipboardData && e.clipboardData.getData('text/plain') || '').trim();
+    if (!/^(https?:\/\/|www\.)\S+$/i.test(t)) return false;
+    const url = UrlLinks.externalUri(t); if (!url) return false;
+    const { from, to } = view.state.selection.main, picked = view.state.sliceDoc(from, to);
+    if (UrlLinks.fencedRanges(view.state.doc.toString()).some(([x, y]) => from >= x && from < y)) return false;   // コードの中は、そのまま
+    e.preventDefault();
+    const href = url.replace(/\(/g, '%28').replace(/\)/g, '%29');
+    if (picked && !/\n/.test(picked)) { view.dispatch({ changes: { from, to, insert: `[${picked}](${href})` }, selection: { anchor: from + picked.length + href.length + 4 } }); return true; }
+    view.dispatch({ changes: { from, to, insert: t }, selection: { anchor: from + t.length } });
+    api.urlTitle(url).then(title => {
+      if (!title) return;
+      // 貼ったその URL（貼った文字そのまま）を、いまの本文から探す。すぐ後ろに文字が続いていても、貼った分だけを置き換える
+      const text = view.state.doc.toString(), hits = []; let at = -1;
+      while ((at = text.indexOf(t, at + 1)) >= 0) if (text.slice(Math.max(0, at - 2), at) !== '](' && text[at - 1] !== '[') hits.push(at);
+      if (!hits.length) return;
+      const h = hits.reduce((x, y) => Math.abs(y - from) < Math.abs(x - from) ? y : x);
+      view.dispatch({ changes: { from: h, to: h + t.length, insert: `[${title}](${href})` } });
+    }).catch(() => { });
+    return true;
+  }
+});
 function editor(parent, doc, mode, space, onChange, ph) {
   return lastView = new EditorView({
     parent, state: EditorState.create({
-      doc, extensions: [history(), keymap.of([...defaultKeymap, ...historyKeymap]), EditorView.lineWrapping,
+      doc, extensions: [history(), keymap.of([...defaultKeymap, ...historyKeymap]), EditorView.lineWrapping, ...(mode === 'note' ? [urlPasteTitle] : []),
         placeholder(ph), ...(mode === 'note' ? [...mdExtensions, searchExt] : []), links(mode, space), ...(mode === 'note' ? [images(space)] : []), EditorView.updateListener.of(u => { if (u.docChanged) onChange(u.state.doc.toString()); })]
     })
   });
@@ -229,6 +257,7 @@ function openLink(rel) {
   let m;
   if ((m = path.match(/^(\d{14}(?:-\d+)?)\.md$/)) && (m = notes.find(x => x.stem === m[1]))) return openNote(m.s, m.id, null, false, hash); // ノート（紙・IDなし・なりきり・キャンバスも）
   if (path.match(/^C_\d{4}-\d{2}-\d{2}\.md$/)) {
+    if (!hash) return Chat.openDay(path.slice(2, 12));   // その日のチャットメモ一覧: チャットメモの画面で、その日を表示
     if (hash.startsWith('ms-')) return Chat.gotoSource(hash.slice(3).split(',').filter(Boolean)); // 新しいノート: 選択した全ID
     if (hash.startsWith('m-')) {
       const id = hash.slice(2), note = cur && cur.k === 'note' && get(cur.s, cur.id);
@@ -316,7 +345,7 @@ function fileDialog(name) {
     close(); view.dispatch({ changes: { from: h, insert: md }, selection: { anchor: h + md.length } }); view.focus();
   };
 }
-const sortBar = (diary) => `<div class="sortbar">${diary ? '<span class="sub">日付順</span>' : `<select id="sb-by" title="並べ替え"><option value="fz"${sortBy === 'fz' ? ' selected' : ''}>番号順</option><option value="created"${sortBy === 'created' ? ' selected' : ''}>作成順</option><option value="updated"${sortBy === 'updated' ? ' selected' : ''}>更新順</option></select>`}<button id="sb-dir" class="mini" title="${sortDir === 'asc' ? '昇順（押すと降順）' : '降順（押すと昇順）'}">${sortDir === 'asc' ? '↑' : '↓'}</button>${diary ? '' : '<button id="sb-loc" class="mini" title="いま開いているノートへ飛ぶ (o)">◎</button><button id="sb-sim" class="mini" title="似たノートを探す (s)">≈</button>'}</div>`;
+const sortBar = (diary) => `<div class="sortbar">${diary ? '<span class="sub">日付順</span>' : `<select id="sb-by" title="並べ替え"><option value="fz"${sortBy === 'fz' ? ' selected' : ''}>番号順</option><option value="created"${sortBy === 'created' ? ' selected' : ''}>作成順</option><option value="updated"${sortBy === 'updated' ? ' selected' : ''}>更新順</option></select>`}<button id="sb-dir" class="mini" data-diary="${diary ? 1 : ''}" title="${(diary ? diarySortDir : sortDir) === 'asc' ? '昇順（押すと降順）' : '降順（押すと昇順）'}">${(diary ? diarySortDir : sortDir) === 'asc' ? '↑' : '↓'}</button>${diary ? '' : '<button id="sb-loc" class="mini" title="いま開いているノートへ飛ぶ (o)">◎</button><button id="sb-sim" class="mini" title="似たノートを探す (s)">≈</button>'}</div>`;
 // 並べ替え。IDなし（未整理）は folgezettel が無いので、作成日順
 function sortNotes(list, tab) {
   const by = tab === 'u' && sortBy === 'fz' ? 'created' : sortBy, sg = sortDir === 'asc' ? 1 : -1;
@@ -431,7 +460,7 @@ $('#list').addEventListener('click', e => {
   if (e.target.closest('#ff-add')) return pick(true, f => attach(null, f), '*');
   if (e.target.closest('#sb-loc')) return locateCur();
   if (e.target.closest('#sb-sim') || e.target.closest('#sel-sim')) return startSimilar();
-  if (e.target.closest('#sb-dir')) { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; savePrefs(); return renderList(); }
+  { const sd = e.target.closest('#sb-dir'); if (sd) { if (sd.dataset.diary) diarySortDir = diarySortDir === 'asc' ? 'desc' : 'asc'; else sortDir = sortDir === 'asc' ? 'desc' : 'asc'; savePrefs(); return renderList(); } }
   if (e.target.closest('#ix-edit')) { ixEdit = !ixEdit; return renderList(); }
   const c = e.target.closest('.chip.pick'); if (c) pickDot(c.dataset.pk, c.dataset.ps, c.dataset.pid);
 });
@@ -677,12 +706,12 @@ function openNote(s, id, n, keep, mid) {
       <div class="idline">
         ${noid ? '' : `<button class="cpid" data-act="copyid" title="IDをコピー">${cp}</button>`}
         <input class="idin" id="f-id" value="${noid ? '' : esc(id)}" placeholder="IDなし" title="${noid ? 'IDを入れると、整理されます' : 'IDを空にすると、IDなしにできます。確認後、再指定もできます'}">
-        ${s === 'd' ? (noid ? '<button class="gid" data-act="giveid">IDを付ける</button>' : '<button class="gid" data-act="clearid" title="IDを外して、あとから付け直す">IDを消す</button><button class="gid" data-act="giveid" title="索引と本文から探してIDを変更する">索引からIDを探す</button>') : ''}
-        ${s === 'p' ? '<span class="dt">紙</span>' : ''}${L.KINDS[kind] ? `<span class="dt">${L.KINDS[kind]}</span>` : ''}
-        ${s === 'd' ? `<span class="dt">${esc(note.created)}</span>` : ''}
-        <span class="grow"></span>${noid ? (s === 'd' && text ? '<button class="nb" data-act="sib" title="IDなしのまま、並列のノートを作る（親にIDが付くと、IDも決まる）">＋ 並列</button><button class="nb" data-act="chi" title="IDなしのまま、分岐のノートを作る（このノートにIDが付くと、IDも決まる）">＋ 分岐</button>' : '') : `<button class="nb" data-act="sib" title="並列のノートを作る（同じ階層の次: ${esc(free(s, L.sibling(id)))}）">＋ 並列 <small>${esc(free(s, L.sibling(id)))}</small></button><button class="nb" data-act="chi" title="分岐のノートを作る（一つ下: ${esc(free(s, L.child(id)))}）">＋ 分岐 <small>${esc(free(s, L.child(id)))}</small></button>`}<button class="ic nm" data-act="mgn" title="右の欄を隠す・出す (Ctrl+\\)"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button><button class="ic nm" data-act="nmenu" title="このノートのメニュー">${'<svg class="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>'}</button>
+        ${s === 'd' ? (noid ? '<button class="gid" data-act="giveid">IDを付ける</button>' : memoGroup ? '' : '<button class="gid" data-act="clearid" title="IDを外して、あとから付け直す">IDを消す</button><button class="gid" data-act="giveid" title="索引と本文から探してIDを変更する">索引からIDを探す</button>') : ''}
+        ${s === 'p' ? '<span class="dt">紙</span>' : ''}${memoGroup ? '' : L.KINDS[kind] ? `<span class="dt">${L.KINDS[kind]}</span>` : ''}
+        ${memoGroup ? `<textarea class="ntitle mgtitle" id="f-title" rows="1" placeholder="タイトル" spellcheck="false">${esc(note.title || '')}</textarea><span class="mgcount" title="元のチャットメモの数">💬 ${(note.data && note.data.memoIds || []).length} 件</span>${Chat.memoGroupSpeakerHtml()}` : s === 'd' ? `<span class="dt">${esc(note.created)}</span>` : ''}
+        ${memoGroup ? '' : '<span class="grow"></span>'}${noid ? (s === 'd' && text ? '<button class="nb" data-act="sib" title="IDなしのまま、並列のノートを作る（親にIDが付くと、IDも決まる）">＋ 並列</button><button class="nb" data-act="chi" title="IDなしのまま、分岐のノートを作る（このノートにIDが付くと、IDも決まる）">＋ 分岐</button>' : '') : `<button class="nb" data-act="sib" title="並列のノートを作る（同じ階層の次: ${esc(free(s, L.sibling(id)))}）">＋ 並列 <small>${esc(free(s, L.sibling(id)))}</small></button><button class="nb" data-act="chi" title="分岐のノートを作る（一つ下: ${esc(free(s, L.child(id)))}）">＋ 分岐 <small>${esc(free(s, L.child(id)))}</small></button>`}<button class="ic nm" data-act="mgn" title="右の欄を隠す・出す (Ctrl+\\)"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button><button class="ic nm" data-act="nmenu" title="このノートのメニュー">${'<svg class="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>'}</button>
       </div>
-      <textarea class="ntitle" id="f-title" rows="1" placeholder="タイトル" spellcheck="false">${esc(note.title || '')}</textarea>
+      ${memoGroup ? `<div class="mgmeta">${esc(note.created)} ・ ノート化</div>` : `<textarea class="ntitle" id="f-title" rows="1" placeholder="タイトル" spellcheck="false">${esc(note.title || '')}</textarea>`}
       ${!text ? '<div id="nbody"></div>' : s === 'p' ? `<div class="paper"><div class="pic">${note.image ? `<img src="${note.image}">` : '<button data-act="img">画像を入れる</button>'}</div><div class="ed" id="ed"></div></div>` : '<div class="ed" id="ed"></div>'}
     </div><aside class="mgn" id="margin"></aside></div>`;
   applyMgn();
@@ -1488,7 +1517,7 @@ function diaryList() {
   const kind = curKind, mine = diaries.filter(d => (d.kind || '日記') === kind);
   const dayRow = d => `<div class="day${cur && cur.k === 'diary' && cur.date === d.date && (cur.kind || '日記') === kind ? ' on' : ''}" data-diary="${d.date}" data-kind="${esc(kind)}"><span>${d.date.slice(8)}（${L.weekday(d.date)}）</span><small>${esc(d.title)}${d.pages.length ? ' 📷' : ''}</small></div>`;
   const tree = L.diaryTree(mine.map(d => d.date));
-  if (sortDir === 'asc') { tree.reverse(); for (const g of tree) { if (g.months) { g.months.reverse(); for (const m of g.months) m.days.reverse(); } else g.days.reverse(); } }   // 昇順: 古い日から
+  if (diarySortDir === 'asc') { tree.reverse(); for (const g of tree) { if (g.months) { g.months.reverse(); for (const m of g.months) m.days.reverse(); } else g.days.reverse(); } }   // 昇順: 古い日から
   const grp = (label, inner, open) => `<details${open ? ' open' : ''}><summary>${label}</summary>${inner}</details>`;
   const days = ds => ds.map(x => dayRow(getDiary(x, kind))).join('');
   let first = true;

@@ -41,4 +41,16 @@ function bareUrls(text, blocked = []) {
   }
   return out;
 }
-module.exports={externalUri,bareUrls,fencedRanges};
+// 本文の中の裸の URL を、[ページの題](URL) に（題が取れなかったものは、そのまま）。fetchTitle(url) は題の文字列を返す
+const MDLINK_RX = /!?\[[^\]\n]*\]\([^)\s]*\)/g;
+const hrefOf = u => u.replace(/\(/g, '%28').replace(/\)/g, '%29');   // ( ) は Markdown のリンクを壊すので
+async function withUrlTitles(text, fetchTitle) {
+  text = String(text || '');
+  const md = [...text.matchAll(MDLINK_RX)].map(m => [m.index, m.index + m[0].length]), urls = bareUrls(text, md);
+  if (!urls.length) return text;
+  const titles = await Promise.all(urls.map(u => Promise.resolve(fetchTitle(u.url)).catch(() => '')));
+  let out = '', last = 0;
+  urls.forEach((u, i) => { out += text.slice(last, u.from) + (titles[i] ? `[${titles[i]}](${hrefOf(u.url)})` : text.slice(u.from, u.to)); last = u.to; });
+  return out + text.slice(last);
+}
+module.exports={externalUri,bareUrls,fencedRanges,withUrlTitles};

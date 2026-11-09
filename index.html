@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>YuriiNote</title>
 <style>
-:root{--bg:#fff;--fg:#2b2d33;--sub:#8b909c;--line:#ececef;--acc:#3b5bdb;--acc-bg:color-mix(in srgb,var(--acc) 12%,white);--red:#c0392b;--paper:#8a5a20;--hl:#f5f6f9;--tint:#eef3ff}
+:root{--link:#2f9be0;--bg:#fff;--fg:#2b2d33;--sub:#8b909c;--line:#ececef;--acc:#3b5bdb;--acc-bg:color-mix(in srgb,var(--acc) 12%,white);--red:#c0392b;--paper:#8a5a20;--hl:#f5f6f9;--tint:#eef3ff}
 *{box-sizing:border-box}
 body{margin:0;font:15px/1.6 system-ui,"Noto Sans JP",sans-serif;color:var(--fg);background:var(--bg);height:100vh;display:flex;flex-direction:column}
 body{font-size:15px}
@@ -50,7 +50,7 @@ button:disabled{opacity:.4;cursor:default}
 .cm-fold-mark{color:#aaa;cursor:pointer;padding:0 3px}.cm-fold-mark:hover{color:var(--acc)}
 .cm-gutters{background:transparent!important;border:0!important;color:#aaa}
 .cm-foldPlaceholder{background:#eef1f7;border:0;color:var(--sub);padding:0 6px;border-radius:8px;cursor:pointer}
-.lk.file{color:var(--acc);text-decoration-color:#b9c8ea}
+.lk.file{color:var(--link);text-decoration-color:rgba(47,155,224,.4)}
 .imgname{color:var(--sub);font-size:13px}
 .cm-img{padding:4px 0 8px}.cm-img img{max-width:100%;max-height:420px;border:1px solid var(--line);border-radius:6px;display:block}
 #pane.drop{outline:2px dashed var(--acc);outline-offset:-8px;background:#f7faff}
@@ -175,7 +175,9 @@ button:disabled{opacity:.4;cursor:default}
 .ed .cm-editor.cm-focused{outline:none}
 .ed .cm-scroller{font-family:var(--bodyfont,inherit);line-height:1.8;overflow:visible!important}
 .ed .cm-content{padding:6px 2px 45vh}
-.lk{color:var(--red);text-decoration:underline;text-decoration-color:#e8b4ae;text-underline-offset:3px;cursor:pointer}
+/* リンクは、よくある水色。:ID だけ赤 */
+.lk{color:var(--link);text-decoration:underline;text-decoration-color:rgba(47,155,224,.4);text-underline-offset:3px;cursor:pointer}
+.lk.ref{color:var(--red);text-decoration-color:#e8b4ae}
 .mk{color:var(--red)}
 .lk.miss{color:#999;text-decoration-style:dotted}
 .paper{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
@@ -235,7 +237,7 @@ button.danger{color:var(--red);border-color:#efc9c4}
 .bub{position:relative}.b-rep{position:absolute;top:4px;right:6px;opacity:0;cursor:pointer;color:var(--sub);background:rgba(255,255,255,.7);border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:14px}.bub:hover .b-rep{opacity:1}.b-rep-e{right:32px}.c-redit{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 10px;background:#fff7e0;border-radius:8px;margin:4px 0;font-size:13px}.c-redit .p{margin-left:auto}.c-reply .rq-list{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0}.c-reply .rq{position:relative;padding-right:24px}.c-reply .rq button{position:absolute;right:0;top:0}.b-rep:hover{color:var(--acc)}
 .c-reply{display:flex;align-items:stretch;gap:8px;margin:6px 0 0;padding:6px 10px;border-left:4px solid var(--acc);background:#eef2fb;border-radius:8px 8px 0 0}.c-reply .rq{flex:1;display:flex;flex-direction:column;min-width:0}.c-reply b{color:var(--acc);font-size:12px}.c-reply span{color:var(--sub);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.c-reply button{border:0;background:none;font-size:18px;cursor:pointer;color:var(--sub)}.gday:hover{text-decoration:underline}
 .b-body.md p{margin:0 0 6px}.b-body.md p:last-child{margin:0}.b-body.md img{max-width:100%;max-height:340px;border-radius:6px;display:block}
-.b-body.md a{color:var(--acc)}.b-body.md ul,.b-body.md ol{margin:0 0 6px;padding-left:22px}
+.b-body.md a{color:var(--link)}.b-body.md ul,.b-body.md ol{margin:0 0 6px;padding-left:22px}
 .b-body.md table{border-collapse:collapse}.b-body.md td,.b-body.md th{border:1px solid var(--line);padding:2px 8px}
 .b-body.md code{background:#e6eaf3;border-radius:4px;padding:0 4px}.b-body.md pre{background:#e6eaf3;border-radius:6px;padding:8px;overflow:auto}
 .b-edit{width:min(560px,70vw);min-height:60px;font:inherit;padding:6px;border:1px solid var(--line);border-radius:6px}
@@ -243,9 +245,10 @@ button.danger{color:var(--red);border-color:#efc9c4}
 #c-banner{display:none;justify-content:space-between;align-items:center;background:#fff8e1;border:1px solid #f0e2a8;border-radius:8px;padding:3px 10px;margin-bottom:6px;font-size:13px;flex-shrink:0}
 #c-banner b{cursor:pointer;padding:0 6px}
 .c-compose{display:flex;gap:6px;align-items:flex-end;flex-shrink:0;padding:10px 0 8px;border-top:1px solid transparent}
-.c-compose textarea{flex:1;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:10px;resize:none;max-height:180px;overflow-y:hidden;line-height:1.5}
+.c-compose textarea{flex:1;min-width:0;font:inherit;padding:8px 12px;border:1px solid var(--line);border-radius:10px;resize:none;min-height:40px;max-height:180px;overflow-y:hidden;line-height:1.5}
+.c-tools{display:flex;flex-direction:row;gap:6px;flex:none}.c-tools button{width:38px;height:38px;padding:0;font-size:17px;line-height:1}
 .popmenu{position:fixed;z-index:30;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.14);padding:4px;min-width:170px}
-.popmenu div{padding:6px 12px;border-radius:5px;cursor:pointer}.popmenu div:hover{background:var(--hl)}.popmenu .danger{color:var(--red)}
+.popmenu div{padding:6px 12px;border-radius:5px;cursor:pointer;white-space:nowrap}.popmenu div:hover{background:var(--hl)}.popmenu .danger{color:var(--red)}
 #toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#2b2f3a;color:#fff;padding:8px 16px;border-radius:20px;opacity:0;transition:opacity .25s;z-index:40;pointer-events:none}
 label.rad{display:flex;gap:8px;align-items:center;font-size:14px}
 
@@ -518,6 +521,27 @@ textarea.ntitle,textarea#f-title{
 .c-children{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 16px;border-bottom:1px solid var(--line);flex-shrink:0}
 .c-children[hidden]{display:none}
 .chat-tools{position:relative}.chat-tools summary{list-style:none;cursor:pointer;font-size:12.5px;padding:3px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}.chat-tools summary::-webkit-details-marker{display:none}.chat-tools-menu{position:absolute;right:0;top:calc(100% + 4px);z-index:5;display:flex;flex-direction:column;gap:4px;padding:6px;min-width:170px;background:var(--bg);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.12)}.chat-tools-menu button{text-align:left}.chat-view-menu .chat-tools-menu.wide{min-width:300px;max-width:min(92vw,420px);align-items:stretch}.chat-view-menu .chat-tools-menu.wide>*{max-width:100%}
+/* ボタン・見出しの文字は、途中で折り返さない（「全 部」「コピ ー」のように 2 行にならない）。入りきらないときは、行ごと折り返す */
+button,select,.vseg button,.nb,.tab span,.c-speaker-label{white-space:nowrap}
+#c-selbar{flex-wrap:nowrap;gap:6px;padding:4px 10px;overflow-x:auto;scrollbar-width:none}#c-selbar>span{white-space:nowrap;flex:none}#c-selbar button{flex:none;padding:3px 9px;font-size:12.5px;line-height:1.4}
+#c-selbar .grow{min-width:4px}
+/* 日記の左上: 「今日の日記」・日付・「開く」を 1 行に */
+#dlist .dtop{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}
+#dlist .dtop input[type=date]{flex:1;min-width:0;font-size:13px;padding:5px 6px}
+#dlist .dtop button{flex:none;white-space:nowrap}
+/* 「表示・操作」の中: 検索・切り替え・日付を同じ幅にそろえる */
+.chat-view-menu .csearch,.chat-view-menu input[type=date]{width:100%;box-sizing:border-box}
+.chat-view-menu .vseg{display:flex;width:100%}.chat-view-menu .vseg button{flex:1}
+/* 絞り込み: 上位トピックと下位トピックは、横に並べて 1 段に */
+.chat.memo .chat-head .c-filter-row{margin:0}.chat.memo .chat-head .c-filter-row>.sub{min-width:0;flex:none}
+.chat-head .c-filter-body .c-filter-controls{grid-column:1 / -1;padding:6px 0 0}
+.c-compose button.on{background:var(--acc-bg);color:var(--acc);border-color:var(--acc)}
+.c-reply .rq-edit{background:var(--acc-bg)}.c-reply .rq-edit b{color:var(--acc)}
+/* ノート化したメモ: ID・題・件数・キャラを 1 行に */
+.idline .mgtitle{flex:1;min-width:80px;width:auto;font-size:19px;font-weight:700;margin:0 4px;padding:0 4px;line-height:1.3;height:28px;resize:none;overflow:hidden;white-space:nowrap;color:var(--fg)}
+.idline .mgcount{color:var(--sub);font-size:12px;white-space:nowrap}.idline .mgspk{font-size:12.5px;max-width:130px;margin:0 4px}
+.mgmeta{color:var(--sub);font-size:12px;margin:2px 0 6px}
+.memo-note-source{position:absolute;right:8px;bottom:5px;font-size:13px;padding:0 2px}.memo-note-messages .bub{position:relative}.memo-note-messages .b-foot{padding-right:22px}
 #clist .csep{height:1px;background:var(--line);margin:6px 12px}
 .chat-head .c-children{position:relative;display:block;padding:0;border:0;flex:none}
 .chat-head .c-filter{width:auto;position:relative}
@@ -526,7 +550,7 @@ textarea.ntitle,textarea#f-title{
 .chat-head .c-filter>summary::before{display:none}
 .chat-head .c-filter[open]>summary,.chat-head .c-filter>summary:hover{color:var(--fg)}
 .chat-head .c-filter-now{display:none}
-.chat-head .c-filter-body{position:absolute;right:0;top:calc(100% + 4px);z-index:6;width:max-content;min-width:260px;max-width:min(92vw,420px);padding:10px;background:var(--bg);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.12)}
+.chat-head .c-filter-body{position:absolute;right:0;top:calc(100% + 4px);z-index:6;width:max-content;min-width:480px;max-width:min(92vw,640px);display:grid;grid-template-columns:1fr 1fr;gap:4px 18px;align-items:start;padding:10px;background:var(--bg);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.12)}
 .c-filter{width:100%;min-width:0}
 .c-filter>summary{display:flex;align-items:center;gap:8px;min-width:0;list-style:none;cursor:pointer;font-size:12.5px;color:var(--sub);padding:4px 0;user-select:none}
 .c-filter>summary::-webkit-details-marker{display:none}
