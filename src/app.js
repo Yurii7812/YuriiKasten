@@ -62,12 +62,39 @@ async function pickDot(k, s, id) {
   if (cur0 && cur0 !== t) { cur0.keyword = ''; strip(cur0); saveTopic(cur0); }
   t.keyword = k; strip(t); await api.saveTopic(t); renderList();
 }
+// 索引の中の、1 つの ID の赤い点（ID の前の * ）を、付ける・外す。状態を返す（その ID が無ければ null）
+function topicDot(t, kw, sp, id, toggle) {
+  const def = L.defOf(t), lines = L.topicText(t).split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const r = L.topicLine(lines[i]); if (r.star !== undefined || r.kw !== kw) continue;
+    const x = r.ids.find(y => (y.sp || def) === sp && y.id === id); if (!x) continue;
+    if (toggle) { lines[i] = x.dot ? lines[i].slice(0, x.from - 1) + lines[i].slice(x.from) : lines[i].slice(0, x.from) + '*' + lines[i].slice(x.from); t.text = lines.join('\n'); saveTopic(t); }
+    return toggle ? !x.dot : !!x.dot;
+  }
+  return null;
+}
+// 右クリックで、赤い点を付ける・外す（Index の ID と、索引の中の ID）
+document.addEventListener('contextmenu', e => {
+  const c = e.target.closest('.chip[data-id]'); if (!c) return;
+  const ix = c.closest('#list .ix[data-ixk]'), tr = c.closest('.ti tr[data-kw]');
+  if (ix) {   // Index（左の一覧）
+    e.preventDefault();
+    const k = ix.dataset.ixk, sp = c.dataset.s, id = c.dataset.id, dd = kwTopic(k) && dotOf(kwTopic(k), k), on = !!(dd && dd.s === sp && dd.id === id);
+    popMenu(e, [[on ? '⚪ 赤い点を外す' : '🔴 赤い点を付ける', () => pickDot(k, sp, id)]]);
+  } else if (tr && cur && cur.k === 'topic') {   // 索引の中
+    const t = topics.find(x => x.name === cur.name); if (!t) return;
+    const kw = tr.dataset.kw, sp = c.dataset.s, id = c.dataset.id, on = topicDot(t, kw, sp, id, false);
+    if (on === null) return;
+    e.preventDefault();
+    popMenu(e, [[on ? '⚪ 赤い点を外す' : '🔴 赤い点を付ける', () => { topicDot(t, kw, sp, id, true); openTopic(t.name, 'view', true); }]]);
+  }
+});
 const ixRow = ([k, v]) => {
   const t = kwTopic(k), n = v.d.length + v.p.length;
   const mark = '';
   const on = cur && cur.k === 'topic' && (() => { const o = topics.find(x => x.name === cur.name); return o && ((o.keyword && o.keyword === k) || (o.entry && v[o.entry.s].includes(o.entry.id) && !o.keyword && false)); })();
   if (ixEdit) return `<div class="ix"><b>${esc(k)}</b>${yomi(k)} ${pickChips(k, v, t)}</div>`;
-  return `<div class="ix${on ? ' on' : ''}">${mark}<b>${esc(k)}</b>${yomi(k)} ${chips(v, t)}</div>`;
+  return `<div class="ix${on ? ' on' : ''}" data-ixk="${esc(k)}">${mark}<b>${esc(k)}</b>${yomi(k)} ${chips(v, t)}</div>`;
 };
 // 親のノートに、そのキーワードを付ける（Index の ID の並びに入り、そこに赤い点が付く）
 async function ensureKeyword(sp, id, kw) {
@@ -441,7 +468,7 @@ function renderList() {
     out.push(...fl.map(f => fileRow(f)));   // map にそのまま渡すと、行の番号が検索語の欄に入って落ちる
     if (!fl.length) out.push(`<div class="none">${fileFilter === 'untitled' ? 'タイトルのないファイルはありません' : '取り込んだ画像・html・csv などが、ここに並びます。ノートにドラッグしても取り込めます'}</div>`);
   } else if (tab === 'i') {
-    out.push(`<div class="ixbar"><span class="sub">${ixEdit ? '赤い点を付けるIDを選びます（点のIDをもう一度押すと外れます）' : ''}</span><span class="grow"></span><button class="mini${ixEdit ? ' p' : ''}" id="ix-edit">${ixEdit ? '完了' : '編集'}</button></div>`);
+    out.push(`<div class="ixbar"><span class="sub">🔴 赤い点は、ID を右クリックで付け外し</span></div>`);
     let row = null;
     for (const e of globalIndex()) {
       const r = L.kanaRow(readings[e[0]] || e[0]);
@@ -1499,11 +1526,9 @@ function openTopic(name, tmode = 'view', keep) {
       <div class="tc-row"><span class="tc-l">📝 名前</span><input id="t-name" value="${esc(t.name)}"></div>
       <div class="tc-row"><span class="tc-l">🌳 親</span><select id="t-s"><option value="d"${e && e.s === 'd' ? ' selected' : ''}>デジタル</option><option value="p"${e && e.s === 'p' ? ' selected' : ''}>紙</option></select>
         <input id="t-id" value="${e ? esc(e.id) : ''}" style="width:110px" placeholder="番号"><span class="sub">この索引の親になるノートの番号</span></div>
-      <div class="tc-row"><span class="tc-l">🏷 点のキーワード</span><input id="t-kw" list="t-kws" value="${esc(t.keyword || '')}" placeholder="なければ空のまま"><datalist id="t-kws">${globalIndex().filter(([, v]) => v.d.length + v.p.length >= 2).map(([k]) => `<option value="${esc(k)}">`).join('')}</datalist></div>
-      <div class="tc-note">🔴 そのキーワードの ID のうち、親の番号の真上に赤い点が付きます（IDが2つ以上のキーワードだけ。1つのキーワードに1つ）</div>
       <div class="tc-bar"><button class="tbtn p" data-act="tsave">✅ 決定</button><button class="tbtn" data-act="tcancel">やめる</button>
         <span class="grow"></span><button class="tbtn danger" data-act="tdel">🗑 この索引を削除</button></div></div>`;
-  else body = `<table class="ti">${rows.map(r => `<tr><td>${esc(r.kw)}</td><td>${rowChips(r)}</td></tr>`).join('') || '<tr><td class="none">まだ空です。「編集」で書きます</td></tr>'}
+  else body = `<table class="ti">${rows.map(r => `<tr data-kw="${esc(r.kw)}"><td>${esc(r.kw)}</td><td>${rowChips(r)}</td></tr>`).join('') || '<tr><td class="none">まだ空です。「編集」で書きます</td></tr>'}
       ${stars.map(x => `<tr><td>🗂️ ${esc(stripId(x))}</td><td>${tchip(x)}</td></tr>`).join('')}${chats.map(x => `<tr><td>💬 ${esc(x)}</td><td><span class="chip t" data-cchat="${esc(x)}">${esc(x)}</span></td></tr>`).join('')}${refs.map(x => `<tr><td>⭐ ${esc(x.label)}</td><td>${chip(x.s, x.id)}</td></tr>`).join('')}</table>`;
   // 逆方向（上に出す）: この索引の親を載せている Index・このIndexを + で案内している Index（引用できるのは Index だけ）
   const back = topics.filter(o => o !== t && (L.mergeTopic(o).stars.includes(t.name) || (e && L.mergeTopic(o).rows.some(r => r[e.s].some(x => L.splitAnchor(x).id === e.id))))).sort((x, y) => x.name.localeCompare(y.name, 'ja'));
@@ -1545,13 +1570,7 @@ async function topicAct(act) {
     if (!get(s, id)) return alert(`${SP[s]} ${id} というノートはありません`);
     const other = topicOf(s, id);
     if (other && other !== t) return alert(`${SP[s]} ${id} は、もう「${other.name}」の親です（1つのIDに1つの索引）`);
-    const kw = $('#t-kw').value.trim();
-    if (kw) {
-      const v = globalIndex().find(x => x[0] === kw);
-      if (!v || v[1].d.length + v[1].p.length < 2) return alert('赤い点は、IDが2つ以上あるキーワードだけに付けられます');
-      const o = kwTopic(kw);
-      if (o && o !== t) return alert(`「${kw}」の赤い点は、もう「${o.name}」に付いています`);
-    }
+    const kw = t.keyword || '';   // 点のキーワードは、この画面では変えない（赤い点は、右クリックや ID の前の * で付ける）
     await flush();
     t.keyword = kw;
     await ensureKeyword(s, id, kw);
