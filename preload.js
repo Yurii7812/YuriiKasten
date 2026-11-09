@@ -4,7 +4,11 @@ contextBridge.exposeInMainWorld('api', {
   deleteFile: name => r.invoke('deleteFile', name),
   filePreview: name => r.invoke('filePreview', name),
   onFileDup: cb => r.on('fileDup', (_e, dups) => cb(dups)),   // 同じファイルが既にあったとき
-  urlTitle: u => r.invoke('urlTitle', u),   // URL のページの題（リンクの表示名の自動入力）
+  urlTitle: u => r.invoke('urlTitle', u),
+  urlPreview: (u, force) => r.invoke('urlPreview', u, force),
+  urlRefresh: () => r.invoke('urlRefresh'),
+  urlStatus: () => r.invoke('urlStatus'),
+  onUrlProgress: cb => r.on('urlProgress', (_e, p) => cb(p)),   // URL のページの題（リンクの表示名の自動入力）
   // ウィンドウを閉じる前に、書きかけの保存を済ませる（済んだら main へ知らせる）
   onFlush: cb => r.on('flush-now', async (_e, request) => {
     try { await cb(); r.send('flush-done', request); }
