@@ -1,0 +1,27 @@
+name: lock-mermaid-dependency
+on:
+  push:
+    paths: ['package.json']
+permissions:
+  contents: write
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Resolve and lock npm dependencies
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Commit dependency lock file
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Lock Mermaid rendering dependency for offline diagrams"
+            git push origin HEAD:master
+          fi
