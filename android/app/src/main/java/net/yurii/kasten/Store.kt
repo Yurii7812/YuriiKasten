@@ -32,6 +32,7 @@ data class Settings(
     val toHour: Int = 23,
     val topics: List<String> = listOf(DIARY),
     val lastTopic: String = ALL,
+    val recentTopics: List<String> = emptyList(), // 表示・書き込み先を最後に使った順（APKの横スクロール）
     val writeTopic: String = UNASSIGNED,                 // 全部表示から書くときの書き込み先（前に使ったトピックを引き継ぐ）
     val writeUps: List<String> = emptyList(),           // 現在開いている所属トピックの上位設定
     val writeUpsByTopic: Map<String, List<String>> = emptyMap(), // 所属トピックごとの前回選択
@@ -279,6 +280,7 @@ class Store(private val ctx: Context) {
             toHour = o.optInt("toHour", 23),
             topics = (listOf(DIARY) + (topics ?: emptyList()).map(::normalizedTopic)).filter { it.isNotEmpty() && it != ALL }.distinct(),
             lastTopic = last,
+            recentTopics = o.optJSONArray("recentTopics")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
             writeTopic = if (last == ALL) UNASSIGNED else last,
             writeUps = byTopic[current].orEmpty(),
             writeUpsByTopic = byTopic,
@@ -349,7 +351,7 @@ class Store(private val ctx: Context) {
         val o = JSONObject()
         o.put("alarmOn", s.alarmOn); o.put("alarmMinutes", s.alarmMinutes)
         o.put("fromHour", s.fromHour); o.put("toHour", s.toHour)
-        o.put("topics", JSONArray(s.topics)); o.put("lastTopic", s.lastTopic); o.put("writeTopic", s.writeTopic); o.put("writeUps", JSONArray(s.writeUps))
+        o.put("topics", JSONArray(s.topics)); o.put("lastTopic", s.lastTopic); o.put("recentTopics", JSONArray(s.recentTopics)); o.put("writeTopic", s.writeTopic); o.put("writeUps", JSONArray(s.writeUps))
         val upperPrefs = JSONObject()
         s.writeUpsByTopic.forEach { (topic, uppers) -> upperPrefs.put(topic, JSONArray(uppers)) }
         o.put("writeUpsByTopic", upperPrefs)
