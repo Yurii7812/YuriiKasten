@@ -78,7 +78,7 @@ export function dayEdited(kind, date, body) {
 }
 // チャットメモの編集・削除を日記にも反映。前後に空行がなくても該当メモだけを置換する。
 // 日記・時系列記録に入るメモ: 所属がその記録、または上位トピックにその記録を持つもの（日記を上位にしたメモも、日記に入る）
-const recKindsOf = m => [...new Set([kind, ...(m.ups || [])])].filter(k => k && isRec(k));
+const recKindsOf = m => [...new Set([m.topic, ...(m.ups || [])])].filter(k => k && isRec(k));
 async function memoToDay(m, oldText, del) { for (const kind of recKindsOf(m)) await memoToDayKind(m, kind, oldText, del); }
 async function memoToDayKind(m, kind, oldText, del) {
   if (!ctx.getDiary) return;
