@@ -9,6 +9,10 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
+import android.webkit.MimeTypeMap
+import android.widget.Toast
+import androidx.core.content.FileProvider
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings as AndroidSettings
@@ -70,21 +74,49 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+data class IncomingShare(val text: String, val uris: List<Uri>)
+
+@Suppress("DEPRECATION")
+private fun readIncomingShare(intent: Intent?): IncomingShare? {
+    if (intent == null || intent.action !in listOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE)) return null
+    val text = listOfNotNull(intent.getStringExtra(Intent.EXTRA_SUBJECT), intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString())
+        .filter { it.isNotBlank() }.distinct().joinToString("\n")
+    val streams = mutableListOf<Uri>()
+    intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { streams.add(it) }
+    intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.let { streams.addAll(it) }
+    intent.clipData?.let { clip -> for (i in 0 until clip.itemCount) clip.getItemAt(i).uri?.let { streams.add(it) } }
+    val files = streams.distinct()
+    return if (text.isBlank() && files.isEmpty()) null else IncomingShare(text, files)
+}
+
+private fun isPicture(name: String) = listOf(".png",".jpg",".jpeg",".gif",".webp",".bmp",".avif").any { name.endsWith(it, true) }
+private fun openSharedFile(ctx: android.content.Context, store: Store, name: String) {
+    try {
+        val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".files", File(store.imageDir,name))
+        val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase()) ?: "application/octet-stream"
+        ctx.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri,mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+    } catch (e: Exception) {
+        Toast.makeText(ctx,"ファイルを開けませんでした",Toast.LENGTH_SHORT).show()
+    }
+}
+
 class MainActivity : ComponentActivity() {
     private val promptState = mutableStateOf(false)
+    private val incomingShare = mutableStateOf<IncomingShare?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(statusBarStyle = androidx.activity.SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
             navigationBarStyle = androidx.activity.SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT))
         promptState.value = intent?.getBooleanExtra(Alarm.EXTRA_PROMPT, false) == true
+        incomingShare.value = readIncomingShare(intent)
         setContent {
             // 長押しを短めに（標準は約 0.5 秒。メモの長押しが遅く感じるため）
             val vc = LocalViewConfiguration.current
             val quick = remember(vc) { object : ViewConfiguration by vc { override val longPressTimeoutMillis: Long get() = 280L } }
             CompositionLocalProvider(LocalViewConfiguration provides quick) {
                 MaterialTheme(colorScheme = GnosisColors) {
-                    Surface(Modifier.fillMaxSize()) { CaptureScreen(Store(this), promptState) }
+                    Surface(Modifier.fillMaxSize()) { CaptureScreen(Store(this), promptState, incomingShare) }
                 }
             }
         }
@@ -92,6 +124,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
+        incomingShare.value = readIncomingShare(intent)
         if (intent.getBooleanExtra(Alarm.EXTRA_PROMPT, false)) promptState.value = true
     }
 
@@ -172,7 +206,7 @@ private fun PickDialog(entries: List<Entry>, kind: String, exclude: Set<String>,
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
-fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
+fun CaptureScreen(store: Store, promptState: MutableState<Boolean>, sharedState: MutableState<IncomingShare?>) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val entries = remember { mutableStateListOf<Entry>().apply { addAll(store.load()) } }
@@ -311,6 +345,31 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>) {
         }
     }
 
+    // 他アプリの共有から新しいメモの下書きへ。ファイルは私有ストレージへコピーし、
+    // 保存ボタンを押すまでは独立したメモを作成しない。
+    val incoming = sharedState.value
+    LaunchedEffect(incoming) {
+        if (incoming == null) return@LaunchedEffect
+        if (incoming.text.isNotBlank()) input = input + (if (input.isBlank()) "" else "\n") + incoming.text
+        incoming.uris.forEachIndexed { index, uri ->
+            try {
+                val suggested = ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                    if (c.moveToFirst()) c.getString(0) else null
+                } ?: "共有ファイル"
+                val mime = ctx.contentResolver.getType(uri).orEmpty()
+                val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime).orEmpty()
+                val safe = suggested.replace(Regex("[^A-Za-z0-9_.-]"), "_").takeLast(75).trimStart('.').ifEmpty { "file" }
+                val suffix = if (safe.contains('.')) safe else safe + (if(extension.isNotBlank()) ".$extension" else "")
+                val name = "shared-" + System.currentTimeMillis() + "-$index-" + suffix
+                ctx.contentResolver.openInputStream(uri)?.use { source ->
+                    File(store.imageDir, name).outputStream().use { target -> source.copyTo(target) }
+                    pendingImages.add(name)
+                }
+            } catch (e: Exception) { Toast.makeText(ctx,"共有ファイルを読み込めませんでした",Toast.LENGTH_SHORT).show() }
+        }
+        sharedState.value = null
+        focusTick++
+    }
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         pickingImage = false
         if (uri != null) {
