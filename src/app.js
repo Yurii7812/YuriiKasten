@@ -479,7 +479,9 @@ function onOpenClick(e) {
   const ctw = e.target.closest('[data-ctw]'); if (ctw && ctw.textContent.trim()) return Chat.toggleGroup(ctw.dataset.ctw);
   const cc = e.target.closest('[data-chat]'); if (cc) return Chat.open(cc.dataset.chat);
   if (e.target.id === 'c-topic-graph') return Chat.openTopicGraph();
-  if (e.target.id === 'c-new') return Chat.newTopicDialog();
+  if (e.target.id === 'c-new') return Chat.toggleNewTopicRow();
+  if (e.target.id === 'c-newok') return Chat.createTopicInline();
+  if (e.target.id === 'c-newopt') return Chat.newTopicDialog();
   const row = e.target.closest('#list .item');
   if (selMode && row) return togglePick(row, e.shiftKey);
   const t = e.target.closest('[data-topic]'); if (t) return openTopic(t.dataset.topic);
@@ -1491,18 +1493,18 @@ function openTopic(name, tmode = 'view', keep) {
   if (!inPreview && !$('#q').value && t.entry) tab = t.entry.s === 'p' ? 'p' : 'd';   // 一覧を、その索引 のあるタブに
   const { rows, stars, refs, chats } = L.mergeTopic(t), e = t.entry;
   let body;
-  if (tmode === 'edit') body = `<div class="sub">1行に「キーワード ID ID …」。ID のあとに (p) で紙、(d) でデジタル（書かなければ、親のノートと同じ側）。(番号) でノートの中の場所（例: PKM 1a 3(p) 1g(2)）。ID の前に * を付けるとそのIDの上に赤い点（例: PKM *1 1a）。+ で始めると別の索引への案内（例: +GUI）。「+名前 ID」なら、その ID へのリンク付きの星（例: +hoge 1）。@名前 は、チャットメモのトピックへの案内（例: @夢。メモ自体は書きません）。</div>
+  if (tmode === 'edit') body = `<div class="tedit-hint">✏️ 1 行に「キーワード ID ID …」 ・ 紙は 1a(p) ・ ID の前の * は赤い点 ・ +名前 は別の索引へ ・ @名前 はチャットメモのトピックへ</div>
       <div class="ed" id="ed-t"></div>`;
-  else if (tmode === 'conf') body = `<div class="conf">
-      <label>名前 <input id="t-name" value="${esc(t.name)}"></label>
-      <label>親 <select id="t-s"><option value="d"${e && e.s === 'd' ? ' selected' : ''}>デジタル</option><option value="p"${e && e.s === 'p' ? ' selected' : ''}>紙</option></select>
-        <input id="t-id" value="${e ? esc(e.id) : ''}" style="width:90px"></label>
-      <label>点のキーワード <input id="t-kw" list="t-kws" value="${esc(t.keyword || '')}" placeholder="キーワード（空なら点なし）"><datalist id="t-kws">${globalIndex().filter(([, v]) => v.d.length + v.p.length >= 2).map(([k]) => `<option value="${esc(k)}">`).join('')}</datalist></label>
-      <div class="sub">そのキーワードの ID（GUI 1 2 3 …）のうち、上の親のIDの真上に赤い点が付きます（押すとこの索引 へ）。IDが2つ以上のキーワードだけ。1つのキーワードに1つ</div>
-      <div class="row"><button data-act="tsave" class="p">決定</button><button data-act="tcancel">やめる</button>
-        <span class="grow"></span><button data-act="tdel" class="danger">この索引を削除</button></div></div>`;
-  else body = `<table class="ti">${rows.map(r => `<tr><td>${esc(r.kw)}</td><td>${rowChips(r)}</td></tr>`).join('') || '<tr><td class="none">まだ空です。「編集」で書きます</td></tr>'}</table>
-      ${stars.map(x => `<div class="star">★ ${tchip(x)}</div>`).join('')}${chats.map(x => `<div class="star">💬 <span class="chip t" data-cchat="${esc(x)}">${esc(x)}</span></div>`).join('')}${refs.map(x => `<div class="star">★ ${esc(x.label)} ${chip(x.s, x.id)}</div>`).join('')}`;
+  else if (tmode === 'conf') body = `<div class="tconf">
+      <div class="tc-row"><span class="tc-l">📝 名前</span><input id="t-name" value="${esc(t.name)}"></div>
+      <div class="tc-row"><span class="tc-l">🌳 親</span><select id="t-s"><option value="d"${e && e.s === 'd' ? ' selected' : ''}>デジタル</option><option value="p"${e && e.s === 'p' ? ' selected' : ''}>紙</option></select>
+        <input id="t-id" value="${e ? esc(e.id) : ''}" style="width:110px" placeholder="番号"><span class="sub">この索引の親になるノートの番号</span></div>
+      <div class="tc-row"><span class="tc-l">🏷 点のキーワード</span><input id="t-kw" list="t-kws" value="${esc(t.keyword || '')}" placeholder="なければ空のまま"><datalist id="t-kws">${globalIndex().filter(([, v]) => v.d.length + v.p.length >= 2).map(([k]) => `<option value="${esc(k)}">`).join('')}</datalist></div>
+      <div class="tc-note">🔴 そのキーワードの ID のうち、親の番号の真上に赤い点が付きます（IDが2つ以上のキーワードだけ。1つのキーワードに1つ）</div>
+      <div class="tc-bar"><button class="tbtn p" data-act="tsave">✅ 決定</button><button class="tbtn" data-act="tcancel">やめる</button>
+        <span class="grow"></span><button class="tbtn danger" data-act="tdel">🗑 この索引を削除</button></div></div>`;
+  else body = `<table class="ti">${rows.map(r => `<tr><td>${esc(r.kw)}</td><td>${rowChips(r)}</td></tr>`).join('') || '<tr><td class="none">まだ空です。「編集」で書きます</td></tr>'}
+      ${stars.map(x => `<tr><td>🗂️ ${esc(stripId(x))}</td><td>${tchip(x)}</td></tr>`).join('')}${chats.map(x => `<tr><td>💬 ${esc(x)}</td><td><span class="chip t" data-cchat="${esc(x)}">${esc(x)}</span></td></tr>`).join('')}${refs.map(x => `<tr><td>⭐ ${esc(x.label)}</td><td>${chip(x.s, x.id)}</td></tr>`).join('')}</table>`;
   // 逆方向（上に出す）: この索引の親を載せている Index・このIndexを + で案内している Index（引用できるのは Index だけ）
   const back = topics.filter(o => o !== t && (L.mergeTopic(o).stars.includes(t.name) || (e && L.mergeTopic(o).rows.some(r => r[e.s].some(x => L.splitAnchor(x).id === e.id))))).sort((x, y) => x.name.localeCompare(y.name, 'ja'));
   // 索引の画面は、右パネルなし。全部、上に: 題 → 🌳 親・⬆️ 索引されているトピック → 索引の中身

@@ -2,7 +2,7 @@
 //  ・キーワード・よみ・ID を書いて足す。ID はまだ取り込んでいない紙のものでもよい（取り込まれたら本 Index に自動でマージ）
 //  ・書いている途中から、並び順のどこに入るかが見える（点線の行）。入る場所の前後が、そのまま見える
 //  ・検索は「キーワードだけ」。絞り込んだ行を押すと、絞り込みが外れて、その場所に飛ぶ（前後のカードが見える）
-import { ctx, $, esc } from './shared.js';
+import { ctx, $, esc, dialog, popMenu } from './shared.js';
 import L from '../lib.js';
 
 let pend = [];            // まだ紙のノートが無いもの [{ kw, reading, ids }]
@@ -36,7 +36,7 @@ export function html() {
     <div class="pi-find"><input id="pi-q" placeholder="さがす（キーワードだけ）" autocomplete="off"></div>
     <div id="pi-rows"></div></div>`;
 }
-const chip = (id, exists, kw) => `<span class="pid${exists ? '' : ' wait'}" title="${exists ? '紙のノートがあります' : 'まだ取り込んでいません'}">${esc(id)}<i data-pdel="${esc(kw)}" data-pid="${esc(id)}">×</i></span>`;
+const chip = (id, exists) => `<span class="pid${exists ? '' : ' wait'}" title="${exists ? '紙のノートがあります' : 'まだ取り込んでいません'}">${esc(id)}</span>`;
 
 // 一覧を描く。入る位置の点線の行（preview）と、絞り込み・飛んだ先の印も、ここで
 export function draw() {
@@ -95,11 +95,48 @@ document.addEventListener('keydown', e => {
 });
 document.addEventListener('click', async e => {
   if (e.target.id === 'pi-add') return add();
-  const del = e.target.closest('[data-pdel]');
-  if (del) { // IDを外す
-    if (!confirm(`紙のIndexから「${del.dataset.pdel}」の ${del.dataset.pid} を外しますか？`)) return;
-    const st = await ctx.api.removePaperIndex({ kw: del.dataset.pdel, id: del.dataset.pid }); if (st) { ctx.applyState(st); draw(); } return;
-  }
   const row = e.target.closest('#pi-rows .pr[data-kw]');
   if (row && $('#pi-q') && $('#pi-q').value.trim()) jump(row.dataset.kw);                                                     // 絞り込み中に押した → その場所へ
 });
+
+// 右クリック: そのキーワードの行を、直す・削除（番号 1 つずつを消す操作は、わざと作らない）
+document.addEventListener('contextmenu', e => {
+  const row = e.target.closest('#pi-rows .pr[data-kw]'); if (!row || row.id === 'pi-prev') return;
+  e.preventDefault();
+  const kw = row.dataset.kw;
+  popMenu(e, [['✏️ キーワードを直す', () => editEntry(kw)], ['🗑 このキーワードを削除', () => delEntry(kw), true]]);
+});
+function editEntry(kw) {
+  const r = rows().find(x => x.kw === kw); if (!r) return;
+  const all = [...r.have, ...r.wait];
+  dialog(`<div class="dlg-a"><h3>✏️ 紙のIndex を直す</h3>
+    <div class="da-lab">🏷 キーワード</div><input id="pe-kw" value="${esc(kw)}" autocomplete="off">
+    <div class="da-lab">🔤 よみ（ふりがな）</div><input id="pe-rd" value="${esc(r.reading)}" autocomplete="off">
+    <div class="da-lab">🔢 番号（空白で区切る）</div><input id="pe-ids" value="${esc(all.join(' '))}" autocomplete="off">
+    <div class="da-bar"><span class="grow"></span><button id="pe-no">やめる</button><button class="p" id="pe-ok">✅ 決定</button></div></div>`, close => {
+    $('#pe-kw').focus(); $('#pe-no').onclick = close;
+    const ok = async () => {
+      const nk = $('#pe-kw').value.trim(), ids = $('#pe-ids').value.split(/[\s,、，]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
+      if (!nk) return $('#pe-kw').focus();
+      const bad = ids.filter(i => !L.isId(L.splitAnchor(i).id)); if (bad.length) return alert(`IDの形が違います: ${bad.join(' ')}\n（例: 12 や 3a や 3a(1)）`);
+      const rd = L.toHira($('#pe-rd').value.trim()) || r.reading || await ctx.api.suggest(nk);
+      await ctx.flush();
+      let st = null;
+      for (const id of all) if (nk !== kw || !ids.includes(id)) st = (await ctx.api.removePaperIndex({ kw, id })) || st;   // 外れた番号・名前を変えたときの古い行
+      if (ids.length) st = (await ctx.api.addPaperIndex({ kw: nk, reading: rd, ids })) || st;
+      if (st) ctx.applyState(st);
+      flashKw = nk; close(); draw();
+      setTimeout(() => { flashKw = null; const f = document.querySelector('#pi-rows .pr.flash'); if (f) f.classList.remove('flash'); }, 2200);
+    };
+    $('#pe-ok').onclick = ok;
+    for (const id of ['pe-kw', 'pe-rd', 'pe-ids']) $('#' + id).onkeydown = ev => { if (ev.key === 'Enter' && !ev.isComposing) { ev.preventDefault(); ok(); } };
+  });
+}
+async function delEntry(kw) {
+  const r = rows().find(x => x.kw === kw); if (!r) return;
+  const all = [...r.have, ...r.wait];
+  if (!confirm(`紙のIndex から「${kw}」を削除しますか？\n（番号 ${all.join(' ')} も、このキーワードから外れます）`)) return;
+  await ctx.flush();
+  let st = null; for (const id of all) st = (await ctx.api.removePaperIndex({ kw, id })) || st;
+  if (st) ctx.applyState(st); draw();
+}

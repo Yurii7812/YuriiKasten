@@ -583,8 +583,16 @@ button,select,.vseg button,.nb,.tab span,.c-speaker-label{white-space:nowrap}
 .da-sep{height:1px;background:var(--line);margin:8px 0 2px}
 /* 索引の画面: 名前・親・ボタン（押しやすく） */
 .thead{gap:10px;margin-bottom:10px}.thead h2{margin:0;font-size:22px}.ti-ic{font-size:22px}
+.tedit-hint{color:var(--sub);font-size:12.5px;margin:0 0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tconf{max-width:620px;display:flex;flex-direction:column;gap:12px;padding:6px 0}
+.tc-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.tc-l{width:130px;flex:none;font-weight:600;font-size:13.5px}
+.tc-row input,.tc-row select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;min-width:0}.tc-row input[id=t-name],.tc-row input[id=t-kw]{flex:1;min-width:180px}
+.tc-note{color:var(--sub);font-size:12.5px;background:var(--hl);border-radius:8px;padding:8px 10px}
+.tc-bar{display:flex;align-items:center;gap:8px;margin-top:6px}.tc-bar .grow{flex:1}
 .tmeta{gap:18px;margin:0 0 12px;align-items:center}.tmeta .tm{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
 .tbtn{padding:8px 16px;min-height:38px;font-size:14px;white-space:nowrap}
+#clist .dtop{display:flex;align-items:center;gap:6px}#clist .dtop .ctq{flex:1;min-width:0}#clist .dtop button{flex:none;width:34px;height:34px;padding:0;font-size:16px}
+#clist .c-newrow{gap:6px;padding:0 10px 8px;align-items:center}#clist .c-newrow input{flex:1;min-width:0;padding:7px 10px;border:1px solid var(--line);border-radius:8px;font:inherit}#clist .c-newrow button{flex:none;padding:6px 12px;white-space:nowrap}
 #clist .csep{height:1px;background:var(--line);margin:6px 12px}
 .chat-head .c-children{position:relative;display:block;padding:0;border:0;flex:none}
 .chat-head .c-filter{width:auto;position:relative}

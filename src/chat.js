@@ -210,7 +210,7 @@ export function listHtml() {
     .filter(x => x.name && !stdNames.has(x.name) && !seen.has(x.name) && seen.add(x.name))
     .sort((x, y) => (lu.get(y.name) || 0) - (lu.get(x.name) || 0));
   const hit = x => !q || x.label.toLowerCase().includes(q), stdShown = std.filter(hit), restShown = rest.filter(hit);
-  return `<div id="clist"><div class="dtop"><button class="p" id="c-new" title="トピックを追加">＋</button><button id="c-topic-graph" title="トピックグラフ">🕸</button><input id="c-tq" class="ctq" placeholder="トピックを探す" value="${esc(tq)}"></div>`
+  return `<div id="clist"><div class="dtop"><input id="c-tq" class="ctq" placeholder="🔎 トピックを探す" value="${esc(tq)}"><button class="p" id="c-new" title="トピックを作る">＋</button><button id="c-topic-graph" title="トピックグラフ">🕸</button></div><div id="c-newrow" class="c-newrow" style="display:none"><input id="c-newname" placeholder="新しいトピックの名前（Enter で作る・Esc でやめる）" autocomplete="off"><button class="p" id="c-newok" title="作る">作る</button><button id="c-newopt" title="時系列記録にするなど、くわしい設定">⚙️</button></div>`
     + stdShown.map(t => row(t.name, t.label, t.n, t.icon)).join('') + (stdShown.length && restShown.length ? '<div class="csep"></div>' : '') + restShown.map(t => row(t.name, t.label, t.n, t.icon)).join('') + '</div>';
 }
 
@@ -899,6 +899,18 @@ function charactersDialog() {
   });
 }
 // ===== トピックを作る・設定 =====
+// 一覧の「＋」: 名前の入力を出して、Enter で作る（1 件ずつのメモのトピック）
+export function toggleNewTopicRow() {
+  const row = $('#c-newrow'); if (!row) return;
+  const on = row.style.display === 'none'; row.style.display = on ? 'flex' : 'none';
+  if (on) { const i = $('#c-newname'); i.value = ''; i.focus(); }
+}
+export function createTopicInline() {
+  const i = $('#c-newname'); if (!i) return; const name = i.value.trim();
+  if (!name) return i.focus();
+  const bad = nameProblem(name); if (bad) return alert(bad);
+  doc.topics.push({ name, type: 'bubble', stamp: true, entry: null }); save(); ctx.renderList(); open(name);
+}
 export function newTopicDialog() {
   const rootFree = () => { const r = ctx.notes().filter(n => n.s === 'd' && /^\d+$/.test(n.id)).map(n => +n.id); return ctx.free('d', String((r.length ? Math.max(...r) : 0) + 1)); };
   dialog(`<h3>トピックを作る</h3>
@@ -1076,6 +1088,12 @@ document.addEventListener('input', e => {
   if (e.target.id === 'c-tq') { tq = e.target.value; const pos = e.target.selectionStart; ctx.renderList(); const n = document.getElementById('c-tq'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } return; }
 });
 document.addEventListener('input', e => { if (e.target.id === 'c-in' && !e.target.closest('.rp')) { setDraft(e.target.value); fit(e.target); mentionList(); } });
+document.addEventListener('keydown', e => {   // 一覧の「＋」の入力: Enter で作る・Esc でやめる
+  if (e.target.id === 'c-newname') {
+    if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); createTopicInline(); }
+    if (e.key === 'Escape') { e.preventDefault(); toggleNewTopicRow(); }
+  }
+});
 document.addEventListener('keydown', e => {
   if (e.target.id === 'c-in' && !e.target.closest('.rp')) {
     if (mn.length && !e.isComposing && e.keyCode !== 229 && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey))) { e.preventDefault(); return pickMention(0); }
