@@ -4,7 +4,7 @@
 # もう一度実行すると、最新に更新します
 $ErrorActionPreference = 'Stop'
 $repo = 'https://github.com/Yurii7812/YuriiNote.git'
-$src = Join-Path $env:LOCALAPPDATA 'YuriiKasten-src'
+$src = Join-Path $env:LOCALAPPDATA 'YuriiNote-src'
 function Have($c) { [bool](Get-Command $c -ErrorAction SilentlyContinue) }
 function Refresh { $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') }
 
@@ -22,8 +22,8 @@ Write-Host '部品を入れています（初回は数分かかります）…'
 npm install --no-audit --no-fund
 npm run build
 
-# 起動用の cmd（YuriiNote / YuriiNote --update。昔の YuriiKasten も残す）
-$bin = Join-Path $env:LOCALAPPDATA 'YuriiKasten-bin'; New-Item -ItemType Directory -Force $bin | Out-Null
+# 起動用の cmd（YuriiNote / YuriiNote --update。YuriiNoteのコマンドを利用）
+$bin = Join-Path $env:LOCALAPPDATA 'YuriiNote-bin'; New-Item -ItemType Directory -Force $bin | Out-Null
 Set-Content (Join-Path $bin 'YuriiNote.cmd') -Encoding ASCII -Value @"
 @echo off
 cd /d "$src"
@@ -43,4 +43,4 @@ foreach ($dir in @([Environment]::GetFolderPath('Desktop'), (Join-Path $env:APPD
   $l.TargetPath = Join-Path $src 'node_modules\electron\dist\electron.exe'; $l.Arguments = '.'; $l.WorkingDirectory = $src
   if (Test-Path (Join-Path $src 'build\icon.ico')) { $l.IconLocation = (Join-Path $src 'build\icon.ico') + ',0' }; $l.Save()
 }
-Write-Host '入れました。デスクトップの YuriiNote から開きます。更新は、この1行をもう一度実行するか、新しい PowerShell で YuriiKasten --update'
+Write-Host '入れました。デスクトップの YuriiNote から開きます。更新は、この1行をもう一度実行するか、新しい PowerShell で YuriiNote --update'
