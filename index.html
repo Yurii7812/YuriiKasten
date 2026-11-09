@@ -429,6 +429,22 @@ button{font-size:14.5px;padding:5px 13px;border-color:#d6d9e1;color:#3d4150}
 .idex-section-actions select{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--fg);padding:4px 2px}
 .idex-section-actions button{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--fg);padding:4px 7px;cursor:pointer}
 .idex-section-actions button:disabled{opacity:.35;cursor:default}
+/* 通常チャットとノート化のキャラ別左右表示・上位下位フィルター。
+   選択モードではフィルターや各種リンクはメモ内で発火させず、メモ全体を選択する。 */
+.chat.memo #c-msgs .bub.other-speaker,
+.chat.memo .memo-note-messages .bub.other-speaker{margin-left:0;margin-right:auto;background:var(--hl,#f0f2f5);border-radius:12px 12px 12px 3px}
+.chat.memo .bub>.b-meta{color:var(--sub);font-size:11.5px;padding-bottom:2px}
+.chat.memo .c-filter-row{display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin:3px 0}
+.chat.memo .c-filter-row>.sub{min-width:175px;flex:none}
+.chat.memo .c-filter-row>button{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:12px;padding:4px 8px;background:var(--bg);color:var(--fg);cursor:pointer}
+.chat.memo .c-filter-row>button.on{background:var(--acc);border-color:var(--acc);color:white}
+.chat.memo .c-filter-controls{display:flex;gap:8px;align-items:center;justify-content:flex-end;width:100%;padding:3px}
+.chat.memo .c-filter-controls button{cursor:pointer;font-size:12px}
+.chat.memo .c-filter-controls button:disabled{opacity:.4;cursor:default}
+.chat.memo .c-speaker-label{font-size:12px;display:flex;align-items:center;gap:5px}
+.chat.memo .c-speaker-label select,.memo-note-head select{font:inherit;max-width:140px}
+.idex-choose-target{display:flex;gap:7px;flex-wrap:wrap;padding:14px 0}
+.idex-choose-target button{border:1px solid var(--line);border-radius:8px;padding:8px 12px;background:var(--bg);color:var(--fg);cursor:pointer}
 /* 長いタイトルは一覧・カード・本文のいずれでも読めるようにする。
    リスト行の高さは自然に広げ、タイトル欄は入力中も折り返し自動伸長。 */
 .item.note .nt,.item.topicrow .nt,.idex-result-section .nt{
