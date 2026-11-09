@@ -12,7 +12,7 @@ const route = (kind, key, title, desc) => '<button type="button" class="idex-lin
 const caption = (head, content) => content ? '<div class="idex-section"><h4>' + esc(head) + '</h4>' + content + '</div>' : '';
 const noteLink = (n, label) => route('note', nkey(n), label || (idLabel(n) + ' — ' + titleOf(n)), limit(n.body, 90));
 const kwLink = name => route('keyword', name, name, 'グローバルインデックス');
-const topicLink = t => route('topic', t.name, t.name, 'トピックインデックス');
+const topicLink = t => route('topic', t.name, t.name, '索引');
 
 export function open({ notes, topics, readings = {}, paperEntries = [], subject = null, onChoose }) {
   document.querySelector('.idex-cover')?.remove();
@@ -22,7 +22,7 @@ export function open({ notes, topics, readings = {}, paperEntries = [], subject 
     '<header class="idex-head"><div><h2>IDを探して付ける</h2><small>索引をたどって本文を確認し、関連・発展させる位置を決めます</small></div>' +
     '<button type="button" data-ix-close aria-label="閉じる">×</button></header>' +
     '<div class="idex-main"><aside class="idex-sidebar">' +
-    '<input id="idex-query" type="search" placeholder="本文・ID・Index・トピックIndexを検索" aria-label="知識を検索">' +
+    '<input id="idex-query" type="search" placeholder="本文・ID・Index・索引を検索" aria-label="知識を検索">' +
     '<div class="idex-scopes"><button data-ix-scope="all" class="on">全部</button><button data-ix-scope="keywords">Index</button><button data-ix-scope="topics">Topic</button><button data-ix-scope="notes">ノート</button></div>' +
     '<div class="idex-results"></div></aside>' +
     '<div class="idex-detail"><div class="idex-trail"><button type="button" data-ix-back disabled>← 戻る</button><span class="idex-path">検索結果から選択</span></div>' +
@@ -52,14 +52,14 @@ export function open({ notes, topics, readings = {}, paperEntries = [], subject 
   window.addEventListener('keydown', guardKeys, true);
 
   // 通常画面と同じ .ix / .chip / .item / .ti を使う。
-  // IndexのIDチップは、入口トピックIndexがあれば先にそのIndexを開く。
+  // IndexのIDチップは、親索引があれば先にそのIndexを開く。
   function indexChip(s, raw, fromTopic = '', dot = null) {
     const ref = L.splitAnchor(raw), id = ref.id;
     const exists = byNote.has(s + ':' + id), hasDot = dot && dot.s === s && dot.id === id;
     return '<span class="chip ' + s + (exists ? '' : ' miss') + (hasDot ? ' dotted' : '') +
       '" data-ix-ref-s="' + esc(s) + '" data-ix-ref-id="' + esc(id) + '"' +
       (fromTopic ? ' data-ix-from-topic="' + esc(fromTopic) + '"' : '') +
-      ' title="' + esc(exists ? '開く（トピックIndexがあれば先に表示）' : 'まだ取り込まれていません') + '">' +
+      ' title="' + esc(exists ? '開く（索引があれば先に表示）' : 'まだ取り込まれていません') + '">' +
       (hasDot ? '<i class="dotabove">●</i>' : '') + (s === 'p' ? '紙' : '') + esc(raw) + '</span>';
   }
   function indexRow(k) {
@@ -74,7 +74,7 @@ export function open({ notes, topics, readings = {}, paperEntries = [], subject 
   }
   const topicRow = t => '<div class="item topicrow" data-ix-kind="topic" data-ix-key="' + esc(t.name) + '">' +
     '<div class="nrow"><div class="nt">' + esc(t.name.replace(/^[0-9][0-9a-z]*-/, '')) +
-    '</div><div class="ns">トピックIndex</div></div></div>';
+    '</div><div class="ns">索引</div></div></div>';
   const noteRow = n => '<div class="item note" data-ix-kind="note" data-ix-key="' + esc(nkey(n)) + '">' +
     '<div class="nrow"><div class="nt">' + esc(titleOf(n)) + '</div><div class="ns">' + esc(idLabel(n)) +
     ((n.keywords || []).length ? ' · ' + n.keywords.map(esc).join('・') : '') +
@@ -84,12 +84,12 @@ export function open({ notes, topics, readings = {}, paperEntries = [], subject 
     const hits = X.search(notes, topics, readings, st.query, paperEntries), scope = st.scope;
     const labels = {
       keywords: { reading: 'よみ順', name: 'キーワード順', count: '登録数順' },
-      topics: { name: '名前順', entry: '入口ID順', count: '行数順' },
+      topics: { name: '名前順', entry: '親ID順', count: '行数順' },
       notes: { updated: '更新順', title: 'タイトル順', id: 'ID順' }
     };
     const configs = {
       keywords: ['Index', hits.keywords, indexRow],
-      topics: ['トピックIndex', hits.topics, topicRow],
+      topics: ['索引', hits.topics, topicRow],
       notes: ['ノート', hits.notes, noteRow]
     };
     const section = (kind, position) => {
@@ -109,11 +109,11 @@ export function open({ notes, topics, readings = {}, paperEntries = [], subject 
     root.querySelectorAll('[data-ix-scope]').forEach(b => b.classList.toggle('on', b.dataset.ixScope === scope));
   }
   function Labeled(t) {
-    return t.entry ? '入口 ' + (t.entry.s === 'p' ? '紙 ' : '') + t.entry.id : '索引';
+    return t.entry ? '親 ' + (t.entry.s === 'p' ? '紙 ' : '') + t.entry.id : '索引';
   }
   function displayView(view) {
     if (!view) return '<div class="idex-welcome"><h3>知識を探索してIDを決定する</h3>' +
-      '<p>左でキーワード、索引、ノート本文を検索します。Index → トピックIndex → ノートと進み、本文や関連ノートを見ながら位置を決められます。</p>' +
+      '<p>左でキーワード、索引、ノート本文を検索します。Index → 索引 → ノートと進み、本文や関連ノートを見ながら位置を決められます。</p>' +
       '<p>関連するノートが決まったら「分岐（子）」または「並列」を選びます。新しい系統なら「直接指定」を使います。</p>' +
       '<p>探索中は元のノートを移動・編集しません。</p></div>';
     if (view.kind === 'keyword') {
@@ -122,11 +122,11 @@ export function open({ notes, topics, readings = {}, paperEntries = [], subject 
       const related = topics.filter(t => t.keyword === k.name || LTopicRows(t).includes(k.name));
       return '<h2>Index</h2>' +
         '<div class="idex-view-index">' + indexRow(k) + '</div>' +
-        caption('関連するトピックIndex', related.map(topicRow).join(''));
+        caption('関連する索引', related.map(topicRow).join(''));
     }
     if (view.kind === 'topic') {
       const t = byTopic.get(view.key);
-      if (!t) return '<p>このトピックIndexは見つかりません</p>';
+      if (!t) return '<p>この索引は見つかりません</p>';
       const entries = X.topicEntries(t, notes);
       const rows = entries.rows.map(r => '<tr><td>' + esc(r.keyword) + '</td><td>' +
         r.notes.map(x => indexChip(x.s, x.id + (x.anchor ? '(' + x.anchor + ')' : ''), t.name)).join('') +
@@ -139,7 +139,7 @@ export function open({ notes, topics, readings = {}, paperEntries = [], subject 
       });
       return (parentIndexes.length ? '<div class="backidx">↑ ' + parentIndexes.map(topicLink).join('') + '</div>' : '') +
         '<div class="row idex-topic-head"><h2>' + esc(t.name.replace(/^[0-9][0-9a-z]*-/, '')) + '</h2>' +
-        '<span class="sub">入口</span>' + (t.entry ? indexChip(t.entry.s, t.entry.id, t.name) : '<span class="sub">なし</span>') + '</div>' +
+        '<span class="sub">親</span>' + (t.entry ? indexChip(t.entry.s, t.entry.id, t.name) : '<span class="sub">なし</span>') + '</div>' +
         '<table class="ti">' + (rows || '<tr><td class="none">まだ空です</td></tr>') + '</table>' +
         entries.stars.filter(name => byTopic.has(name)).map(name => '<div class="star">★ ' + topicLink(byTopic.get(name)) + '</div>').join('') +
         entries.refs.map(x => '<div class="star">★ ' + esc(x.label) + ' ' + indexChip(x.s, x.id, t.name) + '</div>').join('');
@@ -154,8 +154,8 @@ export function open({ notes, topics, readings = {}, paperEntries = [], subject 
         (n.created ? ' · ' + esc(n.created) : '') + '</p>' +
         caption('本文プレビュー', '<div class="idex-note-body">' + esc(body || '（本文なし）') + '</div>') +
         caption('キーワード・Global Index', (n.keywords || []).map(kwLink).join('')) +
-        caption('自トピックIndex', rel.owned.map(topicLink).join('')) +
-        caption('索引されているトピックIndex', rel.indexed.map(topicLink).join('')) +
+        caption('自索引', rel.owned.map(topicLink).join('')) +
+        caption('索引されている索引', rel.indexed.map(topicLink).join('')) +
         caption('親ノート', rel.parent ? noteLink(rel.parent) : '') +
         caption('子ノート', rel.children.map(noteLink).join('')) +
         caption('バックリンク（ノート）', rel.backlinks.map(noteLink).join(''));
@@ -167,7 +167,7 @@ export function open({ notes, topics, readings = {}, paperEntries = [], subject 
     $('.idex-preview').innerHTML = displayView(st.view);
     $('.idex-path').textContent = !st.view ? '検索結果から選択' :
       st.view.kind === 'keyword' ? 'グローバルIndex › ' + st.view.key :
-      st.view.kind === 'topic' ? 'トピックIndex › ' + st.view.key :
+      st.view.kind === 'topic' ? '索引 › ' + st.view.key :
       'ノート › ' + st.view.key;
     $('[data-ix-back]').disabled = !st.history.length;
   }

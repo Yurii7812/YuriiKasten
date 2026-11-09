@@ -1,7 +1,7 @@
-// 似たノートを探す: 本文の言葉・キーワード・リンク・同じトピックIndex。それぞれの度数（0〜1）を出し、並べ替え・絞り込みに使う
+// 似たノートを探す: 本文の言葉・キーワード・リンク・同じ索引。それぞれの度数（0〜1）を出し、並べ替え・絞り込みに使う
 import L from '../lib.js';
 
-export const BASES = { text: '本文の言葉', kw: 'キーワード', link: 'リンク', topic: 'トピックIndex' };
+export const BASES = { text: '本文の言葉', kw: 'キーワード', link: 'リンク', topic: '索引' };
 
 // 文字の 2 つ組（日本語向け）と、英数字の単語。記法・リンクは除く
 const clean = t => (t || '').replace(/!?\[([^\]\n]*)\]\([^)\s]*\)/g, '$1').replace(/<[^>]+>/g, ' ').replace(/[`*_>#|~\-]/g, ' ').toLowerCase();
@@ -21,7 +21,7 @@ export function prepare(notes, topics, mergeTopic) {
   const norm = new Map(); for (const [k, tf] of vec) { let s = 0; for (const [w, c] of tf) s += (c * idf(w)) ** 2; norm.set(k, Math.sqrt(s) || 1); }
   const links = new Map(), has = new Set(real.map(key));
   for (const n of real) { const set = new Set(); if (!n.noid) for (const t of L.tokens(n.body || '')) { const k = (t.sp || n.s) + ':' + t.id; if (t.k === 'ref' && has.has(k) && k !== key(n)) set.add(k); } links.set(key(n), set); }
-  const tp = new Map();   // ノート → 載っているトピックIndex の名前
+  const tp = new Map();   // ノート → 載っている索引 の名前
   for (const t of topics || []) {
     const m = mergeTopic(t), ids = new Set(); if (t.entry) ids.add(t.entry.s + ':' + t.entry.id);
     for (const r of m.rows) for (const s of ['d', 'p']) for (const raw of r[s]) ids.add(s + ':' + L.splitAnchor(raw).id);
@@ -43,7 +43,7 @@ export function pair(P, a, b) {
   score.link = la.has(kb) || lb.has(ka) ? 1 : [...la].some(x => lb.has(x)) ? .5 : 0;
   if (score.link === 1) reasons.push({ b: 'link', t: 'リンクでつながっている' }); else if (score.link) reasons.push({ b: 'link', t: '同じノートへリンク' });
   const ta = P.tp.get(ka), tb = P.tp.get(kb), both = ta && tb ? [...ta].filter(x => tb.has(x)) : [];
-  score.topic = both.length ? 1 : 0; if (both.length) reasons.push({ b: 'topic', t: '同じトピックIndex: ' + both.slice(0, 2).join('・') });
+  score.topic = both.length ? 1 : 0; if (both.length) reasons.push({ b: 'topic', t: '同じ索引: ' + both.slice(0, 2).join('・') });
   return { score, reasons };
 }
 

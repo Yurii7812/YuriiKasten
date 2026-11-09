@@ -69,7 +69,7 @@ function importCapture(v, data) {
     }
   }
   if (chatTouched) v.saveDoc('C_チャット', chat);
-  // スマホで書いた紙のIndex・紙のトピックIndex（同じものを何度取り込んでも、増えない。消した分は、消す）
+  // スマホで書いた紙のIndex・紙の索引（同じものを何度取り込んでも、増えない。消した分は、消す）
   const pidx = data.paperIndex;
   if (pidx) {
     for (const e of pidx.entries || []) if (e && e.kw && (e.ids || []).length) { v.addPaperIndex({ kw: e.kw, reading: e.reading || '', ids: e.ids }); sum.paperIndex += e.ids.length; }
@@ -102,14 +102,14 @@ function importedEntries(v) {
 function summaryText(sum) {
   const parts = [];
   if (sum.chats) parts.push(`チャットメモに ${sum.chats} 件`); if (sum.days) parts.push(`日記・記録にも ${sum.days} 件`); if (sum.appended) parts.push(`まとめのノートにも ${sum.appended} 件`);
-  if (sum.paperIndex) parts.push(`紙のIndex ${sum.paperIndex} 件`); if (sum.paperTopics) parts.push(`紙のトピックIndex ${sum.paperTopics} 件`);
+  if (sum.paperIndex) parts.push(`紙のIndex ${sum.paperIndex} 件`); if (sum.paperTopics) parts.push(`紙の索引 ${sum.paperTopics} 件`);
   if (sum.scans) parts.push(`紙のスキャン ${sum.scans} 枚`); if (sum.updated) parts.push(`直したメモ ${sum.updated} 件`); if (sum.removed) parts.push(`消したメモ ${sum.removed} 件`);
   let t = parts.length ? '取り込みました: ' + parts.join('、') + '。' : '新しく取り込むものはありませんでした。';
   if (sum.blankScans) t += `\n番号の無いスキャン ${sum.blankScans} 枚は、スマホで番号を付けてから取り込めます。`;
   return t;
 }
 // スマホへ渡す、PC のメモ全部と日のノート（スマホで見られる・直せる。スマホからこの PC のメモに戻った分は、取り込むときに反映）
-// スマホへ渡す、PC の紙のIndex と、入口が紙のトピックIndex（スマホで見られる・足せる）
+// スマホへ渡す、PC の紙のIndex と、親が紙の索引（スマホで見られる・足せる）
 function paperIndexForPhone(v) {
   const s = v.state(), d = (s.docs || {})['K_paperindex'] || { entries: [] };
   return {

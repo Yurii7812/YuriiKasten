@@ -1,5 +1,5 @@
-// ID付与用の知識探索。検索対象はノート本文、グローバルIndex、トピックIndex。
-// トピックIndexは知識の入口であり、Folgezettelの親子関係ではない。
+// ID付与用の知識探索。検索対象はノート本文、グローバルIndex、索引。
+// 索引は知識の親であり、Folgezettelの親子関係ではない。
 const L = require('./lib');
 const key = n => n.s + ':' + n.id;
 const isAssigned = n => n && !n.noid && L.isId(n.id);
@@ -52,8 +52,8 @@ function topicEntries(topic, notes) {
     stars: merged.stars, refs: merged.refs
   };
 }
-// 通常のIndexと同じ遷移順: IDがトピックIndexの入口なら、先にその索引を開く。
-// そのトピックIndexの中から同じIDを押したときだけ、入口ノートを開く。
+// 通常のIndexと同じ遷移順: IDが索引の親なら、先にその索引を開く。
+// その索引の中から同じIDを押したときだけ、親ノートを開く。
 function followIndexReference(notes, topics, space, id, fromTopicName = '') {
   const t = topics.find(t => t.entry && t.entry.s === space && t.entry.id === id);
   if (t && t.name !== fromTopicName) return { kind: 'topic', key: t.name };

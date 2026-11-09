@@ -417,7 +417,7 @@ button{font-size:14.5px;padding:5px 13px;border-color:#d6d9e1;color:#3d4150}
 .idex-decision .idex-primary{background:var(--acc);border-color:var(--acc);color:white;font-weight:600}
 .idex-decision button:disabled{opacity:.4;cursor:default}
 @media(max-width:740px){.idex-dialog{height:100vh}.idex-head{padding:10px 12px}.idex-main{display:flex;flex-direction:column}.idex-sidebar{height:34%;min-height:140px;border-right:0;border-bottom:1px solid var(--line)}.idex-detail{flex:1}.idex-preview{padding:12px}.idex-footer{padding:9px 12px}.idex-decision{gap:6px}.idex-method{margin-bottom:6px}}
-/* ID探索では通常のIndex、トピックIndex、ノート一覧の見た目と操作を共有 */
+/* ID探索では通常のIndex、索引、ノート一覧の見た目と操作を共有 */
 .idex-index-entry{padding:9px 10px;border-bottom:1px solid var(--line);line-height:2}
 .idex-index-entry .idex-keyword{cursor:pointer;margin-right:7px}
 .idex-index-entry .idex-keyword:hover{text-decoration:underline}
@@ -561,6 +561,29 @@ button,select,.vseg button,.nb,.tab span,.c-speaker-label{white-space:nowrap}
 .fi-side textarea{width:100%;min-height:64px;font:inherit;border:1px solid var(--line);border-radius:8px;padding:6px 8px;resize:vertical;box-sizing:border-box}
 .fi-bar{display:flex;align-items:center;gap:8px;padding:10px 16px;border-top:1px solid var(--line);background:var(--hl);flex-wrap:nowrap}.fi-bar button{white-space:nowrap}.fi-bar .grow{flex:1}
 @media (max-width:640px){.fi-body{grid-template-columns:1fr}.fi-pvbox{border-right:0;border-bottom:1px solid var(--line)}}
+/* 右パネルの見出し: 絵文字・名前・件数・右端の「＋」 */
+.mgn .sec{margin:0 0 16px}
+.mh{display:flex;align-items:center;gap:6px;margin:0 0 4px;font-size:12.5px;color:var(--sub);font-weight:600}
+.mh .me{font-size:14px}.mh .mc{background:var(--hl);border-radius:999px;padding:0 7px;font-weight:400;font-size:11.5px}
+.mh .mplus{margin-left:auto;width:24px;height:24px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--sub);cursor:pointer;padding:0;line-height:1;font-size:15px}
+.mh .mplus:hover{color:var(--acc);border-color:var(--acc)}
+.kwchips{display:flex;flex-wrap:wrap;gap:6px}
+.chip.kwc{display:inline-flex;align-items:center;gap:5px;background:var(--acc-bg);color:var(--acc);border-radius:999px;padding:1px 9px;font-size:13px}
+.chip.kwc b{font-weight:400;opacity:.5;cursor:pointer}.chip.kwc b:hover{opacity:1}
+.msub{color:var(--sub);font-size:12.5px}
+/* 小さな窓（キーワード・索引に入れる・索引を作る）: 見やすい余白・大きめのボタン */
+.modal .box:has(.dlg-a){width:min(460px,94vw);padding:18px 20px}
+.dlg-a{display:flex;flex-direction:column;gap:8px;min-width:0}.dlg-a h3{margin:0 0 2px;font-size:16px}
+.dlg-a input{width:100%;box-sizing:border-box}
+.da-lab{font-size:11.5px;color:var(--sub);margin-top:4px}
+.da-chips{display:flex;flex-wrap:wrap;gap:6px;min-height:26px}
+.da-chips .chip{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;padding:2px 11px;font-size:13px;cursor:pointer;background:var(--bg)}
+.da-chips .chip.k{background:var(--acc-bg);border-color:transparent;color:var(--acc)}.da-chips .chip.dashed{border-style:dashed;color:var(--sub);cursor:default}
+.da-bar{display:flex;align-items:center;gap:8px;margin-top:6px}.da-bar .grow{flex:1}.da-bar button{padding:8px 16px;min-height:38px;white-space:nowrap}.da-bar input{flex:1}
+.da-sep{height:1px;background:var(--line);margin:8px 0 2px}
+/* 索引の画面: 名前・親・ボタン（押しやすく） */
+.thead{gap:10px;margin-bottom:10px}.thead h2{margin:0;font-size:22px}.ti-ic{font-size:22px}
+.tbtn{padding:8px 16px;min-height:38px;font-size:14px;white-space:nowrap}
 #clist .csep{height:1px;background:var(--line);margin:6px 12px}
 .chat-head .c-children{position:relative;display:block;padding:0;border:0;flex:none}
 .chat-head .c-filter{width:auto;position:relative}
@@ -605,7 +628,7 @@ button,select,.vseg button,.nb,.tab span,.c-speaker-label{white-space:nowrap}
 .item.decided{border-radius:0;box-shadow:inset 0 0 0 2px #f0b429}.item.decided.on,.item.on.decided{box-shadow:inset 0 0 0 2px #f0b429,inset 5px 0 0 var(--acc)}
 .item.topicrow.on{background:var(--acc-bg);border-radius:0;box-shadow:inset 5px 0 0 var(--acc)}.item.topicrow.decided{box-shadow:inset 0 0 0 2px #f0b429}.ix.on{background:var(--hl);border-radius:0;box-shadow:inset 5px 0 0 var(--acc)}
 .item.topicrow.on.decided{box-shadow:inset 0 0 0 2px #f0b429,inset 5px 0 0 var(--acc)}
-.item.topicrow.tc{margin:6px 10px;padding:9px 12px;border-radius:10px}.item.topicrow.tc.on,.item.topicrow.tc.decided{border-radius:10px}   /* カード表示のとき、トピックIndex の行も、カードと同じ幅に */
+.item.topicrow.tc{margin:6px 10px;padding:9px 12px;border-radius:10px}.item.topicrow.tc.on,.item.topicrow.tc.decided{border-radius:10px}   /* カード表示のとき、索引 の行も、カードと同じ幅に */
 body{font-family:var(--uifont,inherit)}
 html.dark{filter:invert(.92) hue-rotate(180deg);background:#fff}html.dark img,html.dark .kimg,html.dark video,html.dark .pic img{filter:invert(1) hue-rotate(180deg)}
 #rail #settings-btn{margin-top:auto;font-size:18px}

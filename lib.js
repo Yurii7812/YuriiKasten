@@ -159,24 +159,24 @@ function exportMd(items) {
   }).join('\n\n---\n\n') + '\n';
 }
 
-// ===== トピックIndex =====
+// ===== 索引 =====
 // 1行 = 「キーワード ID ID …」。
-//   + で始まる行（★ も同じ）は、別のトピックIndexへの案内（星マーク）
+//   + で始まる行（★ も同じ）は、別の索引への案内（星マーク）
 //   ID の前の * は、そのIDの上に赤い点を付ける印（例: PKM *1 1a）。グローバルな Index でも同じ印
-// 行の ID: 1a  1a(2)  1a(p)  1a(p)(2)  1a(2)(p)  — (p)（紙）(d)（デジタル）は、書かなければ、そのトピックIndex の入口と同じ側
+// 行の ID: 1a  1a(2)  1a(p)  1a(p)(2)  1a(2)(p)  — (p)（紙）(d)（デジタル）は、書かなければ、その索引 の親と同じ側
 const IDTOK = new RegExp('^(' + ID + ')((?:[(（](?:\\d+|[pdPD])[)）]){0,2})$');
 function parseIdTok(tok) {
   const m = tok.match(IDTOK); if (!m) return null;
   let sp, n; for (const g of m[2].matchAll(/[(（](\d+|[pdPD])[)）]/g)) { if (/^\d+$/.test(g[1])) { if (n === undefined) n = g[1]; } else if (sp === undefined) sp = g[1].toLowerCase(); }
   return { id: m[1], n, sp, raw: m[1] + (n ? `(${n})` : ''), tok };
 }
-const defOf = t => t && t.entry && t.entry.s === 'p' ? 'p' : 'd';   // トピックIndex の、印なしの側（入口が紙なら紙）
+const defOf = t => t && t.entry && t.entry.s === 'p' ? 'p' : 'd';   // 索引 の、印なしの側（親が紙なら紙）
 function topicLine(line) {
   const c = line.match(/^(\s*[@＠]\s*)(.+?)\s*$/);   // @夢 → チャットメモのトピック「夢」への案内（メモ自体は書かない）
   if (c) return { chat: c[2], from: c[1].length, to: c[1].length + c[2].length, ids: [] };
   const s = line.match(/^(\s*[★☆+＋]\s*)(.*?)\s*$/);
   if (s) {
-    // +hoge 1 → 「★ hoge 1」（1 がリンク。そのIDのトピックIndex があってもなくても）。+GUI だけなら、トピックIndex への案内
+    // +hoge 1 → 「★ hoge 1」（1 がリンク。そのIDの索引 があってもなくても）。+GUI だけなら、索引 への案内
     const ps = [...s[2].matchAll(/\S+/g)], last = ps[ps.length - 1], pt = last && parseIdTok(last[0]);
     if (ps.length >= 2 && pt) {
       const at = s[1].length + last.index;
@@ -221,7 +221,7 @@ function mergeTopic(t) {
   return { rows: [...m.values()], stars, refs, chats };
 }
 
-// トピックIndex の文字に「キーワード ID」を足す（同じキーワードの行があればその行の後ろに）。ID は 1a や 1a(p) のように、印つきで
+// 索引 の文字に「キーワード ID」を足す（同じキーワードの行があればその行の後ろに）。ID は 1a や 1a(p) のように、印つきで
 function addToTopic(text, kw, tok) {
   const lines = text ? text.split('\n') : [];
   for (let i = 0; i < lines.length; i++) {
@@ -247,7 +247,7 @@ function kanaRow(reading) {
 const rowIdx = r => { const i = ROWS.indexOf(kanaRow(r)); return i < 0 ? 99 : i; }; // 英数・他は最後
 const byReading = rd => (a, b) => { const x = rd(a) || a, y = rd(b) || b; return rowIdx(x) - rowIdx(y) || x.localeCompare(y, 'ja'); };
 
-// トピックIndex の文字から ID を外す（ID が無くなった行は消す）。items: [{s, id}]（紙かデジタルかも見る）。def は、印なしの側
+// 索引 の文字から ID を外す（ID が無くなった行は消す）。items: [{s, id}]（紙かデジタルかも見る）。def は、印なしの側
 function removeFromTopic(text, items, def = 'd') {
   const gone = x => items.some(it => it.id === x.id && it.s === (x.sp || def));
   return (text || '').split('\n').flatMap(line => {
