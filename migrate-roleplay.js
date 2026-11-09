@@ -6,6 +6,9 @@ function migrate(data, notes, roleLibrary) {
   const existing = new Set(data.messages.map(m=>m.id));
   for (const n of notes || []) {
     if (n.kind !== 'rp' || !n.stem || data.importedRp[n.stem]) continue;
+    // インポート印を書き込む前に画面がリロードされても、同じ会話の重複トピックを作らない。
+    const already = data.messages.find(m => m.sourceRoleplay?.stem === n.stem);
+    if (already) { data.importedRp[n.stem] = already.topic; continue; }
     const conv = n.data || {}, rawTitle=(n.title || conv.title || '無題の会話').trim();
     const base='会話: '+rawTitle;
     let topic=base, suffix=2;
