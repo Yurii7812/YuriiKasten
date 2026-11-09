@@ -18,7 +18,7 @@ GitHub からソースを取ってきて、その場で組み立てます（git 
 
 ## 開発
 `npm install`（初回のみ）→ `./yuriikasten.sh`。試験は `npm test`。インストーラーは `npm run dist`（動かしている OS 用）。
-**リリースの作り方**: `package.json` の version を上げて、`git tag v0.5.0 && git push --tags` → GitHub Actions が、Windows / Mac / Linux のインストーラーを作って、リリースに置く（`.github/workflows/release.yml`）。
+**リリースの作り方**: `npm run version:minor` でマイナーバージョンを1つ進め（例: 0.4.0 → 0.5.0）、`git tag v0.5.0 && git push --tags` → GitHub Actions が、Windows / Mac / Linux のインストーラーを作って、リリースに置く（`.github/workflows/release.yml`）。
 
 ## 画面
 - 左のタブ: **デジタル** / **紙** / **Index**（グローバルIndex）。検索結果はまとめて出る
