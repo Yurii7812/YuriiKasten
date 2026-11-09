@@ -10,7 +10,7 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:allowBackup="false"
-        android:theme="@style/Theme.YuriiKastenMemo">
+        android:theme="@style/Theme.YuriiNote">
         <activity
             android:name=".MainActivity"
             android:exported="true"
