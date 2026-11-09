@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// バージョン（0.n.y）を 1 つ上げる。使い方: node scripts/bump-version.js [patch|minor]（省略は patch）
-//  - minor: 新しい機能が入ったとき。n を 1 つ上げて y を 0 に戻す（0.6.1 → 0.7.0）
-//  - patch: 機能ではない小さな更新（直し・見た目や文言の調整）。y を 1 つ上げる（0.6.0 → 0.6.1）
+// バージョン（1.x.y）を 1 つ上げる。使い方: node scripts/bump-version.js [patch|minor]（省略は patch）
+//  - minor: 新しい機能の追加など、大きな変更があったとき。x を 1 つ上げて y を 0 に戻す（1.0.1 → 1.1.0）
+//  - patch: 機能ではない小さな更新（直し・見た目や文言の調整）。y を 1 つ上げる（1.0.0 → 1.0.1）
 //  - package.json が、PC とスマホ（Gradle が versionName/versionCode を作る）の唯一の元
 const fs = require('node:fs');
 const path = require('node:path');

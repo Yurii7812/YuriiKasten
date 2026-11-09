@@ -6,7 +6,10 @@ contextBridge.exposeInMainWorld('api', {
   onFileDup: cb => r.on('fileDup', (_e, dups) => cb(dups)),   // 同じファイルが既にあったとき
   urlTitle: u => r.invoke('urlTitle', u),   // URL のページの題（リンクの表示名の自動入力）
   // ウィンドウを閉じる前に、書きかけの保存を済ませる（済んだら main へ知らせる）
-  onFlush: cb => r.on('flush-now', async () => { try { await cb(); } finally { r.send('flush-done'); } }),
+  onFlush: cb => r.on('flush-now', async (_e, request) => {
+    try { await cb(); r.send('flush-done', request); }
+    catch (error) { r.send('flush-failed', request, String(error?.message || error)); }
+  }),
   state: () => r.invoke('state'),
   trashList: () => r.invoke('trashList'),
   trashRestore: f => r.invoke('trashRestore', f),

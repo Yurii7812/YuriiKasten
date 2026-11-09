@@ -601,3 +601,17 @@ test('ファイル: 同じ中身は取り込まない（既にある）・削除
   const [again] = v.addFiles([{ name: 'メモ.txt', bytes: Buffer.from('こんにちは\n2 行目') }]);   // 消したあとは、もう一度取り込める
   assert.ok(fs.existsSync(path.join(dir, again))); assert.deepStrictEqual(v.takeFileDups(), []);
 });
+
+test('metadata-only saves preserve body/keywords; explicit empty body still clears intentionally', () => {
+  const dir = tmp(); let v = openVault(dir);
+  try {
+    v.saveNote({ s: 'd', id: '1', title: '題', body: '日本語の文章\n二行目', keywords: ['PKM'] });
+    v.saveNote({ s: 'd', id: '1', title: '題の変更', pinned: true });
+    v = openVault(dir);
+    let n = v.state().notes.find(n => n.id === '1');
+    assert.strictEqual(n.body, '日本語の文章\n二行目'); assert.deepStrictEqual(n.keywords, ['PKM']);
+    assert.strictEqual(n.title, '題の変更'); assert.strictEqual(n.pinned, true);
+    v.saveNote({ s: 'd', id: '1', body: '' });
+    assert.strictEqual(openVault(dir).state().notes.find(n => n.id === '1').body, '');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
