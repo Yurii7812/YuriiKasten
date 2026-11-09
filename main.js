@@ -5,6 +5,7 @@ const path = require('path');
 const os = require('os');
 const store = require('./store');
 const upd = require('./update');
+const { requestFlush, guardClose } = require('./save-lifecycle');
 
 // ===== コマンド: YuriiNote --update / --check / --version / --install =====
 // 開発用のフォルダ（git）か、AppImage か。どちらでもなければ（Windows / Mac のインストーラー版）更新はページを開くだけ
@@ -52,11 +53,13 @@ ipcMain.handle('trashRestore', (_e, f) => { const ok = v.trashRestore(f); if (ok
 
 // ===== 同期（ラズパイの同期サーバーと。設定が無ければ何もしない）=====
 let mainWin = null;
+const flushRenderer = () => requestFlush(mainWin, ipcMain);
 // ===== スマホ（USB・adb）=====
 ipcMain.handle('phoneInstall', async () => require('./phone').install({}, m => { if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('phoneMsg', m); }));
 // スマホのメモを取り込む（Gnosis の \M と同じ）。取り込んだら、スマホへ「取り込み済み」の印を返す
 // 取り込み（手動・自動 共通）
 async function runPhoneImport() {
+  await flushRenderer();
   const P = require('./phone'), C = require('./capture');
   const r = await P.pull(); if (!r.ok) return { ok: false, message: r.message };
   const out = C.importCapture(v, r.data);
@@ -145,6 +148,7 @@ ipcMain.handle('suggest', async (_e, text) => {
 ipcMain.handle('chooseVault', async () => {
   const r = await dialog.showOpenDialog({ title: 'ノートを保存するフォルダ', defaultPath: vault || suggestVault(), properties: ['openDirectory', 'createDirectory'] });
   if (r.canceled) return null;
+  await flushRenderer(); // Also flush edits made while the folder picker was open.
   vault = r.filePaths[0]; writeCfg({ ...readCfg(), vault }); return open();
 });
 
@@ -226,13 +230,9 @@ if (!argv.some(a => ['--version', '--update', '--check', '--install'].includes(a
     event.preventDefault();
     const target=externalUri(url); if(target) void shell.openExternal(target);
   });
-  // 閉じる前に、画面の書きかけを必ず保存してから閉じる（最大 3 秒待つ）
-  let closeFlushed = false;
-  w.on('close', e => {
-    if (closeFlushed) return; e.preventDefault();
-    let done = false; const finish = () => { if (done) return; done = true; closeFlushed = true; if (!w.isDestroyed()) w.close(); };
-    ipcMain.once('flush-done', finish); setTimeout(finish, 3000);
-    try { w.webContents.send('flush-now'); } catch { finish(); }
+  // A failed write or timeout must leave the editor open with its input intact.
+  guardClose(w, flushRenderer, error => {
+    dialog.showMessageBox(w, { type: 'error', title: '保存が完了していません', message: '入力内容を残すため、アプリを開いたままにしています。', detail: error.message + '\n保存先を確認してから、もう一度閉じてください。' });
   });
   mainWin = w; setInterval(phoneTick, 6000); setTimeout(phoneTick, 3000); w.maximize(); w.once('ready-to-show', () => w.show()); w.loadFile('index.html');
 });

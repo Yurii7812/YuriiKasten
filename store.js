@@ -41,7 +41,7 @@ const RESERVED = /^(D_|P_|T_|C_|R_|K_|V_)|^(Index|デジタル|紙|日記|未整
 function writeAtomic(file, data) {
   const tmp = file + '.tmp-' + process.pid;
   const fd = fs.openSync(tmp, 'w');
-  try { fs.writeSync(fd, data); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  try { fs.writeFileSync(fd, data); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
   fs.renameSync(tmp, file);
 }
 const HIST = '.history', HIST_KEEP = 60, HIST_GAP_MS = 60 * 1000;
@@ -676,7 +676,8 @@ function openVault(vault) {
       const n = get(x.s, x.id) || blank(x.s, x.id, x.created);
       const fresh = !get(x.s, x.id), before = JSON.stringify([n.keywords, n.body, n.title, n.data, n.kind, n.pinned, n.color, n.archived, n.parentStem]);
       if (x.parentStem !== undefined) n.parentStem = x.parentStem || ''; if (x.pinned !== undefined) n.pinned = !!x.pinned; if (x.color !== undefined) n.color = x.color || ''; if (x.archived !== undefined) n.archived = !!x.archived;
-      n.keywords = x.keywords || []; n.body = x.body || '';
+      if (x.keywords !== undefined) n.keywords = x.keywords || [];
+      if (x.body !== undefined) n.body = x.body || '';
       if (x.kind) n.kind = x.kind;
       if (x.data !== undefined) n.data = x.data;
       if (x.title !== undefined) n.title = (x.title || '').trim();

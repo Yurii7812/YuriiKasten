@@ -144,7 +144,8 @@ const nameProblem = (name, current = '') => {
   return '';
 };
 
-export function init(docs) {
+export function init(docs, preservePending = false) {
+  if (preservePending && ctx.hasPending('doc:C')) return;
   const d = docs['C_チャット'] || {};
   doc = { _rev: d._rev || 0, topics: d.topics || [], messages: d.messages || [], converted: d.converted || {}, trash: d.trash || [], noted: d.noted || {}, mirror: d.mirror || {}, upperByTopic: d.upperByTopic || {}, target: { topic: (d.target && d.target.topic) || '', ups: (d.target && d.target.ups) || [] }, viewMode: d.viewMode === 'day' ? 'day' : 'all', selfName: d.selfName || '私', importedRp: d.importedRp || {} };
   if (!doc.topics.some(t => t.name === FRAGMENT)) doc.topics.push({ name: FRAGMENT, type: 'bubble', stamp: true, entry: null });   // 断片メモは標準
@@ -169,11 +170,10 @@ const refreshMemoNotePreviews = () => {
   if (!ctx.notes) return;
   for (const n of ctx.notes()) if (n.kind === 'memo-group') n.body = MemoGroup.body(n.data, doc);
 };
-const save = () => { refreshMemoNotePreviews(); ctx.later('doc:C', async () => {
-  const r = await ctx.api.saveDoc('C_チャット', doc);
+const save = () => { refreshMemoNotePreviews(); ctx.saveDocument('doc:C', 'C_チャット', doc, async (r, _snapshot, current) => {
   if (r && r.rev) doc._rev = r.rev;
-  if (r && r.merged) {   // 画面が古かった（ほかで増えたメモがあった）: 足し合わせた中身を読み直す
-    const st = await ctx.api.state(); init(st.docs);
+  if (r && r.merged && current()) {   // 画面が古かった（ほかで増えたメモがあった）: 足し合わせた中身を読み直す
+    const st = await ctx.api.state(); if (!current()) return; init(st.docs);
     if (ctx.cur() && ctx.cur().k === 'chat') render();
     ctx.renderList(); toast('ほかで増えたメモを、取り込みました');
   }
@@ -293,7 +293,7 @@ export function openTopicGraph() {
   ctx.cur().topicGraph = true;
   render(); ctx.renderTabs();
 }
-function render() {
+export function render() {
   TopicGraph.unmount($('#c-topic-graph-view'));
   if (graphOpen) {
     $('#pane').innerHTML = `<div class="chat memo c-topic-graph"><div class="row chat-head"><h2>チャットメモのトピック</h2><span class="grow"></span><button data-c="topic-graph-close">← メモに戻る</button></div><div id="c-topic-graph-view"></div></div>`;

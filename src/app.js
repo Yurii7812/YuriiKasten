@@ -15,6 +15,7 @@ import * as CV from './canvas.js';
 import { dialog, popMenu, toast, renderMd } from './shared.js';
 import { installMermaidObserver } from './mermaid.js';
 import UrlLinks from '../url-links.js';
+import Persistence from '../persistence.js';
 import { setLang } from './i18n.js';
 let pendingLang = null;
 
@@ -112,16 +113,45 @@ async function ensureKeyword(sp, id, kw) {
 }
 
 // ===== 保存（少し待ってまとめて）=====
-const timers = {};
-const later = (k, f) => { if (timers[k]) clearTimeout(timers[k].t); timers[k] = { f, t: setTimeout(() => { delete timers[k]; f(); }, 400) }; };
-const pubNote = n => ({ s: n.s, id: n.id, created: n.created, keywords: n.keywords, body: n.body, kind: n.kind, data: n.data, title: n.title });
-const saveNote = n => later('n' + n.s + n.id, async () => { const r = await api.saveNote(pubNote(n)); if (r && r.updated) n.updated = r.updated; });
-const saveTopic = t => later('t' + t.name, () => api.saveTopic(t));
-async function flush() { // 待っている保存を今すぐ
-  const fs = Object.values(timers); for (const k in timers) { clearTimeout(timers[k].t); delete timers[k]; }
-  await Promise.all(fs.map(x => x.f()));
+let recovery = null, recoveryError = false;
+const noteKey = n => 'n' + n.s + n.id;
+const diaryKey = d => 'dy' + (d.kind || '日記') + d.date;
+function saveStatus(q) {
+  const el = $('#save-status'); if (!el) return;
+  const failed = recoveryError || [...q.jobs.values()].some(j => j.error);
+  el.textContent = failed ? '保存エラー・クリックして再試行' : q.jobs.size ? '保存中…' : '保存済み';
+  el.style.color = failed ? '#c0392b' : ''; el.title = failed ? '入力内容は保持しています。保存先の空き容量やアクセス権を確認してください。' : '';
 }
-window.addEventListener('beforeunload', () => { flush(); });
+const saves = new Persistence.SaveQueue({ onChange: saveStatus, onError: () => saveStatus(saves) });
+const later = (k, f) => saves.later(k, f);
+$('#save-status').onclick = () => flush().catch(() => {});
+const pubNote = n => ({ s: n.s, id: n.id, created: n.created, keywords: n.keywords, body: n.body, kind: n.kind, data: n.data, title: n.title, parentStem: n.parentStem, pinned: n.pinned, color: n.color, archived: n.archived });
+function durableSave(key, kind, payload, write, done = () => {}) {
+  // Freeze each edit. A detached editor or a refreshed object cannot change
+  // the payload after it has been queued.
+  const snapshot = JSON.parse(JSON.stringify(payload)), journal = recovery;
+  let token;
+  try { token = journal?.record(key, kind, snapshot); recoveryError = false; }
+  catch { recoveryError = true; }
+  later(key, async () => {
+    const result = await write(snapshot);
+    if (!result || result.ok === false) throw new Error('保存できませんでした');
+    if (token) { try { journal.acknowledge(key, token); } catch { recoveryError = true; } }
+    await done(result, snapshot, () => !saves.changedSince(key, revision)); return result;
+  });
+  const revision = saves.revision;
+}
+const saveNote = n => durableSave(noteKey(n), 'note', pubNote(n), x => api.saveNote(x), r => { if (r.updated) n.updated = r.updated; });
+const saveTopic = t => durableSave('t' + t.name, 'topic', t, x => api.saveTopic(x));
+const saveDiary = d => durableSave(diaryKey(d), 'diary', { date: d.date, kind: d.kind || '日記', title: d.title, body: d.body }, x => api.saveDiary(x), (_r, x) => { Chat.dayEdited(x.kind, x.date, x.body); renderTabs(); });
+const saveDocument = (key, name, doc, done) => durableSave(key, 'doc', { name, doc }, x => api.saveDoc(x.name, x.doc), done);
+async function flush() { await saves.flush(); }
+window.addEventListener('beforeunload', e => {
+  if (!saves.jobs.size) return;
+  // Reload/navigation cannot await IPC; keep the window until writes finish.
+  e.preventDefault(); e.returnValue = ''; flush().catch(() => {});
+});
+document.addEventListener('visibilitychange', () => { if (document.hidden) flush().catch(() => {}); });
 if (window.api.onFlush) window.api.onFlush(() => flush());
 if (window.api.onFileDup) window.api.onFileDup(dups => toast(dups.length === 1 ? `「${dups[0].orig}」は既にあります（${dups[0].existing}）` : `${dups.length} 件のファイルは、既にあります`));   // 同じ中身のファイルは、二重に取り込まない
 installMermaidObserver();
@@ -260,7 +290,7 @@ const urlPasteTitle = EditorView.domEventHandlers({
     if (picked && !/\n/.test(picked)) { view.dispatch({ changes: { from, to, insert: `[${picked}](${href})` }, selection: { anchor: from + picked.length + href.length + 4 } }); return true; }
     view.dispatch({ changes: { from, to, insert: t }, selection: { anchor: from + t.length } });
     api.urlTitle(url).then(title => {
-      if (!title) return;
+      if (!title || !view.dom.isConnected) return;
       // 貼ったその URL（貼った文字そのまま）を、いまの本文から探す。すぐ後ろに文字が続いていても、貼った分だけを置き換える
       const text = view.state.doc.toString(), hits = []; let at = -1;
       while ((at = text.indexOf(t, at + 1)) >= 0) if (text.slice(Math.max(0, at - 2), at) !== '](' && text[at - 1] !== '[') hits.push(at);
@@ -271,13 +301,28 @@ const urlPasteTitle = EditorView.domEventHandlers({
     return true;
   }
 });
-function editor(parent, doc, mode, space, onChange, ph) {
-  return lastView = new EditorView({
+const editorBindings = new Map();
+function syncEditors() {
+  for (const [view, binding] of editorBindings) {
+    if (!view.dom.isConnected) { view.destroy(); editorBindings.delete(view); continue; }
+    const text = binding.read();
+    if (text !== view.state.doc.toString()) {
+      binding.syncing = true;
+      try { view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } }); }
+      finally { binding.syncing = false; }
+    }
+  }
+}
+function editor(parent, doc, mode, space, onChange, ph, read) {
+  const binding = { read, syncing: false };
+  const view = lastView = new EditorView({
     parent, state: EditorState.create({
       doc, extensions: [history(), keymap.of([...defaultKeymap, ...historyKeymap]), EditorView.lineWrapping, ...(mode === 'note' ? [urlPasteTitle] : []),
-        placeholder(ph), ...(mode === 'note' ? [...mdExtensions, searchExt] : []), links(mode, space), ...(mode === 'note' ? [images(space)] : []), EditorView.updateListener.of(u => { if (u.docChanged) onChange(u.state.doc.toString()); })]
+        placeholder(ph), ...(mode === 'note' ? [...mdExtensions, searchExt] : []), links(mode, space), ...(mode === 'note' ? [images(space)] : []), EditorView.updateListener.of(u => { if (u.docChanged && !binding.syncing) onChange(u.state.doc.toString()); })]
     })
   });
+  if (read) editorBindings.set(view, binding);
+  return view;
 }
 function jump(view, pos) {
   view.dispatch({ selection: { anchor: pos, head: pos }, effects: EditorView.scrollIntoView(pos, { y: 'center' }) });
@@ -687,6 +732,7 @@ function idPopup(n) {
 
 // ===== タブ =====
 function rememberPos() {
+  flush().catch(() => {});
   const t = tabs[active];
   if (t && t.k === 'note' && lastView && lastView.dom.isConnected) t.pos = lastView.state.selection.main.head;
 }
@@ -818,7 +864,7 @@ function openNote(s, id, n, keep, mid) {
     return;
   }
   const view = editor($('#ed'), note.body, 'note', s, v => { note.body = v; saveNote(note); renderList(); },
-    s === 'p' ? '紙の内容を文字で（テキスト化）' : '本文。続き :1a1　引用 (1) と (1):　別ノート 1a(1)　全体 1a:');
+    s === 'p' ? '紙の内容を文字で（テキスト化）' : '本文。続き :1a1　引用 (1) と (1):　別ノート 1a(1)　全体 1a:', () => note.body);
   searchMark();
   const hitAt = searchQ ? note.body.toLowerCase().indexOf(searchQ) : -1;
   if (n) { const p = L.anchorPos(note.body, n); if (p >= 0) jump(view, p); }
@@ -834,7 +880,7 @@ function mountNoteIn(el, s, id) {
     <input class="ntitle" value="${esc(note.title || '')}" placeholder="タイトル"><div class="ed"></div></div></div>`;
   el.querySelector('.ntitle').oninput = e => { note.title = e.target.value; saveNote(note); renderList(); renderTabs(); };
   el.querySelector('[data-gopen]').onclick = () => openNote(s, id);
-  editor(el.querySelector('.ed'), note.body, 'note', s, v => { note.body = v; saveNote(note); renderList(); }, s === 'p' ? '紙の内容を文字で（テキスト化）' : '本文');
+  editor(el.querySelector('.ed'), note.body, 'note', s, v => { note.body = v; saveNote(note); renderList(); }, s === 'p' ? '紙の内容を文字で（テキスト化）' : '本文', () => note.body);
   return true;
 }
 // ノートにIDを付ける・変える（ファイル名が変わり、日記のリンクなども直る）
@@ -956,7 +1002,9 @@ async function create(s, id) {
 }
 // ノートを作ると作った日の日記が（無ければ）できて、リンクが入る。その日記を取り込み直す
 async function refreshDiaries() {
-  for (const r of await api.diaryState()) { const d = getDiary(r.date, r.kind); if (!d) diaries.push(r); else if (!timers['dy' + r.kind + r.date] && !timers['dt' + r.kind + r.date]) Object.assign(d, r); }
+  const since = saves.revision;
+  for (const r of await api.diaryState()) upsertDiary(r, since);
+  syncEditors();
 }
 $('#pane').addEventListener('click', async e => {
   const memoLink = e.target.closest('[data-cmemo]');
@@ -1073,13 +1121,12 @@ function topicAddDialog(note) {
   let sel = null;
   $('#modal .box').innerHTML = `<div class="dlg-a">
     <h3>🗂️ ${esc(name)} を索引に入れる</h3>
-    <input id="ta-q" placeholder="🔎 索引を探す">
+    <div class="da-bar"><input id="ta-q" placeholder="🔎 索引を探す" style="flex:1;min-width:0">${entry ? '' : '<button id="ta-new" title="トピックインデックスを追加" aria-label="トピックインデックスを追加" aria-expanded="false">＋</button>'}</div>
+    ${entry ? '' : '<div id="ta-create" hidden><div class="da-lab">新しいトピックインデックスの名前</div><div class="da-bar"><input id="ta-name" placeholder="名前（例: GUI）" style="flex:1;min-width:0"><button id="ta-create-cancel">やめる</button><button id="ta-create-ok" class="p">追加</button></div><div id="ta-create-error" role="alert"></div></div>'}
     <div id="ta-list" class="ta-list"></div>
     <div class="da-lab">🏷 キーワード（索引の中の行の名前）</div>
     <input id="ta-kw" list="ta-kws" placeholder="例: 英雄伝"><datalist id="ta-kws"></datalist>
-    <div class="da-bar"><span class="grow"></span><button id="ta-cancel">やめる</button><button id="ta-ok" class="p">🗂️ 入れる</button></div>
-    ${entry ? '' : `<div class="da-sep"></div><div class="da-lab">➕ 新しい索引を作る（このノートが親になります）</div>
-    <div class="da-bar"><input id="ta-name" value="${esc((note.title || firstLine(note) || '').slice(0, 20))}" placeholder="名前（例: GUI）" style="flex:1"><button id="ta-new">➕ 作る</button></div>`}</div>`;
+    <div class="da-bar"><span class="grow"></span><button id="ta-cancel">やめる</button><button id="ta-ok" class="p">🗂️ 入れる</button></div></div>`;
   $('#modal').style.display = 'flex';
   const close = () => { $('#modal').style.display = 'none'; };
   const rank = topicRank(note);
@@ -1124,14 +1171,29 @@ function topicAddDialog(note) {
     await api.saveTopic(sel); close(); renderMeta(note);
   };
   $('#ta-cancel').onclick = close;
-  if ($('#ta-new')) $('#ta-new').onclick = async () => {
-    const nm = $('#ta-name').value.trim();
-    if (!nm) return;
-    if (topics.find(t => t.name === nm)) return alert('その名前は既にあります');
-    const t = { name: nm, entry: { s: note.s, id: note.id }, keyword: '', text: '' };
-    topics.push(t); await api.saveTopic(t); close(); renderMeta(note);
-    newTab = true; openTopic(nm, 'edit');
-  };
+  if ($('#ta-new')) {
+    const hideCreate = () => { $('#ta-create').hidden = true; $('#ta-new').setAttribute('aria-expanded', 'false'); $('#ta-q').focus(); };
+    $('#ta-new').onclick = () => { $('#ta-create').hidden = false; $('#ta-new').setAttribute('aria-expanded', 'true'); $('#ta-name').focus(); };
+    $('#ta-create-cancel').onclick = hideCreate;
+    $('#ta-name').onkeydown = e => {
+      if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); $('#ta-create-ok').click(); }
+      if (e.key === 'Escape') { e.stopPropagation(); hideCreate(); }
+    };
+    $('#ta-create-ok').onclick = async () => {
+      const nm = $('#ta-name').value.trim(), error = $('#ta-create-error'), button = $('#ta-create-ok');
+      if (!nm) { error.textContent = '名前を入力してください'; return $('#ta-name').focus(); }
+      if (/[\\/:*?"<>|]/.test(nm) || nm === '.' || nm === '..') { error.textContent = 'ファイル名に使えない文字が含まれています'; return; }
+      if (topics.some(t => t.name === nm)) { error.textContent = 'その名前は既にあります'; return; }
+      button.disabled = true; error.textContent = '';
+      try {
+        await flush();
+        const t = { name: nm, entry: { s: note.s, id: note.id }, keyword: '', text: '' };
+        if (!await api.saveTopic(t)) throw new Error('保存できませんでした');
+        topics.push(t); rememberTopic(nm); close(); renderMeta(note);
+        newTab = true; openTopic(nm, 'edit');
+      } catch (e) { error.textContent = e.message; button.disabled = false; }
+    };
+  }
   $('#modal').onkeydown = e => { if (e.key === 'Escape') close(); };
   draw(); $('#ta-q').focus();
 }
@@ -1553,7 +1615,7 @@ function openTopic(name, tmode = 'view', keep) {
       <span class="tm"><span class="sub">⬆️ 索引されているトピック</span>${back.length ? back.map(o => tchip(o.name)).join('') : '<span class="sub">なし</span>'}</span>
     </div>${body}`;
   if (tmode === 'edit') { // 1 つの欄。紙は ID(p)、デジタルは ID（親が紙の索引 なら、紙が ID、デジタルが ID(d)）
-    const def = L.defOf(t), v = editor($('#ed-t'), L.topicText(t), 'topic', def, x => { t.text = x; saveTopic(t); }, `PKM 1a 3(p)`);
+    const def = L.defOf(t), v = editor($('#ed-t'), L.topicText(t), 'topic', def, x => { t.text = x; saveTopic(t); }, `PKM 1a 3(p)`, () => L.topicText(t));
     v.focus();
   }
   if (tmode === 'conf') $('#t-id').focus();
@@ -1592,7 +1654,11 @@ async function topicAct(act) {
 // ===== 日記 =====
 // 名前は D_2026-11-07-タイトル。日付が変わるのは朝5時。その日に作ったノートのリンクと、紙の日記の画像は、本文に書き込まれる
 const getDiary = (date, kind = '日記') => diaries.find(d => d.date === date && (d.kind || '日記') === kind);
-const upsertDiary = r => { const d = getDiary(r.date, r.kind); if (d) { Object.assign(d, r); return d; } diaries.push(r); return r; };
+const upsertDiary = (r, since = saves.revision) => {
+  const d = getDiary(r.date, r.kind);
+  if (d) { if (!saves.has(diaryKey(r)) && !saves.changedSince(diaryKey(r), since)) Object.assign(d, r); return d; }
+  diaries.push(r); return r;
+};
 const setKind = k => { curKind = k; try { localStorage.setItem('pkm-kind', k); } catch { } };
 function diaryList() {
   if (!records.some(r => r.name === curKind)) setKind('日記');
@@ -1629,7 +1695,7 @@ function recordsDialog() {
     $('#modal').style.display = 'flex';
   };
   draw();
-  const apply = async (op, ...a) => { await flush(); const r = await api.recordOp(op, ...a); if (r === false) { alert('できませんでした（名前が使えない・すでにある・輪になる、など）'); return false; } const st = await api.state(); applyState(st); diaries = st.diaries; records = st.records; return true; };
+  const apply = async (op, ...a) => { await flush(); const r = await api.recordOp(op, ...a); if (r === false) { alert('できませんでした（名前が使えない・すでにある・輪になる、など）'); return false; } const st = await api.state(); applyState(st); records = st.records; return true; };
   $('#modal').onclick = async e => {
     const t = e.target;
     if (t.id === 'r-close') { $('#modal').style.display = 'none'; return renderList(); }
@@ -1648,8 +1714,8 @@ async function openDiary(date, keep, kind) {
   let d = getDiary(date, kind);
   if (!d || !keep) { // 開くとき、その日に作ったノートで足りないリンクを足す。無い日は作る
     await flush();
-    const r = await api.openDiary(date, kind); if (!r) return;
-    d = upsertDiary(r);
+    const since = saves.revision, r = await api.openDiary(date, kind); if (!r) return;
+    d = upsertDiary(r, since);
   }
   setKind(kind); Chat.dayBaseline(kind, date, d.body);
   cur = place({ k: 'diary', date, kind }, keep); mode = 'diary';
@@ -1668,11 +1734,10 @@ async function openDiary(date, keep, kind) {
     ${kind !== '日記' ? `<div class="row sub">上位 ${records.filter(r => r.name !== kind && r.name !== '日記').concat([{ name: '日記' }]).map(r => `<span class="rchip${(d.parents || (d.parent ? [d.parent] : [])).includes(r.name) ? ' on' : ''}" data-dpar="${esc(r.name)}">${esc(r.name)}</span>`).join('')}<span class="sub">この日だけの上位（いくつでも）。なしなら日記の下。これから作る日の初期値は、記録の種類（＋ ⚙）で決めます</span></div>` : ''}
     ${lower ? `<div class="row"><span class="sub">DailyNotes</span>${lower}</div>` : ''}
     <div class="ed" id="ed"></div>`;
-  const key = kind + date;
-  const view = editor($('#ed'), d.body, 'note', 'd', v => { d.body = v; later('dy' + key, () => api.saveDiary({ date, kind, body: d.body }).then(() => Chat.dayEdited(kind, date, d.body))); },
-    kind === '日記' ? '今日のこと。書いたノートのリンクは、下の「今日のノート」に自動で入ります' : `今日の${kind}`);
-  $('#d-title').oninput = e => { d.title = e.target.value; later('dt' + key, () => api.saveDiary({ date, kind, title: d.title, body: d.body }).then(() => { renderList(); renderTabs(); })); renderList(); };
-  document.querySelectorAll('[data-dpar]').forEach(c => c.onclick = async () => { const cur0 = d.parents || (d.parent ? [d.parent] : []), u = c.dataset.dpar, next = cur0.includes(u) ? cur0.filter(x => x !== u) : [...cur0, u]; await flush(); const r = await api.recordOp('setDayParent', kind, date, next); if (r) { upsertDiary(r); const st = await api.state(); applyState(st); diaries = st.diaries; openDiary(date, true, kind); } else alert('その上位にはできません（輪になります）'); });
+  const view = editor($('#ed'), d.body, 'note', 'd', v => { d.body = v; saveDiary(d); },
+    kind === '日記' ? '今日のこと。書いたノートのリンクは、下の「今日のノート」に自動で入ります' : `今日の${kind}`, () => d.body);
+  $('#d-title').oninput = e => { d.title = e.target.value; saveDiary(d); renderList(); };
+  document.querySelectorAll('[data-dpar]').forEach(c => c.onclick = async () => { const cur0 = d.parents || (d.parent ? [d.parent] : []), u = c.dataset.dpar, next = cur0.includes(u) ? cur0.filter(x => x !== u) : [...cur0, u]; await flush(); const r = await api.recordOp('setDayParent', kind, date, next); if (r) { upsertDiary(r); const st = await api.state(); applyState(st); openDiary(date, true, kind); } else alert('その上位にはできません（輪になります）'); });
   renderTabs(); renderList();
   // 自由に書く部分（最初の「## 」より前）にカーソル。節で始まる日記は、その前に空行を足して書く場所を作る
   if (/^## /.test(view.state.doc.toString())) view.dispatch({ changes: { from: 0, insert: '\n\n\n' } }); // 本文は onChange で d.body に入る（上下に空行）
@@ -1786,6 +1851,7 @@ function loaded(st) {
   if (st && st.warnings && st.warnings.length) setTimeout(() => alert(st.warnings.join('\n\n')), 300);   // 壊れたファイルを控えから戻したときなど
   loadSettings(st); graphDoc = (st.docs || {})['K_graph'] || {};
   if (pendingLang) { settings.lang = pendingLang; pendingLang = null; saveSettings(); }
+  vault = st.vault; recovery = new Persistence.RecoveryJournal(localStorage, vault); restoreRecovery(st);
   ({ notes, topics, vault } = st); readings = st.readings || {}; diaries = st.diaries || []; records = st.records || records; Chat.init(st.docs || {}); RP.init(st.docs || {}); Chat.migrateLegacyRoleplay(); PI.init(st.docs || {}); cur = null; tabs = []; active = -1; refreshFiles();
   $('#vault').textContent = '📁 ' + vault.split('/').pop(); $('#vault').title = vault + '\n（Brave では Index.md を開くと全部たどれます）';
   try {
@@ -1850,7 +1916,7 @@ function settingsDialog() {
     api.appInfo().then(i => { $('#s-ver').textContent = 'YuriiNote ' + i.version; $('#s-upd').onclick = () => checkUpdate(i); $('#s-short').style.display = i.platform === 'win32' ? 'none' : ''; });
     $('#s-close').onclick = close; $('#modal').onkeydown = e => { if (e.key === 'Escape') close(); };
     $('#s-lang').onchange = e => { set('lang', e.target.value); close(); settingsDialog(); };
-    $('#s-vault').onclick = async () => { const st = await api.chooseVault(); if (st) { close(); loaded(st); } };
+    $('#s-vault').onclick = async () => { await flush(); const st = await api.chooseVault(); if (st) { close(); loaded(st); } };
     $('#s-day').onchange = e => set('dayStart', Math.max(0, Math.min(12, +e.target.value || 0)));
     document.querySelectorAll('input[name=s-theme]').forEach(r => r.onchange = () => set('theme', r.value));
     document.querySelectorAll('[data-sw]').forEach(i => i.onclick = () => { set('accent', i.dataset.sw); document.querySelectorAll('[data-sw]').forEach(x => x.classList.toggle('on', x === i)); $('#s-acc').value = i.dataset.sw; });
@@ -1873,15 +1939,25 @@ async function phoneInstall() {
   alert(r.message);
 }
 // スマホのメモを取り込む（USB）。メモは「未整理」へ。日記・記録のトピックは、その日のノートへ。番号つきのスキャンは、紙のノートへ
-api.onPhoneAuto(m => {   // スマホがつながったら、自動で取り込み・更新（main.js の phoneTick）
+api.onPhoneAuto(async m => {   // スマホがつながったら、自動で取り込み・更新（main.js の phoneTick）
   if (m.say) return toast(m.say);
-  if (m.ok && m.state) { Chat.init(m.state.docs || {}); applyState(m.state); diaries = m.state.diaries; records = m.state.records || records; refreshFiles(); if (mode === 'diary' || mode === 'chat') renderList(); if (cur && cur.k === 'chat') Chat.render && Chat.render(); }
+  if (m.ok && m.state) {
+    try {
+      const since = saves.revision; await flush(); const st = await api.state();
+      Chat.init(st.docs || {}, true); applyState(st, since); refreshFiles();
+      if (cur && cur.k === 'chat') Chat.render();
+    } catch { toast('保存が完了していないため、取り込み結果の表示を保留しています'); }
+  }
   if (m.message && !m.quiet) toast(m.message);
 });
 async function phoneImport() {
+  await flush();
   toast('スマホのメモを読んでいます…');
   const r = await api.phoneImport();
-  if (r.ok) { Chat.init(r.state.docs || {}); applyState(r.state); diaries = r.state.diaries; records = r.state.records || records; refreshFiles(); if (mode === 'diary') renderList(); }
+  if (r.ok) {
+    const since = saves.revision; await flush(); const st = await api.state();
+    Chat.init(st.docs || {}, true); applyState(st, since); refreshFiles();
+  }
   alert(r.message);
 }
 async function checkUpdate(info) {
@@ -1894,10 +1970,10 @@ async function checkUpdate(info) {
   const how = info.selfUpdate ? '今すぐ更新しますか？（更新したら、アプリを開き直してください）' : '最新のインストーラーのページを開きますか？（ダウンロードして実行すると更新されます）';
   if (!confirm(`${what}\n\n${how}`)) return;
   toast(info.selfUpdate ? '更新しています…（少し待ってください）' : 'ページを開きます…');
-  const r = await api.doUpdate();
+  await flush(); const r = await api.doUpdate();
   alert(r.ok ? r.message : '更新できませんでした: ' + r.error);
 }
-$('#vault').onclick = async () => { const st = await api.chooseVault(); if (st) loaded(st); };
+$('#vault').onclick = async () => { await flush(); const st = await api.chooseVault(); if (st) loaded(st); };
 api.load().then(loaded);
 window.__pkm = { get tabs() { return tabs; }, scan: startScan, get diaries() { return diaries; }, get mode() { return mode; }, get cur() { return cur; }, get notes() { return notes; }, get topics() { return topics; }, get view() { return lastView; } };
 
@@ -1984,7 +2060,41 @@ document.addEventListener('paste', e => {
 });
 
 // 保存側の状態（ノート・日記・読み・紙のIndex）を、画面に反映する
-function applyState(st) { ({ notes, topics } = st); diaries = st.diaries || diaries; records = st.records || records; readings = st.readings || readings; PI.apply(st); renderList(); }
+function applyState(st, since = saves.revision) {
+  const protect = key => saves.has(key) || saves.changedSince(key, since);
+  notes = Persistence.reconcile(notes, st.notes, noteKey, protect);
+  topics = Persistence.reconcile(topics, st.topics, t => 't' + t.name, protect);
+  if (st.diaries) diaries = Persistence.reconcile(diaries, st.diaries, diaryKey, protect);
+  syncEditors();
+  const title = $('#f-title'), note = cur?.k === 'note' && get(cur.s, cur.id);
+  if (title && note) title.value = note.title || '';
+  const dayTitle = $('#d-title'), day = cur?.k === 'diary' && getDiary(cur.date, cur.kind);
+  if (dayTitle && day) dayTitle.value = day.title || '';
+  records = st.records || records; readings = st.readings || readings; PI.apply(st); renderList();
+}
+function restoreRecovery(st) {
+  let entries;
+  try { entries = recovery.entries(); } catch { recoveryError = true; saveStatus(saves); return; }
+  for (const { key, kind, payload } of entries) {
+    if (kind === 'note') {
+      let n = st.notes.find(n => noteKey(n) === key);
+      if (!n) { n = { ...payload }; st.notes.push(n); } else Object.assign(n, payload);
+      saveNote(n);
+    } else if (kind === 'diary') {
+      let d = st.diaries.find(d => diaryKey(d) === key);
+      if (!d) { d = { pages: [], ...payload }; st.diaries.push(d); } else Object.assign(d, payload);
+      saveDiary(d);
+    } else if (kind === 'topic') {
+      let t = st.topics.find(t => 't' + t.name === key);
+      if (!t) { t = payload; st.topics.push(t); } else Object.assign(t, payload);
+      saveTopic(t);
+    } else if (kind === 'doc') {
+      st.docs ||= {}; st.docs[payload.name] = payload.doc;
+      saveDocument(key, payload.name, payload.doc);
+    }
+  }
+  if (entries.length) toast('前回の未保存の入力内容を復元しました');
+}
 // チャット・なりきり・キャンバスの部品に、アプリの機能を渡す
 Object.assign(ctx, {
   api, later, flush, place, renderTabs, openLink, applyState, readings: () => readings, lastNote: () => lastNote,
@@ -1992,6 +2102,6 @@ Object.assign(ctx, {
   exploreId: callback => openIdExplorer({ onChoose: id => { callback(id); return true; } }),
   setCur: c => { cur = c; }, setMode: m => { mode = m; }, cur: () => cur, notes: () => notes, vault: () => vault,
   touchNote: n => saveNote(n),
-  touchDiary: d => later('dy' + (d.kind || '日記') + d.date, () => api.saveDiary({ date: d.date, kind: d.kind || '日記', body: d.body })),
+  touchDiary: saveDiary, saveDocument, hasPending: key => saves.has(key),
   openDiaryData: async date => { await flush(); const r = await api.openDiary(date, '日記'); if (r) upsertDiary(r); }
 });
