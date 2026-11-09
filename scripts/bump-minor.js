@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// Bump the minor version exactly once when preparing a new release.
+// Bump x in 1.x.y for a coherent new feature or a new use case.
+// Bug fixes and small UI/copy improvements use bump-version.js patch.
+// Bump exactly once when preparing a user-facing update.
 // package.json is the single version source for Electron and Android Gradle.
 const fs = require('node:fs');
 const path = require('node:path');

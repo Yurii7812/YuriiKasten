@@ -18,8 +18,18 @@ GitHub からソースを取ってきて、その場で組み立てます（git 
 
 ## 開発
 `npm install`（初回のみ）→ `./yuriinote.sh`。試験は `npm test`。インストーラーは `npm run dist`（動かしている OS 用）。
-**バージョンの付け方（1.x.y）**: 先頭は `1`。新機能の追加など大きな変更があったら x を 1 つ増やし、y を 0 に戻す（`npm run version:minor`。例: 1.0.1 → 1.1.0）。それ以外の修正（不具合・見た目・文言など）は y を 1 つ増やす（`npm run version:patch`。例: 1.0.0 → 1.0.1）。上げるのはコミットの前に 1 回。README だけの変更では上げない。今回から `1.0.0` を開始点とする。`package.json` が唯一の元で、PC 版と Android 版の versionName / versionCode もここから作る。
-**リリースの作り方**: `npm run version:minor` でマイナーバージョンを1つ進め（例: 1.0.0 → 1.1.0）、`git tag v1.1.0 && git push --tags` → GitHub Actions が、Windows / Mac / Linux のインストーラーを作って、リリースに置く（`.github/workflows/release.yml`）。
+**バージョンの付け方（1.x.y）**: 先頭は `1`。`package.json` が唯一の元で、PC 版と Android 版の versionName / versionCode もここから作ります。
+
+| 番号 | 増やす基準 | 例・コマンド |
+|---|---|---|
+| x | 新しい用途や、まとまった機能が加わる | 同期、新しいノート形式、グラフビュー。`npm run version:minor`（1.0.2 → 1.1.0）。y は 0 に戻す |
+| y | 既存機能の修正・改善。小さな操作機能の追加も含む | 不具合修正、配置変更、誤操作防止、コピー操作の改善。`npm run version:patch`（1.0.1 → 1.0.2） |
+
+新しいボタンを追加したという理由だけで x を増やしません。「新しくこれができるようになった」と一つの機能として紹介できる変更を x の対象とします。迷う程度の小さな改善は y とします。今回のID操作・複数選択の改善は `1.0.1` とし、先に付けた `1.1.0` は番号の訂正として扱います。
+
+バージョンを上げるのは、利用者向けの更新をまとめてコミットする前に 1 回。README だけの変更では上げません。
+
+**リリースの作り方**: 変更の内容に応じて `npm run version:patch` または `npm run version:minor` を実行します。確定したバージョンでタグを付けます（例: バージョンが1.0.2なら `git tag v1.0.2 && git push --tags`）。GitHub Actions が Windows / Mac / Linux のインストーラーを作り、リリースに置きます（`.github/workflows/release.yml`）。
 
 ## 画面
 - 左のタブ: **デジタル** / **紙** / **Index**（グローバルIndex）。検索結果はまとめて出る
