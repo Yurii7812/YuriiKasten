@@ -9,7 +9,7 @@ const upd = require('./update');
 // 開発用のフォルダ（git）か、AppImage か。どちらでもなければ（Windows / Mac のインストーラー版）更新はページを開くだけ
 const argv = process.argv.slice(app.isPackaged ? 1 : 2);
 const info = () => ({
-  version: process.env.YURIIKASTEN_VERSION || app.getVersion(), platform: process.platform, arch: process.arch,
+  version: process.env.YURIINOTE_VERSION || process.env.YURIIKASTEN_VERSION || app.getVersion(), platform: process.platform, arch: process.arch,
   appImage: process.env.APPIMAGE || null, devDir: !app.isPackaged && fs.existsSync(path.join(__dirname, '.git')) ? __dirname : null
 });
 if (argv.includes('--version')) { console.log(`YuriiNote ${app.getVersion()}`); app.exit(0); }
@@ -37,7 +37,7 @@ const writeCfg = c => { fs.mkdirSync(path.dirname(cfgFile()), { recursive: true 
 // 保存先: 環境変数 → 設定。どちらも無い（初めて起動した）ときは、画面で選ぶ（既存のフォルダを開く／新しく作る）
 const suggestVault = () => path.join(os.homedir(), 'YuriiNote');
 const foundVaults = () => ['YuriiNote', 'YuriiKasten', 'PaperPKM'].map(n => path.join(os.homedir(), n)).filter(p => { try { return fs.statSync(p).isDirectory() && fs.readdirSync(p).some(f => /^\d{14}\.md$|^D_|^\.pkm-layout$/.test(f)); } catch { return false; } });
-let vault = process.env.YURIIKASTEN_VAULT || process.env.YURIINOTE_VAULT || process.env.PAPER_PKM_VAULT || readCfg().vault || null;
+let vault = process.env.YURIINOTE_VAULT || process.env.YURIIKASTEN_VAULT || process.env.PAPER_PKM_VAULT || readCfg().vault || null;
 if (process.platform === 'linux' && process.env.APPIMAGE) app.commandLine.appendSwitch('no-sandbox'); // AppImage ではサンドボックス用の権限が付けられない
 let v = null;
 const open = () => { v = store.openVault(vault); return v.state(); };
@@ -102,7 +102,7 @@ ipcMain.handle('filesInfo', () => v.filesInfo());
 ipcMain.handle('setFileInfo', (_e, name, info) => v.setFileInfo(name, info));
 // 本文のリンクを開く。ファイルは OS の既定のビューアーで、http(s) は既定のブラウザで
 ipcMain.handle('openPath', (_e, rel) => {
-  if (process.env.YURIIKASTEN_OPENLOG) { fs.appendFileSync(process.env.YURIIKASTEN_OPENLOG, decodeURIComponent(rel) + '\n'); return ''; } // 試験用: 開かず記録だけ
+  if (process.env.YURIINOTE_OPENLOG || process.env.YURIIKASTEN_OPENLOG) { fs.appendFileSync(process.env.YURIINOTE_OPENLOG || process.env.YURIIKASTEN_OPENLOG, decodeURIComponent(rel) + '\n'); return ''; } // 試験用: 開かず記録だけ
   if (/^https?:\/\//.test(rel)) return shell.openExternal(rel);
   const root = path.resolve(vault), full = path.resolve(root, decodeURIComponent(rel));
   if (!full.startsWith(root + path.sep)) return 'blocked';
