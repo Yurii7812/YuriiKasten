@@ -25,6 +25,7 @@ let speakerView = 'self'; // 選択中のキャラは右。「選択なし」な
 let roleLibrary = [];
 let replyBrowse = null; // トピックを移動しても書き込み元と下書き・返信対象を維持
 let sourceIds = null; // 出典リンクを開いている間だけ、ノートにしたメモIDだけを表示する
+let noteReplyTos = []; // ノートへの返信。stemを保存するのでFolgezettel IDの再指定に追随する
 let replyTos = [];            // 返信しているメモの id（いくつでも。WhatsApp のように、入力欄の上に引用を出す）
 let editCtx = null;          // 編集中のメモ { m, reps, redraw }（↩ を押すと、そのメモの返信先に足される）
 let redit = null;            // 「返信先を編集」中のメモの id（押さなくても、返信先を足す・外す）
@@ -295,7 +296,7 @@ const body = text => renderMd(text);
 const firstLine = t => (t || '').replace(/\[@[^\]]*\]\(memo:[^)]*\)\s*/g, '').split('\n').find(x => x.trim()) || '';
 // 返信のメモに、元のメモを引用として出す（押すと、元のメモへ）
 export const repliesOf = Relations.repliesOf;   // 返信先（いくつでも。昔の 1 つだけの形も読む）
-const quoteHtml = m => repliesOf(m).map(id => { const o = msg(id); return o ? `<div class="b-quote" data-qm="${esc(o.id)}"><b>${esc(o.topic ? o.topic + ' ・ ' : '')}${hm(o.t)}</b><span>${esc(firstLine(o.text).slice(0, 80))}</span></div>` : '<div class="b-quote gone"><span>（消されたメモ）</span></div>'; }).join('');
+const quoteHtml = m => (m.noteReplies || []).map(ref=>{ const n=ctx.notes().find(x=>x.stem===ref.stem) || ctx.get(ref.s,ref.id); return '<div class="b-quote b-note-quote" data-reply-note="'+esc(n?.stem||ref.stem)+'"><b>↩ ノート '+esc(n?.id||ref.id)+'</b><span>'+esc((n?.title||n?.body||'（ノートなし）').slice(0,90))+'</span></div>'; }).join('') + repliesOf(m).map(id => { const o = msg(id); return o ? `<div class="b-quote" data-qm="${esc(o.id)}"><b>${esc(o.topic ? o.topic + ' ・ ' : '')}${hm(o.t)}</b><span>${esc(firstLine(o.text).slice(0, 80))}</span></div>` : '<div class="b-quote gone"><span>（消されたメモ）</span></div>'; }).join('');
 // 入力欄の上の「返信先」
 // 書き込み先: 所属トピックと上位トピック（複数可）。変更しない限り次のメモにも引き継ぐ。
 const topicLabel = n => n === '' ? 'トピック未選択' : n === DIARY ? '日記' : n;
@@ -334,8 +335,11 @@ function openPicker(anchor, { multi, selected, near, exclude = [], extra = [], o
 const actorName = id => id && id !== 'self' ? (roleLibrary.find(r=>r.id===id)?.name || '不明なキャラ') : doc.selfName;
 function showReply() {
   const el = $('#c-reply'); if (!el) return; const os = replyTos.map(id => msg(id)).filter(Boolean); replyTos = os.map(o => o.id);
-  if (!os.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
-  el.style.display = ''; el.innerHTML = `<div class="rq-list">${os.map(o => `<div class="rq"><b>${esc(o.topic ? o.topic + ' ・ ' : '')}${hm(o.t)}</b><span>${esc(firstLine(o.text).slice(0, 120))}</span><button data-c="rcancel" data-id="${esc(o.id)}" title="この返信先を外す">×</button></div>`).join('')}</div>`;
+  if (!os.length && !noteReplyTos.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const targets=noteReplyTos.map(r=>({ref:r,n:ctx.notes().find(n=>n.stem===r.stem)}));
+  el.style.display = ''; el.innerHTML = '<div class="rq-list">' +
+    os.map(o => '<div class="rq"><b>'+esc(o.topic ? o.topic + ' ・ ' : '')+hm(o.t)+'</b><span>'+esc(firstLine(o.text).slice(0,120))+'</span><button data-c="rcancel" data-id="'+esc(o.id)+'">×</button></div>').join('') +
+    targets.map(x=>'<div class="rq"><b>ノートへ返信</b><span>'+esc(x.n?.title || x.ref.id || '（元ノートなし）')+'</span><button data-c="cancel-note-reply" data-stem="'+esc(x.ref.stem)+'">×</button></div>').join('') + '</div>';
 }
 // ↩ を押したとき: 編集中のメモがあれば、その返信先に。「返信先を編集」中なら、そのメモに。なければ、送るメモの返信先に（いくつでも）
 export function startReply(id) {
@@ -343,6 +347,18 @@ export function startReply(id) {
   if (redit) { toggleReplyOf(redit, id); return; }
   if (replyBrowse) {doc.target={topic:replyBrowse.topic,ups:[...replyBrowse.ups]};replyBrowse=null;}
   if (!replyTos.includes(id)) replyTos.push(id); showReply(); showTarget(); const i = $('#c-in'); if (i) i.focus();
+}
+export function replyToNote(note) {
+  if(!note || !note.stem) return;
+  if(!noteReplyTos.some(x=>x.stem===note.stem))
+    noteReplyTos.push({s:note.s,id:note.id,stem:note.stem});
+  // ノートから開くときは、最後の所属トピックを引き継ぐ。
+  const dest=doc.target.topic || '';
+  open(dest);
+  showReply();
+}
+export function noteBacklinks(note) {
+  return doc.messages.filter(m => (m.noteReplies || []).some(r=>r.stem===note.stem || (r.s===note.s && r.id===note.id)));
 }
 function toggleReplyOf(mid, id) {
   const m = msg(mid); if (!m || id === mid) return; const reps = repliesOf(m).slice(), at = reps.indexOf(id);
@@ -445,6 +461,7 @@ function send() {
     const m = { id: uid(), topic: doc.target.topic, t: now, text, actor: speakerView === 'none' ? 'self' : speakerView };
     const upsT = doc.target.ups.filter(u => u && u !== doc.target.topic); if (upsT.length) m.ups = [...upsT];
     const rs = replyTos.filter(id => msg(id)); if (rs.length) m.replies = rs; replyTos = [];
+    if (noteReplyTos.length) m.noteReplies=noteReplyTos.map(x=>({...x})); noteReplyTos=[];
     doc.messages.push(m); if (replyBrowse) { replyBrowse=null; } save();
     if (isRec(m.topic)) {   // 日記・時系列記録の、その日のノートにも（時刻つきの行）。同じ内容が両方に残る
       const date = L.dayOf(L.now(new Date(now))), line = `${hm(now)} ${text.replace(/\n{2,}/g, '\n')}`;
@@ -641,6 +658,7 @@ export function renderMemoGroup(el, note) {
   </div>`;
   el.querySelector('[data-mg-speaker]')?.addEventListener('change', e=>{ speakerView=e.target.value; renderMemoGroup(el,note); });
   el.onclick = e => {
+    const noteRef=e.target.closest('[data-reply-note]'); if(noteRef){const n=ctx.notes().find(n=>n.stem===noteRef.dataset.replyNote);if(n)ctx.openNote(n.s,n.id);return;}
     const q = e.target.closest('[data-qm]');
     if (q) return gotoMemo(q.dataset.qm);
     const origin = e.target.closest('[data-source-memo-open]');
@@ -784,6 +802,7 @@ document.addEventListener('click', e => {
     if (a === 'openbe') backend().open();
     if (a === 'select') { sel = sel ? null : new Set(); lastSel = null; paint(); selbar(); }
     if (a === 'rcancel') { const id = e.target.closest('[data-id]') && e.target.closest('[data-id]').dataset.id; replyTos = id ? replyTos.filter(x => x !== id) : []; showReply(); }
+    if (a === 'cancel-note-reply') {const stem=e.target.dataset.stem;noteReplyTos=noteReplyTos.filter(x=>x.stem!==stem);showReply();}
     if (a === 'rdone') { redit = null; showRedit(); }
     if (a === 'selno') { sel = null; paint(); selbar(); }
     if (a === 'source-clear') {
@@ -806,6 +825,8 @@ document.addEventListener('click', e => {
   const tgx = e.target.closest('[data-tgx]'); if (tgx) { TopicPrefs.selectUpper(doc, doc.target.ups.filter(u => u !== tgx.dataset.tgx)); save(); showTarget(); return; }
   const gt = e.target.closest('[data-goto]'); if (gt) { open(gt.dataset.goto); return; }
   const rdel = e.target.closest('[data-rdel]'); if (rdel && redit) { toggleReplyOf(redit, rdel.dataset.rdel); return; }
+  const nreply=e.target.closest('[data-reply-note]');
+  if(nreply) { const n=ctx.notes().find(n=>n.stem===nreply.dataset.replyNote); if(n) ctx.openNote(n.s,n.id);return; }
   if (redit) { const bb = e.target.closest('.bub[data-m]'); if (bb && bb.dataset.m !== redit) { e.preventDefault(); e.stopPropagation(); toggleReplyOf(redit, bb.dataset.m); return; } }
   if (pickReply) { const bb = e.target.closest('.bub[data-m]'); if (bb && !bb.querySelector('.b-edit')) { e.preventDefault(); e.stopPropagation(); pickReply(bb.dataset.m); return; } }
   const reb = e.target.closest('[data-redit-btn]'); if (reb) { startReplyEdit(reb.dataset.reditBtn); return; }
@@ -846,7 +867,7 @@ document.addEventListener('keydown', e => {
   if (e.target.id === 'c-in' && !e.target.closest('.rp')) {
     if (mn.length && !e.isComposing && e.keyCode !== 229 && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey))) { e.preventDefault(); return pickMention(0); }
     if (e.key === 'Escape' && mn.length) { mentionOff(); return; }
-    if (e.key === 'Escape' && replyTos.length) { e.preventDefault(); replyTos = []; showReply(); }
+    if (e.key === 'Escape' && (replyTos.length || noteReplyTos.length)) { e.preventDefault(); replyTos = []; noteReplyTos=[]; showReply(); }
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); send(); }
   }
 });
@@ -856,6 +877,6 @@ document.addEventListener('keydown', e => {
   if (document.querySelector('#modal[style*="flex"], .tgpick, .b-edit, .idex-cover')) return;
   if (e.target.closest && e.target.closest('input, textarea, [contenteditable]') && e.target.id !== 'c-in') return;
   if (e.target.id === 'c-in' && mn.length) return;
-  if (e.target.id === 'c-in' && replyTos.length) return;
+  if (e.target.id === 'c-in' && (replyTos.length || noteReplyTos.length)) return;
   if (sel) { e.preventDefault(); sel = null; lastSel = null; paint(); selbar(); }
 }, true);   // Esc: 返信・候補を優先し、次に複数選択を解除
