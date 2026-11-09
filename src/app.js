@@ -335,30 +335,39 @@ const fileRow = (f, q = '') => `<div class="item note frow" data-file="${esc(f.n
 function fileDialog(name) {
   const f = filesCache.find(x => x.name === name); if (!f) return;
   const isImg = /^\.(png|jpe?g|gif|webp|svg|bmp|avif)$/.test(f.ext);
-  $('#modal .box').innerHTML = `<h3>${fileIcon(f.ext)} ${esc(f.orig)}</h3>
-    ${isImg ? `<img src="file://${esc(vault + '/' + name)}" style="max-width:100%;max-height:220px;display:block;margin:0 auto 8px;border-radius:6px">` : ''}
-    <div class="sub">保存名 ${esc(name)} · ${Math.round(f.size / 1024)} KB · ${esc(f.added)}</div>
-    <div id="fi-pv"></div>
-    <div id="fi-use"></div>
-    <div class="sub">タイトル</div><input id="fi-t" value="${esc(f.title)}" placeholder="例: 図でわかる知識管理術の表紙">
-    <div class="sub">説明（探すときに使います）</div><textarea id="fi-d" rows="3" style="width:100%;font:inherit">${esc(f.desc)}</textarea>
-    <div class="row"><button id="fi-ok" class="p">💾 保存</button><button id="fi-open" title="パソコンの標準のアプリで開く">📂 開く</button><button id="fi-ins" title="いま開いているノートのカーソルに、リンクを書き込む">📌 貼る</button><span class="grow"></span><button id="fi-del" class="danger" title="ごみ箱（.trash）へ移す">🗑 削除</button><button id="fi-cancel">やめる</button></div>`;
+  // 案A: 上に題（そのまま直せる・自動で保存）／左に中身／右に「使われているところ」と説明／下に操作
+  $('#modal .box').innerHTML = `<div class="fidlg">
+    <div class="fi-hd"><span class="fi-ic">${fileIcon(f.ext)}</span><input id="fi-t" value="${esc(f.title)}" placeholder="題（取り込んだ名前が入ります）"><button id="fi-x" class="fi-x" title="閉じる (Esc)">✕</button></div>
+    <div class="fi-meta">${esc(name)} ・ ${f.size < 1024 ? f.size + ' B' : Math.round(f.size / 1024) + ' KB'} ・ ${esc(f.added)}${f.orig !== name ? ` ・ 取り込んだ名前: ${esc(f.orig)}` : ''}</div>
+    <div class="fi-body">
+      <div class="fi-pvbox"><div class="fi-lab">中身</div><div id="fi-pv">${isImg ? `<img class="fi-img" src="file://${esc(vault + '/' + name)}">` : `<div class="fi-none">${fileIcon(f.ext)}<br>読み込んでいます…</div>`}</div></div>
+      <div class="fi-side"><div id="fi-use"></div><div class="fi-lab">説明（探すときに使います）</div><textarea id="fi-d" rows="3" placeholder="例: 本の表紙の画像">${esc(f.desc)}</textarea></div>
+    </div>
+    <div class="fi-bar"><button id="fi-open" class="p" title="パソコンの標準のアプリで開く">📂 開く</button><button id="fi-ins" title="いま開いているノートのカーソルに、リンクを書き込む">📌 貼る</button><span class="grow"></span><button id="fi-del" class="danger" title="ごみ箱（.trash）へ移す">🗑 削除</button></div>
+  </div>`;
   if (!isImg) api.filePreview(name).then(p => {   // 文字のファイルは、アプリの中で中身を見られる
-    const box = $('#fi-pv'); if (!box || !p || p.kind !== 'text') return;
-    box.innerHTML = `<pre class="fi-pre">${esc(p.text)}</pre>${p.cut ? `<div class="sub">先頭の 60KB だけ表示しています（全体は ${Math.round(p.size / 1024)} KB。「開く」で全部見られます）</div>` : ''}`;
+    const box = $('#fi-pv'); if (!box) return;
+    if (p && p.kind === 'text') box.innerHTML = `<pre class="fi-pre">${esc(p.text)}</pre>${p.cut ? `<div class="sub">先頭の 60KB だけ表示（全体は ${Math.round(p.size / 1024)} KB。「開く」で全部）</div>` : ''}`;
+    else box.innerHTML = `<div class="fi-none">${fileIcon(f.ext)}<br>この形式は、アプリの中では見られません。<br>「📂 開く」で見られます</div>`;
   });
   $('#modal').style.display = 'flex'; $('#fi-t').focus();
-  const close = () => { $('#modal').style.display = 'none'; };
-  $('#fi-cancel').onclick = close; $('#modal').onkeydown = e => { if (e.key === 'Escape') close(); };
-  $('#fi-ok').onclick = async () => { await api.setFileInfo(name, { title: $('#fi-t').value, desc: $('#fi-d').value }); close(); filesCache = await api.filesInfo(); renderList(); };
+  // 題と説明は、書いたそばから自動で保存（保存ボタンはない）。閉じるときに、残りも保存して一覧を直す
+  const saveInfo = () => api.setFileInfo(name, { title: $('#fi-t') ? $('#fi-t').value : f.title, desc: $('#fi-d') ? $('#fi-d').value : f.desc });
+  $('#fi-t').oninput = $('#fi-d').oninput = () => later('fi' + name, saveInfo);
+  const close = () => {
+    $('#modal').style.display = 'none'; $('#modal').onclick = null;
+    flush().then(async () => { filesCache = await api.filesInfo(); if (tab === 'f' && !$('#q').value) renderList(); });
+  };
+  $('#fi-x').onclick = close; $('#modal').onkeydown = e => { if (e.key === 'Escape') close(); };
+  $('#modal').onclick = e => { if (e.target.id === 'modal') close(); };
   $('#fi-open').onclick = () => api.openPath(encRel(name));
   {   // このファイルが使われているところ（押すとそこへ）
     const u = fileUsage(name), total = u.notes.length + u.diaries.length + u.memos.length;
-    $('#fi-use').innerHTML = `<div class="sub">🔗 使われているところ${total ? `（${total} 件）` : ''}</div>` + (total ? `<div class="fi-uselist">`
-      + u.notes.map(n => `<div class="fi-u" data-un="${esc(n.s)}|${esc(n.id)}">📝 ${n.noid ? '' : esc(n.id) + ' '}${esc(titleOf(n) || '（無題）')}</div>`).join('')
-      + u.diaries.map(d => `<div class="fi-u" data-ud="${esc(d.date)}|${esc(d.kind || '日記')}">📔 ${esc(d.date)} ${esc(d.kind || '日記')}</div>`).join('')
-      + u.memos.map(m => `<div class="fi-u" data-um="${esc(m.id)}">💬 ${esc((m.text || '').split('\n')[0].replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1').slice(0, 40) || '（メモ）')} <small>${esc(L.dayOf(L.now(new Date(m.t))))}</small></div>`).join('')
-      + `</div>` : '<div class="sub" style="margin:2px 0 6px">どのノート・日記・メモからも、使われていません</div>');
+    $('#fi-use').innerHTML = `<div class="fi-lab">🔗 使われているところ${total ? `（${total} 件）` : ''}</div>` + (total ? `<div class="fi-uselist">`
+      + u.notes.map(n => `<div class="fi-u" data-un="${esc(n.s)}|${esc(n.id)}">📝 <span>${n.noid ? '' : esc(n.id) + ' '}${esc(titleOf(n) || '（無題）')}</span><small>ノート</small></div>`).join('')
+      + u.diaries.map(d => `<div class="fi-u" data-ud="${esc(d.date)}|${esc(d.kind || '日記')}">📔 <span>${esc(d.date)} ${esc(d.kind || '日記')}</span><small>日記</small></div>`).join('')
+      + u.memos.map(m => `<div class="fi-u" data-um="${esc(m.id)}">💬 <span>${esc((m.text || '').split('\n')[0].replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1').slice(0, 40) || '（メモ）')}</span><small>${esc(L.dayOf(L.now(new Date(m.t))).slice(5))}</small></div>`).join('')
+      + `</div>` : '<div class="fi-sub">どのノート・日記・メモからも、使われていません</div>');
     $('#fi-use').onclick = e => {
       const n = e.target.closest('[data-un]'), d = e.target.closest('[data-ud]'), m = e.target.closest('[data-um]');
       if (n) { const [s, id] = n.dataset.un.split('|'); close(); openNote(s, id); }
@@ -369,7 +378,7 @@ function fileDialog(name) {
   $('#fi-del').onclick = async () => {
     const used = fileUsedCount(name);
     if (!confirm(`「${f.orig}」を削除しますか？\n（ごみ箱の .trash に移ります。${used ? `⚠ ${used} 件のノート・日記・メモで使われていて、そのリンクは見つからなくなります` : 'どこからも使われていません'}）`)) return;
-    const ok = await api.deleteFile(name); close(); filesCache = await api.filesInfo(); renderList();
+    const ok = await api.deleteFile(name); close();
     toast(ok ? `「${f.orig}」を削除しました（.trash に移しました）` : '削除できませんでした');
   };
   $('#fi-ins').onclick = () => {
