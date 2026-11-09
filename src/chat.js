@@ -271,7 +271,7 @@ function render() {
           ${viewMode === 'day' ? `<button data-c="dprev" title="前の日">←</button><input type="date" id="c-day" value="${esc(day || L.todayStr())}"><button data-c="dnext" title="次の日">→</button>` : '<input type="date" id="c-jump" title="日付を入れると、その日へ">'}
 `}
         <button data-c="topic-graph">🕸 トピックグラフ</button>
-        <label class="c-speaker-label">表示・投稿キャラ <select id="c-speaker"><option value="self"${speakerView==='self'?' selected':''}>${esc(doc.selfName)}</option>${roleLibrary.map(r => '<option value="'+esc(r.id)+'"'+(speakerView===r.id?' selected':'')+'>'+esc(r.name)+'</option>').join('')}<option value="none"${speakerView==='none'?' selected':''}>選択なし（全員右）</option></select></label>
+        <label class="c-speaker-label">表示・投稿キャラ <select id="c-speaker"><option value="self"${speakerView==='self'?' selected':''}>${esc(doc.selfName)}</option>${roleLibrary.filter(r => !r.archived).map(r => '<option value="'+esc(r.id)+'"'+(speakerView===r.id?' selected':'')+'>'+esc(r.name)+'</option>').join('')}<option value="none"${speakerView==='none'?' selected':''}>選択なし（全員右）</option></select></label>
         <button data-c="roles">キャラクター管理</button>
         ${be ? '<button data-c="openbe">ノートを開く</button>' : ''}
         ${t || (isRec(view) && view !== DIARY) ? '<button data-c="conf">⚙ 設定</button>' : ''}
@@ -669,23 +669,34 @@ export function renderMemoGroup(el, note) {
 
 // キャラクターを共有ライブラリで管理（旧なりきりチャットのK_rolesを引き継ぐ）。
 function charactersDialog() {
-  dialog('<h3>キャラクター</h3><div class="sub">「私」の名前</div><input id="c-self-name" value="'+esc(doc.selfName)+'">' +
-    '<div class="sub">ほかのキャラクター（1行につき1人、名前を編集できます）</div>' +
-    '<textarea id="c-role-names" rows="7" style="width:100%">'+esc(roleLibrary.map(r=>r.name).join('\n'))+'</textarea>' +
-    '<div class="row"><button class="p" id="c-roles-save">保存</button><button id="c-roles-cancel">やめる</button></div>',close=>{
-    $('#c-roles-cancel').onclick=close;
-    $('#c-roles-save').onclick=()=>{
-      const names=$('#c-role-names').value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
-      const old=roleLibrary.slice(), used=new Set();
-      roleLibrary=names.map(name=>{
-        const match=old.find(r=>r.name===name && !used.has(r.id));
-        if(match){used.add(match.id);return match;}
-        return {id:uid(),name,icon:null};
+  // 役のIDは発言に保存されているため、名前変更時もIDを維持する。
+  // 「一覧から非表示」にしても歴史上の発言者は消さない。
+  const row = r => '<div class="row c-role-entry" data-role-id="'+esc(r.id)+'">' +
+    '<input class="c-role-name" value="'+esc(r.name)+'" aria-label="キャラクター名" style="flex:1;min-width:100px">' +
+    '<label><input type="checkbox" class="c-role-archived"'+(r.archived?' checked':'')+'> 一覧から非表示</label></div>';
+  dialog('<h3>キャラクター</h3>' +
+    '<label>「私」の名前 <input id="c-self-name" value="'+esc(doc.selfName)+'"></label>' +
+    '<div class="sub">キャラクターの名前変更は過去の発言にも反映。非表示にしても発言は残ります。</div>' +
+    '<div class="c-role-list">'+roleLibrary.map(row).join('')+'</div>' +
+    '<label>新しいキャラクター <input id="c-role-new" placeholder="名前"></label>' +
+    '<div class="row"><button class="p" id="c-roles-save">保存</button><button id="c-roles-cancel">やめる</button></div>', close => {
+    $('#c-roles-cancel').onclick = close;
+    $('#c-roles-save').onclick = () => {
+      const changes = new Map([...document.querySelectorAll('.c-role-list [data-role-id]')].map(el => [el.dataset.roleId, {
+        name: el.querySelector('.c-role-name').value.trim(),
+        archived: el.querySelector('.c-role-archived').checked
+      }]));
+      roleLibrary = roleLibrary.map(r => {
+        const update = changes.get(r.id);
+        return update ? { ...r, name: update.name || r.name, archived: update.archived } : r;
       });
-      doc.selfName=$('#c-self-name').value.trim() || '私';
-      if(speakerView!=='none' && speakerView!=='self' && !roleLibrary.some(r=>r.id===speakerView)) speakerView='self';
-      ctx.later('doc:K_roles',()=>ctx.api.saveDoc('K_roles',{roles:roleLibrary}));
-      save();close();render();
+      const newRole = $('#c-role-new').value.trim();
+      if (newRole) roleLibrary.push({ id: uid(), name: newRole, icon: null });
+      doc.selfName = $('#c-self-name').value.trim() || '私';
+      if (speakerView !== 'none' && speakerView !== 'self' &&
+          !roleLibrary.some(r => r.id === speakerView && !r.archived)) speakerView = 'self';
+      ctx.later('doc:K_roles', () => ctx.api.saveDoc('K_roles', { roles: roleLibrary }));
+      save(); close(); render();
     };
   });
 }
