@@ -4,8 +4,10 @@
 # やること: git と Node.js が無ければ用意 → ~/.local/share/YuriiNote-src に取得 → npm install → ビルド → ショートカットと YuriiNote コマンド
 # もう一度実行すると、最新に更新します（YuriiNote --update でも同じ）
 set -e
-REPO="${YURIIKASTEN_REPO:-https://github.com/Yurii7812/YuriiNote.git}"
-SRC="${YURIIKASTEN_SRC:-$HOME/.local/share/YuriiKasten-src}"
+REPO="${YURIINOTE_REPO:-${YURIIKASTEN_REPO:-https://github.com/Yurii7812/YuriiNote.git}}"
+SRC="${YURIINOTE_SRC:-${YURIIKASTEN_SRC:-$HOME/.local/share/YuriiNote-src}}"
+# 既存のインストールだけ従来のソース配置を再利用（重複インストール防止）
+if [ -z "${YURIINOTE_SRC:-}" ] && [ -d "$HOME/.local/share/YuriiKasten-src/.git" ] && [ ! -d "$SRC/.git" ]; then SRC="$HOME/.local/share/YuriiKasten-src"; fi
 NODEDIR="$HOME/.local/share/YuriiNote-node"
 say() { printf '%s\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
