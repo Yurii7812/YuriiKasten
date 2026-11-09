@@ -136,7 +136,7 @@ ipcMain.handle('chooseVault', async () => {
 // ===== ショートカット（デスクトップ）とコマンド =====
 //  Windows: インストーラーが、デスクトップとスタートメニューに作る
 //  Mac: アプリをデスクトップに置くショートカット（エイリアス）を作る
-//  Linux: AppImage を ~/.local/share/YuriiNote に置き、アプリ一覧・デスクトップのショートカットと `YuriiKasten` コマンドを作る
+//  Linux: AppImage を ~/.local/share/YuriiNote に置き、アプリ一覧・デスクトップのショートカットと `YuriiNote` コマンドを作る
 function installShortcuts() {
   const home = os.homedir();
   if (process.platform === 'darwin') {
@@ -163,12 +163,13 @@ case "$1" in
 esac
 `, { mode: 0o755 });
   } else { // 開発用のフォルダ: そのまま起動する
-    exec = path.join(__dirname, 'yuriikasten.sh');
+    exec = path.join(__dirname, 'yuriinote.sh');
     fs.writeFileSync(path.join(bin, 'YuriiNote'), `#!/bin/sh
 exec "${exec}" "$@"
 `, { mode: 0o755 });
   }
-  try { fs.copyFileSync(path.join(bin, 'YuriiNote'), path.join(bin, 'YuriiKasten')); fs.chmodSync(path.join(bin, 'YuriiKasten'), 0o755); } catch { }   // 昔の YuriiKasten コマンドも使えるように
+
+  // 古いコマンド名は既存インストールの互換性のためのみ保持。新規ショートカットはYuriiNote。
   for (const old of [path.join(home, '.local', 'share', 'applications', 'YuriiKasten.desktop'), path.join(home, 'Desktop', 'YuriiKasten.desktop')]) { try { fs.rmSync(old, { force: true }); } catch { } }
   const icon = path.join(dir, 'icon.png'); try { fs.copyFileSync(path.join(__dirname, 'build', 'icon.png'), icon); } catch { }
   const entry = `[Desktop Entry]\nType=Application\nName=YuriiNote\nComment=紙のPKM（ツェッテルカステン）をデジタルで\nExec="${exec}" %U\nIcon=${icon}\nTerminal=false\nCategories=Office;\n`.replace(/\\n/g, '\n');
@@ -176,7 +177,7 @@ exec "${exec}" "$@"
   fs.writeFileSync(path.join(apps, 'YuriiNote.desktop'), entry, { mode: 0o755 });
   const desk = path.join(home, 'Desktop'); let onDesk = false;
   if (fs.existsSync(desk)) { const f = path.join(desk, 'YuriiNote.desktop'); fs.writeFileSync(f, entry, { mode: 0o755 }); onDesk = true; try { require('child_process').execFileSync('gio', ['set', f, 'metadata::trusted', 'true'], { stdio: 'ignore' }); } catch { } }
-  return `アプリ一覧${onDesk ? 'と、デスクトップ' : ''}にショートカットを作りました。端末では YuriiNote で開けます（更新は YuriiNote --update。昔の YuriiKasten コマンドも使えます）`;
+  return `アプリ一覧${onDesk ? 'と、デスクトップ' : ''}にショートカットを作りました。端末では YuriiNote で開けます（更新は YuriiNote --update）`;
 }
 if (argv.includes('--install') || argv.includes('--install-shortcuts')) { app.whenReady().then(() => { console.log(installShortcuts()); app.exit(0); }); }
 
