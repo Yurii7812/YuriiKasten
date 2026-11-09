@@ -671,11 +671,11 @@ export function renderMemoGroup(el, note) {
 function charactersDialog() {
   dialog('<h3>キャラクター</h3><div class="sub">「私」の名前</div><input id="c-self-name" value="'+esc(doc.selfName)+'">' +
     '<div class="sub">ほかのキャラクター（1行につき1人、名前を編集できます）</div>' +
-    '<textarea id="c-role-names" rows="7" style="width:100%">'+esc(roleLibrary.map(r=>r.name).join('\\n'))+'</textarea>' +
+    '<textarea id="c-role-names" rows="7" style="width:100%">'+esc(roleLibrary.map(r=>r.name).join('\n'))+'</textarea>' +
     '<div class="row"><button class="p" id="c-roles-save">保存</button><button id="c-roles-cancel">やめる</button></div>',close=>{
     $('#c-roles-cancel').onclick=close;
     $('#c-roles-save').onclick=()=>{
-      const names=$('#c-role-names').value.split(/\\r?\\n/).map(x=>x.trim()).filter(Boolean);
+      const names=$('#c-role-names').value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
       const old=roleLibrary.slice(), used=new Set();
       roleLibrary=names.map(name=>{
         const match=old.find(r=>r.name===name && !used.has(r.id));
