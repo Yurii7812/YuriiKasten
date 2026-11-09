@@ -335,7 +335,7 @@ function fileDialog(name) {
     <div id="fi-pv"></div>
     <div class="sub">タイトル</div><input id="fi-t" value="${esc(f.title)}" placeholder="例: 図でわかる知識管理術の表紙">
     <div class="sub">説明（探すときに使います）</div><textarea id="fi-d" rows="3" style="width:100%;font:inherit">${esc(f.desc)}</textarea>
-    <div class="row"><button id="fi-ok" class="p">💾 保存</button><button id="fi-open" title="パソコンの標準のアプリで開く">📂 開く</button><button id="fi-ins" title="いま開いているノートのカーソルに、リンクを書き込む">📌 ノートに貼る</button><span class="grow"></span><button id="fi-del" class="danger" title="ごみ箱（.trash）へ移す">🗑 削除</button><button id="fi-cancel">やめる</button></div>`;
+    <div class="row"><button id="fi-ok" class="p">💾 保存</button><button id="fi-open" title="パソコンの標準のアプリで開く">📂 開く</button><button id="fi-ins" title="いま開いているノートのカーソルに、リンクを書き込む">📌 貼る</button><span class="grow"></span><button id="fi-del" class="danger" title="ごみ箱（.trash）へ移す">🗑 削除</button><button id="fi-cancel">やめる</button></div>`;
   if (!isImg) api.filePreview(name).then(p => {   // 文字のファイルは、アプリの中で中身を見られる
     const box = $('#fi-pv'); if (!box || !p || p.kind !== 'text') return;
     box.innerHTML = `<pre class="fi-pre">${esc(p.text)}</pre>${p.cut ? `<div class="sub">先頭の 60KB だけ表示しています（全体は ${Math.round(p.size / 1024)} KB。「開く」で全部見られます）</div>` : ''}`;
@@ -407,7 +407,7 @@ function renderList() {
     refreshFiles();
     const fl = filesCache.filter(f => fileFilter === 'all' || !f.title);
     out.push(`<div class="sortbar"><select id="ff-sel"><option value="all"${fileFilter === 'all' ? ' selected' : ''}>すべて（${filesCache.length}）</option><option value="untitled"${fileFilter === 'untitled' ? ' selected' : ''}>タイトルなし（${filesCache.filter(f => !f.title).length}）</option></select><span class="grow"></span><button class="mini" id="ff-add" title="ファイルを取り込む">＋ 取り込む</button></div>`);
-    out.push(...fl.map(fileRow));
+    out.push(...fl.map(f => fileRow(f)));   // map にそのまま渡すと、行の番号が検索語の欄に入って落ちる
     if (!fl.length) out.push(`<div class="none">${fileFilter === 'untitled' ? 'タイトルのないファイルはありません' : '取り込んだ画像・html・csv などが、ここに並びます。ノートにドラッグしても取り込めます'}</div>`);
   } else if (tab === 'i') {
     out.push(`<div class="ixbar"><span class="sub">${ixEdit ? '赤い点を付けるIDを選びます（点のIDをもう一度押すと外れます）' : ''}</span><span class="grow"></span><button class="mini${ixEdit ? ' p' : ''}" id="ix-edit">${ixEdit ? '完了' : '編集'}</button></div>`);

@@ -1,6 +1,6 @@
 {
   "name": "yuriinote",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "YuriiNote — 紙のPKM（ツェッテルカステン）をデジタルで",
   "main": "main.js",
   "scripts": {
