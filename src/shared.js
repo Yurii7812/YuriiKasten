@@ -2,6 +2,7 @@
 import MarkdownIt from 'markdown-it';
 import L from '../lib.js';
 import { mermaidPlaceholder } from './mermaid.js';
+import UrlLinks from '../url-links.js';
 
 export const ctx = {};
 export const $ = s => document.querySelector(s);
@@ -22,8 +23,10 @@ md.renderer.rules.fence = (tokens, idx, options, env, self) => {
 // :1a や 1a: は、ノートへのリンクにする（pkm: で始まるリンク）
 export function renderMd(text) {
   let src = text || '', out = '', last = 0;
+  // Mermaidの図コード内にある :1 等をノート参照に書き換えると構文が壊れるので除外。
+  const fences = UrlLinks.fencedRanges(src);
   for (const t of L.tokens(src)) {
-    if (t.k !== 'ref') continue;
+    if (t.k !== 'ref' || fences.some(([a,b]) => t.from < b && a < t.to)) continue;
     out += src.slice(last, t.from) + `[${t.text}](pkm:${t.sp || 'd'}:${t.id})`; last = t.to;
   }
   const el = document.createElement('div');
@@ -44,6 +47,7 @@ export function mdClick(e) {
   e.preventDefault();
   if (a.dataset.ref) { const [sp, ...r] = a.dataset.ref.split(':'), id = r.join(':'); if (ctx.get(sp, id)) ctx.openNote(sp, id); }
   else if (a.dataset.file) ctx.openLink(a.dataset.file);
+  else if (a.href) { const external=UrlLinks.externalUri(a.href); if (external) ctx.openLink(external); }
   return true;
 }
 // 右クリックのメニュー。items: [[名前, 関数]]
