@@ -7,6 +7,7 @@ import Relations from '../chat-relations.js';
 import TopicPrefs from '../chat-topic-preferences.js';
 import MemoGroup from '../memo-group.js';
 import TopicNav from '../chat-topic-navigation.js';
+import MigrateRoleplay from '../migrate-roleplay.js';
 import * as TopicGraph from './chat-topic-graph.js';
 
 let doc = { topics: [], messages: [], converted: {}, trash: [], noted: {} };
@@ -126,6 +127,16 @@ export function init(docs) {
   viewMode = doc.viewMode;
   refreshMemoNotePreviews();
 }
+// 一度だけ旧なりきりチャットを取り込み、元データは保管する。
+export function migrateLegacyRoleplay() {
+  const r=MigrateRoleplay.migrate(doc,ctx.notes(),roleLibrary);
+  if(!r.migrated.length) return [];
+  roleLibrary=r.roles;
+  ctx.later('doc:K_roles',()=>ctx.api.saveDoc('K_roles',{roles:roleLibrary}));
+  save();
+  return r.migrated;
+}
+export const isImportedRoleplay = n => !!(n && n.kind==='rp' && doc.importedRp && doc.importedRp[n.stem]);
 const refreshMemoNotePreviews = () => {
   // 本文の正本を複製しない。検索用の表示文字列のみ元メモの最新状態に同期する。
   if (!ctx.notes) return;
