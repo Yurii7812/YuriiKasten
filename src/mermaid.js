@@ -20,32 +20,45 @@ export const mermaidPlaceholder = code =>
   '<div class="mermaid-diagram"><div class="mermaid-output" role="img" aria-label="Mermaid図">図を描画しています…</div>' +
   '<pre class="mermaid-source" hidden>' + escapeHtml(code) + '</pre></div>';
 
-export async function renderMermaidIn(root = document) {
-  if (!root) return;
-  init();
-  for (const box of root.querySelectorAll('.mermaid-diagram:not([data-mermaid-status])')) {
-    box.dataset.mermaidStatus = 'loading';
-    const source = box.querySelector('.mermaid-source')?.textContent || '';
-    const dest = box.querySelector('.mermaid-output');
-    if (!dest || !source.trim()) {
-      box.dataset.mermaidStatus = 'error';
-      if (dest) dest.textContent = 'Mermaidの内容がありません';
-      continue;
-    }
-    try {
-      // DOM未接続でレンダリングすると寸法計算が失敗するため、画面への挿入後だけ開始。
-      if (!box.isConnected) { delete box.dataset.mermaidStatus; continue; }
-      const {svg, bindFunctions} = await mermaid.render('yurii-mermaid-' + (++serial), source);
-      if (!box.isConnected) continue;
-      dest.innerHTML = svg;  // securityLevel=strictによって生成されたSVGのみ
-      bindFunctions?.(dest);
-      box.dataset.mermaidStatus = 'ready';
-    } catch (error) {
-      box.dataset.mermaidStatus = 'error';
-      dest.textContent = 'Mermaid構文エラー：' + (error?.message || String(error));
-      box.querySelector('.mermaid-source').hidden = false;
-    }
+let renderQueue = Promise.resolve();
+async function drawOne(box) {
+  if (!box.isConnected || box.dataset.mermaidStatus) return;
+  box.dataset.mermaidStatus = 'loading';
+  const source = box.querySelector('.mermaid-source')?.textContent || '';
+  const dest = box.querySelector('.mermaid-output');
+  if (!dest || !source.trim()) {
+    box.dataset.mermaidStatus = 'error';
+    if (dest) dest.textContent = 'Mermaidの内容がありません';
+    return;
   }
+  try {
+    init();
+    // Mermaidが内部的に同じ一時DOMを使うため、描画は必ず逐次実行。
+    const result = await mermaid.render('yurii-mermaid-' + (++serial), source);
+    if (!box.isConnected) return;
+    dest.innerHTML = result.svg;
+    result.bindFunctions?.(dest);
+    box.dataset.mermaidStatus = 'ready';
+  } catch (error) {
+    if (!box.isConnected) return;
+    box.dataset.mermaidStatus = 'error';
+    const reason = error?.message || String(error);
+    dest.textContent = 'Mermaid構文エラー：' + reason;
+    box.querySelector('.mermaid-source').hidden = false;
+  }
+}
+export function renderMermaidIn(root = document) {
+  if (!root) return renderQueue;
+  const boxes = [];
+  if (root.matches?.('.mermaid-diagram:not([data-mermaid-status])')) boxes.push(root);
+  boxes.push(...root.querySelectorAll('.mermaid-diagram:not([data-mermaid-status])'));
+  for (const box of boxes) {
+    if (!box.isConnected || box.dataset.mermaidStatus) continue;
+    // 二重スケジュールを防止し、失敗時は元ソースと理由を表示する。
+    box.dataset.mermaidStatus = 'queued';
+    renderQueue = renderQueue.catch(() => {}).then(() => { delete box.dataset.mermaidStatus; return drawOne(box); });
+  }
+  return renderQueue;
 }
 export function installMermaidObserver() {
   if (!document.body || document.body.dataset.mermaidObserver) return;
