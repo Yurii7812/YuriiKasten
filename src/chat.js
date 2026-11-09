@@ -6,6 +6,7 @@ import L from '../lib.js';
 import Relations from '../chat-relations.js';
 import TopicPrefs from '../chat-topic-preferences.js';
 import MemoGroup from '../memo-group.js';
+import TopicNav from '../chat-topic-navigation.js';
 import * as TopicGraph from './chat-topic-graph.js';
 
 let doc = { topics: [], messages: [], converted: {}, trash: [], noted: {} };
@@ -16,7 +17,12 @@ let day = '';          // day のときの日付
 let sel = null;        // 選んでいるメモの id（ノートにする・引用する）。null = 選択中ではない
 let lastSel = null;
 let cq = '', tq = '';
-let childFilter = new Set(); // 空なら全部。複数選択は OR
+let childFilter = new Set(); // 下位トピックによる絞り込み（OR）
+let upperFilter = new Set(); // 上位トピックによる絞り込み（OR）
+let lastTopicSelection = null;
+let speakerView = 'self'; // 選択中のキャラは右。「選択なし」なら全員右
+let roleLibrary = [];
+let replyBrowse = null; // トピックを移動しても書き込み元と下書き・返信対象を維持
 let sourceIds = null; // 出典リンクを開いている間だけ、ノートにしたメモIDだけを表示する
 let replyTos = [];            // 返信しているメモの id（いくつでも。WhatsApp のように、入力欄の上に引用を出す）
 let editCtx = null;          // 編集中のメモ { m, reps, redraw }（↩ を押すと、そのメモの返信先に足される）
@@ -113,7 +119,9 @@ const isRec = n => n === DIARY || recKinds().includes(n);
 
 export function init(docs) {
   const d = docs['C_チャット'] || {};
-  doc = { topics: d.topics || [], messages: d.messages || [], converted: d.converted || {}, trash: d.trash || [], noted: d.noted || {}, mirror: d.mirror || {}, upperByTopic: d.upperByTopic || {}, target: { topic: (d.target && d.target.topic) || '', ups: (d.target && d.target.ups) || [] }, viewMode: d.viewMode === 'day' ? 'day' : 'all' };
+  doc = { topics: d.topics || [], messages: d.messages || [], converted: d.converted || {}, trash: d.trash || [], noted: d.noted || {}, mirror: d.mirror || {}, upperByTopic: d.upperByTopic || {}, target: { topic: (d.target && d.target.topic) || '', ups: (d.target && d.target.ups) || [] }, viewMode: d.viewMode === 'day' ? 'day' : 'all', selfName: d.selfName || '私', importedRp: d.importedRp || {} };
+  roleLibrary = ((docs['K_roles'] || {}).roles || []).map(r => ({ ...r }));
+  speakerView = 'self';
   TopicPrefs.init(doc);
   viewMode = doc.viewMode;
   refreshMemoNotePreviews();
@@ -169,7 +177,7 @@ const dayOfMsg_ = m => L.dayOf(L.now(new Date(m.t)));
 
 function filteredMessages() {
   let list = doc.messages.filter(m => inView(m, view) && (!sourceIds || sourceIds.has(m.id))).sort((a, b) => a.t - b.t);
-  if (childFilter.size) list = list.filter(m => childFilter.has(Relations.childOf(m, view)));
+  if (childFilter.size || upperFilter.size) list = TopicNav.filter(list, view, [...upperFilter], [...childFilter]);
   if (cq) { const q = cq.toLowerCase(); list = list.filter(m => (m.text || '').toLowerCase().includes(q)); }   // チャットメモの中の検索
   return list;
 }
@@ -185,9 +193,10 @@ function entries() {
 // ===== 画面 =====
 export function open(name, keep, savedSourceIds, savedGraph) {
   graphOpen = !!savedGraph;
-  childFilter = new Set();
-  view = name; sourceIds = keep && Array.isArray(savedSourceIds) ? new Set(savedSourceIds) : null; sel = null; draft = '';
-  TopicPrefs.open(doc, name); save();   // 所属トピックごとに最後の上位トピックを復元。「全部」は未選択として扱う
+  childFilter = new Set(); upperFilter = new Set(); lastTopicSelection = null;
+  view = name; sourceIds = keep && Array.isArray(savedSourceIds) ? new Set(savedSourceIds) : null; sel = null;
+  if (!replyBrowse) draft = '';
+  if (!replyBrowse) TopicPrefs.open(doc, name); save();   // 所属トピックごとに最後の上位トピックを復元。「全部」は未選択として扱う
   ctx.setCur(ctx.place({ k: 'chat', topic: name, topicGraph: graphOpen }, keep)); ctx.setMode('chat');
   render(); ctx.renderTabs(); ctx.renderList();
 }
@@ -199,7 +208,7 @@ export const memosForNote = stem => {
 // 出典として選ばれたメモだけを表示する。間にあった未選択のメモは表示しない。
 export function gotoSource(ids) {
   graphOpen = false;
-  childFilter = new Set();
+  childFilter = new Set(); upperFilter = new Set();
   sourceIds = new Set(ids.filter(Boolean));
   if (!sourceIds.size) return toast('元のチャットメモが指定されていません');
   view = '*'; viewMode = 'all'; day = ''; cq = ''; sel = null;
@@ -215,7 +224,7 @@ export function gotoMemo(id) {
   graphOpen = false;
   const m = msg(id); if (!m) return toast('そのチャットメモは、もうありません');
   childFilter = new Set(); cq = '';
-  sourceIds = null; view = '*'; viewMode = 'all'; day = '';
+  sourceIds = null; childFilter.clear(); upperFilter.clear(); view = '*'; viewMode = 'all'; day = '';
   ctx.setCur(ctx.place({ k: 'chat', topic: '*' }, false)); ctx.setMode('chat'); render(); ctx.renderTabs(); ctx.renderList();
   const el = document.querySelector(`[data-m="${id}"]`); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1800); }
 }
@@ -250,6 +259,8 @@ function render() {
           ${viewMode === 'day' ? `<button data-c="dprev" title="前の日">←</button><input type="date" id="c-day" value="${esc(day || L.todayStr())}"><button data-c="dnext" title="次の日">→</button>` : '<input type="date" id="c-jump" title="日付を入れると、その日へ">'}
 `}
         <button data-c="topic-graph">🕸 トピックグラフ</button>
+        <label class="c-speaker-label">表示・投稿キャラ <select id="c-speaker"><option value="self"${speakerView==='self'?' selected':''}>${esc(doc.selfName)}</option>${roleLibrary.map(r => '<option value="'+esc(r.id)+'"'+(speakerView===r.id?' selected':'')+'>'+esc(r.name)+'</option>').join('')}<option value="none"${speakerView==='none'?' selected':''}>選択なし（全員右）</option></select></label>
+        <button data-c="roles">キャラクター管理</button>
         ${be ? '<button data-c="openbe">ノートを開く</button>' : ''}
         ${t || (isRec(view) && view !== DIARY) ? '<button data-c="conf">⚙ 設定</button>' : ''}
       </div>
@@ -259,7 +270,7 @@ function render() {
       <div id="c-redit" class="c-redit" style="display:none"></div>
       <div id="c-target" class="c-target" ${sourceIds ? 'style="display:none"' : ''}></div>
       <div id="c-reply" class="c-reply" style="display:none"></div>
-      ${sourceIds ? '' : `<div class="c-compose"><div id="c-mention" class="rp-mention" style="display:none"></div><button data-c="attach" title="ファイルや画像を付ける">📎</button>
+      ${sourceIds ? '' : `<div class="c-compose"><div id="c-mention" class="rp-mention" style="display:none"></div><button data-c="find-reply">↩ 探す</button><button data-c="attach" title="ファイルや画像を付ける">📎</button>
         <textarea id="c-in" rows="1" placeholder="書く（Enter で送る、Shift+Enter で改行。@ で、別のメモやノートを入れる）"></textarea><button class="p" data-c="send">送る</button></div>`}
     </div>`;
   paint(true); selbar(); showReply(); showTarget();
@@ -309,6 +320,7 @@ function openPicker(anchor, { multi, selected, near, exclude = [], extra = [], o
   }
   const ok = box.querySelector('.tgok'); if (ok) ok.onclick = () => { close(); onPick([...sel]); };
 }
+const actorName = id => id && id !== 'self' ? (roleLibrary.find(r=>r.id===id)?.name || '不明なキャラ') : doc.selfName;
 function showReply() {
   const el = $('#c-reply'); if (!el) return; const os = replyTos.map(id => msg(id)).filter(Boolean); replyTos = os.map(o => o.id);
   if (!os.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
@@ -318,7 +330,8 @@ function showReply() {
 export function startReply(id) {
   if (editCtx) { if (id !== editCtx.m.id && !editCtx.reps.includes(id)) editCtx.reps.push(id); editCtx.redraw(); return; }
   if (redit) { toggleReplyOf(redit, id); return; }
-  if (!replyTos.includes(id)) replyTos.push(id); showReply(); const i = $('#c-in'); if (i) i.focus();
+  if (replyBrowse) {doc.target={topic:replyBrowse.topic,ups:[...replyBrowse.ups]};replyBrowse=null;}
+  if (!replyTos.includes(id)) replyTos.push(id); showReply(); showTarget(); const i = $('#c-in'); if (i) i.focus();
 }
 function toggleReplyOf(mid, id) {
   const m = msg(mid); if (!m || id === mid) return; const reps = repliesOf(m).slice(), at = reps.indexOf(id);
@@ -334,15 +347,61 @@ function showRedit() {
 export function startReplyEdit(id) { redit = id; showRedit(); }
 function showChildren() {
   const box = $('#c-children'); if (!box) return;
-  const rows = Relations.childCounts(doc.messages, view);
-  box.hidden = !!sourceIds || !!backend() || view === '*' || view === '' || !rows.some(r => r.name);
-  if (box.hidden) { childFilter.clear(); box.innerHTML = ''; return; }
-  const available = new Set(rows.map(r => r.name));
-  for (const n of childFilter) if (!available.has(n)) childFilter.delete(n);
-  const total = rows.reduce((n, r) => n + r.count, 0);
-  box.innerHTML = `<span class="sub">所属トピックで絞り込み</span><button data-child-all class="${childFilter.size ? '' : 'on'}" aria-pressed="${!childFilter.size}">すべて ${total}</button>`
-    + rows.map(r => `<button data-child="${esc(r.name)}" class="${childFilter.has(r.name) ? 'on' : ''}" aria-pressed="${childFilter.has(r.name)}">${esc(r.name || '直接・未指定')} ${r.count}</button>`).join('');
+  const hidden = !!sourceIds || !!backend() || view === '*' || view === '';
+  box.hidden = hidden;
+  if (hidden) { box.innerHTML = ''; return; }
+  const relations = TopicNav.candidates(doc.messages,view);
+  const section = (label,kind,items,selected) => '<div class="c-filter-row"><span class="sub">' + label + '</span>' +
+    items.map(r => '<button type="button" class="' + (selected.has(r.name) ? 'on' : '') + '" data-topic-filter="' + kind +
+      '" data-filter-name="' + esc(r.name) + '" aria-pressed="' + selected.has(r.name) + '">' + esc(r.name) + ' ' + r.count + '</button>').join('') +
+    '<button type="button" data-add-topic-filter="' + kind + '" title="トピックを探して追加">＋</button></div>';
+  const chosen = [...new Set([...upperFilter, ...childFilter])];
+  box.innerHTML = section('上位トピックで絞り込み','upper',relations.upper,upperFilter) +
+    section('下位トピックで絞り込み','lower',relations.lower,childFilter) +
+    '<div class="c-filter-controls">' +
+    '<button data-filter-clear>絞り込み解除</button>' +
+    '<button class="p" data-filter-jump ' + (chosen.length ? '' : 'disabled') + '>選択先へ移動' + (chosen.length===1 ? '：'+esc(chosen[0]) : '') + '</button></div>';
 }
+function toggleTopicFilter(kind,name) {
+  const set = kind === 'upper' ? upperFilter : childFilter;
+  if (set.has(name)) set.delete(name); else { set.add(name); lastTopicSelection = name; }
+  const chosen = [...upperFilter,...childFilter];
+  if (!chosen.includes(lastTopicSelection)) lastTopicSelection = chosen[chosen.length-1] || null;
+  // 選択した条件は次のメモの書き込み先にも反映する。ただし所属と上位はメモごとの属性で固定階層ではない。
+  if (kind === 'upper') {
+    TopicPrefs.open(doc,view);
+    TopicPrefs.selectUpper(doc,[...upperFilter]);
+  } else if (childFilter.size === 1) {
+    const child = [...childFilter][0];
+    TopicPrefs.open(doc,child);
+    TopicPrefs.selectUpper(doc,[...new Set([view,...doc.target.ups])]);
+  } else if (!childFilter.size) TopicPrefs.open(doc,view);
+  save(); showTarget(); paint();
+}
+function selectFilterDestination() {
+  const choices = [...new Set([...upperFilter,...childFilter])];
+  if (!choices.length) return;
+  if (choices.length === 1) return open(choices[0]);
+  dialog('<h3>移動先を選ぶ</h3><div class="idex-choose-target">' +
+    choices.map(name => '<button data-fjump="' + esc(name) + '">' + esc(name) + '</button>').join('') +
+    '</div>', close => {
+      $('#modal .box').onclick = e => {
+        const b = e.target.closest('[data-fjump]'); if (b) { const name=b.dataset.fjump; close(); open(name); }
+      };
+    });
+}
+function addTopicFilter(kind,anchor) {
+  const selected = kind === 'upper' ? upperFilter : childFilter;
+  openPicker(anchor,{ multi:true, selected:[...selected], near:view, exclude:[view],
+    onPick: list => {
+      if(kind==='upper') upperFilter=new Set(list); else childFilter=new Set(list);
+      lastTopicSelection=list[list.length-1] || null;
+      if(kind==='upper') { TopicPrefs.open(doc,view); TopicPrefs.selectUpper(doc,list); }
+      else if(kind==='lower' && list.length===1) { TopicPrefs.open(doc,list[0]); TopicPrefs.selectUpper(doc,[view,...doc.target.ups]); }
+      save(); showTarget(); paint();
+    }});
+}
+
 function paint(toBottom) {
   showChildren();
   const box = $('#c-msgs'); if (!box) return; const keepTop = box.scrollTop;
@@ -353,8 +412,8 @@ function paint(toBottom) {
     const tags = (doc.noted[m.id] || []).map(st => ({ st, label: noteLabel(st) })).filter(x => x.label).map(x => `<span class="ntag" data-stem="${esc(x.st)}" title="ノート化されたメモを開く">📝 ${esc(x.label)}</span>`).join('');
     const picked = sel && sel.has(m.id);
     const dayLink = isRec(m.topic) ? `<span class="gday" data-gday="${esc(m.topic)}|${dayOfMsg_(m)}" title="その日のノートを開く">📔 ${esc(m.topic === DIARY ? '日記' : m.topic)}</span>` : '';
-    return `${head}<div class="bub${sel ? ' pick' : ''}${picked ? ' picked' : ''}" data-m="${m.id}">
-      ${quoteHtml(m)}<div class="b-body md">${body(m.text)}</div>
+    return `${head}<div class="bub${m.actor && speakerView !== 'none' && m.actor !== speakerView ? ' other-speaker' : ''}${sel ? ' pick' : ''}${picked ? ' picked' : ''}" data-m="${m.id}">
+      <div class="b-meta">${esc(actorName(m.actor))}</div>${quoteHtml(m)}<div class="b-body md">${body(m.text)}</div>
       <div class="b-foot"><span class="b-left">${sel ? `<input type="checkbox" class="bck" ${picked ? 'checked' : ''}> ` : ''}${m.topic && !dayLink && (showTopic || m.topic !== view) ? `<span class="b-tp" data-goto="${esc(m.topic)}">${esc(m.topic)}</span> ` : ''}${upsOf(m).filter(u => u !== view).map(u => `<span class="b-up" data-goto="${esc(u)}">↑${esc(u)}</span>`).join(' ')}${dayLink}${tags ? ' ' + tags : ''}</span><span class="b-time">${hm(m.t)}</span></div><span class="b-rep" data-rep="${m.id}" title="返信">↩</span><span class="b-rep b-rep-e" data-redit-btn="${m.id}" title="返信先を編集（足す・外す）">⇆</span></div>`;
   }).join('') : '<div class="none">まだありません。下の欄に書くと、ここに並びます</div>';
   box.scrollTop = toBottom ? box.scrollHeight : keepTop;   // 編集・選択をやめても、見ていた場所にとどまる（開いたとき・送ったときだけ、いちばん下へ）
@@ -372,10 +431,10 @@ function send() {
   if (be) {
     const list = parts(be.get()); list.push((be.stamp !== false ? hm(now) + ' ' : '') + text.replace(/\n{2,}/g, '\n')); be.set(list.join('\n\n'));
   } else {
-    const m = { id: uid(), topic: doc.target.topic, t: now, text };
+    const m = { id: uid(), topic: doc.target.topic, t: now, text, actor: speakerView === 'none' ? 'self' : speakerView };
     const upsT = doc.target.ups.filter(u => u && u !== doc.target.topic); if (upsT.length) m.ups = [...upsT];
     const rs = replyTos.filter(id => msg(id)); if (rs.length) m.replies = rs; replyTos = [];
-    doc.messages.push(m); save();
+    doc.messages.push(m); if (replyBrowse) { replyBrowse=null; } save();
     if (isRec(m.topic)) {   // 日記・時系列記録の、その日のノートにも（時刻つきの行）。同じ内容が両方に残る
       const date = L.dayOf(L.now(new Date(now))), line = `${hm(now)} ${text.replace(/\n{2,}/g, '\n')}`;
       ctx.api.appendToDay(m.topic, date, line).then(d => { const k = m.topic + '|' + date, mr = doc.mirror[k] || (doc.mirror[k] = { blocks: [], map: [] }); mr.blocks = blocks(d && d.body != null ? d.body : line); mr.map.push({ blk: line, part: text.replace(/\n{2,}/g, '\n'), memo: m.id }); save(); ctx.refreshDiaries(); });
@@ -559,16 +618,17 @@ async function makeMemoGroup(ms, id, title) {
 export function renderMemoGroup(el, note) {
   const rows = MemoGroup.entries(note.data, doc);
   el.innerHTML = `<div class="chat memo memo-note">
-    <div class="memo-note-head">元のチャットメモ ${rows.length} 件 <span class="sub">本文は元のメモと共通です。編集するときは「元のメモ」を開きます。</span></div>
+    <div class="memo-note-head">元のチャットメモ ${rows.length} 件 <label>表示するキャラ <select data-mg-speaker><option value="self"${speakerView==='self'?' selected':''}>${esc(doc.selfName)}</option>${roleLibrary.map(r=>'<option value="'+esc(r.id)+'"'+(speakerView===r.id?' selected':'')+'>'+esc(r.name)+'</option>').join('')}<option value="none"${speakerView==='none'?' selected':''}>選択なし</option></select></label><span class="sub">本文は元のメモと共通です。編集するときは「元のメモ」を開きます。</span></div>
     <div class="memo-note-messages">${rows.map(({ id, memo: m }) => m
-      ? `<div class="bub" data-source-memo="${esc(id)}">
-          ${quoteHtml(m)}
+      ? `<div class="bub${m.actor && speakerView!=='none' && m.actor!==speakerView ? ' other-speaker' : ''}" data-source-memo="${esc(id)}">
+          <div class="b-meta">${esc(actorName(m.actor))}</div>${quoteHtml(m)}
           <div class="b-body md">${body(m.text)}</div>
           <div class="b-foot"><span class="b-left">${m.topic ? esc(m.topic) : '未所属'}${upsOf(m).length ? '　↑ ' + upsOf(m).map(esc).join('、') : ''}</span><span class="b-time">${esc(MemoGroup.at(m.t))}</span></div>
           <button class="memo-note-source" data-source-memo-open="${esc(id)}">元のメモを開く</button>
         </div>`
       : `<div class="bub missing">元のチャットメモ ${esc(id)} は見つかりません</div>`).join('')}</div>
   </div>`;
+  el.querySelector('[data-mg-speaker]')?.addEventListener('change', e=>{ speakerView=e.target.value; renderMemoGroup(el,note); });
   el.onclick = e => {
     const q = e.target.closest('[data-qm]');
     if (q) return gotoMemo(q.dataset.qm);
@@ -578,6 +638,28 @@ export function renderMemoGroup(el, note) {
   };
 }
 
+// キャラクターを共有ライブラリで管理（旧なりきりチャットのK_rolesを引き継ぐ）。
+function charactersDialog() {
+  dialog('<h3>キャラクター</h3><div class="sub">「私」の名前</div><input id="c-self-name" value="'+esc(doc.selfName)+'">' +
+    '<div class="sub">ほかのキャラクター（1行につき1人、名前を編集できます）</div>' +
+    '<textarea id="c-role-names" rows="7" style="width:100%">'+esc(roleLibrary.map(r=>r.name).join('\\n'))+'</textarea>' +
+    '<div class="row"><button class="p" id="c-roles-save">保存</button><button id="c-roles-cancel">やめる</button></div>',close=>{
+    $('#c-roles-cancel').onclick=close;
+    $('#c-roles-save').onclick=()=>{
+      const names=$('#c-role-names').value.split(/\\r?\\n/).map(x=>x.trim()).filter(Boolean);
+      const old=roleLibrary.slice(), used=new Set();
+      roleLibrary=names.map(name=>{
+        const match=old.find(r=>r.name===name && !used.has(r.id));
+        if(match){used.add(match.id);return match;}
+        return {id:uid(),name,icon:null};
+      });
+      doc.selfName=$('#c-self-name').value.trim() || '私';
+      if(speakerView!=='none' && speakerView!=='self' && !roleLibrary.some(r=>r.id===speakerView)) speakerView='self';
+      ctx.later('doc:K_roles',()=>ctx.api.saveDoc('K_roles',{roles:roleLibrary}));
+      save();close();render();
+    };
+  });
+}
 // ===== トピックを作る・設定 =====
 export function newTopicDialog() {
   const rootFree = () => { const r = ctx.notes().filter(n => n.s === 'd' && /^\d+$/.test(n.id)).map(n => +n.id); return ctx.free('d', String((r.length ? Math.max(...r) : 0) + 1)); };
@@ -657,6 +739,18 @@ export async function attach(files) {
 // ===== イベント =====
 document.addEventListener('click', e => {
   const pane = e.target.closest('.chat'); if (!pane || pane.classList.contains('rp')) return; // なりきりは roleplay.js
+  if (sel && e.target.closest('#c-msgs .bub[data-m]')) {
+    const bub=e.target.closest('#c-msgs .bub[data-m]'), id=bub.dataset.m, ids=entries().filter(x=>x.kind==='msg').map(x=>x.m.id);
+    if (e.shiftKey && lastSel && ids.includes(lastSel)) {const a=ids.indexOf(lastSel),b=ids.indexOf(id); for(const x of ids.slice(Math.min(a,b),Math.max(a,b)+1))sel.add(x);}
+    else {sel.has(id)?sel.delete(id):sel.add(id);lastSel=id;}
+    const box=$('#c-msgs'), top=box.scrollTop;paint();box.scrollTop=top;selbar();return;
+  }
+  const filter=e.target.closest('[data-topic-filter]');
+  if(filter) {toggleTopicFilter(filter.dataset.topicFilter,filter.dataset.filterName);return;}
+  const addFilter=e.target.closest('[data-add-topic-filter]');
+  if(addFilter) {addTopicFilter(addFilter.dataset.addTopicFilter,addFilter);return;}
+  if(e.target.closest('[data-filter-jump]')) {selectFilterDestination();return;}
+  if(e.target.closest('[data-filter-clear]')) {upperFilter.clear();childFilter.clear();lastTopicSelection=null;TopicPrefs.open(doc,view);save();showTarget();paint();return;}
   const cf = e.target.closest('[data-child], [data-child-all]');
   if (cf) {
     if (cf.hasAttribute('data-child-all')) childFilter.clear();
@@ -673,6 +767,8 @@ document.addEventListener('click', e => {
     if (a === 'vall' || a === 'vday') { viewMode = a === 'vday' ? 'day' : 'all'; doc.viewMode = viewMode; if (viewMode === 'day') day = ''; save(); render(); }
     if (a === 'dprev' || a === 'dnext') { const ds = [...new Set(filteredMessages().map(dayOfMsg_))].sort(), i = ds.indexOf(day || L.todayStr()); const n = ds[a === 'dprev' ? (i < 0 ? ds.length - 1 : i - 1) : i + 1]; if (n) { day = n; render(); } }
     if (a === 'attach') ctx.pick(true, attach, '*');
+    if (a === 'find-reply') {replyBrowse={topic:doc.target.topic,ups:[...doc.target.ups]};toast('左のトピック一覧で返信先を探し、↩ を押してください');return;}
+    if (a === 'roles') {charactersDialog();return;}
     if (a === 'conf') confDialog();
     if (a === 'openbe') backend().open();
     if (a === 'select') { sel = sel ? null : new Set(); lastSel = null; paint(); selbar(); }
