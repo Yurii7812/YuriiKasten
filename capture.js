@@ -23,6 +23,7 @@ function importCapture(v, data) {
     if (!names.has(n)) names.set(n, v.addFiles([{ name: n, bytes: [...data.images[n]] }])[0]);
     return names.get(n);
   });
+  const attachmentMd = n => /\.(?:jpe?g|png|gif|webp|bmp|avif|svg)$/i.test(n) ? `![](${n})` : `[${n}](${n})`;
   const chat = JSON.parse(JSON.stringify((v.state().docs || {})['C_チャット'] || {})); chat.topics = chat.topics || []; chat.messages = chat.messages || []; chat.noted = chat.noted || {}; chat.trash = chat.trash || []; chat.converted = chat.converted || {};
   const memoOf = id => st.ids[id] && st.ids[id].memo;     // スマホのメモ id → チャットメモの id
   const noteByStem = stem => v.state().notes.find(n => n.stem === stem);
@@ -46,7 +47,7 @@ function importCapture(v, data) {
       sum.already++; continue;
     }
     const topic = e.topic === 'メモ' ? '' : (e.topic || ''), at = L.now(new Date(e.created)), date = L.dayOf(at), mode = modes[topic] || {};
-    const imgs = saveImages(e.images).map(n => `![](${n})`);
+    const imgs = saveImages(e.images).map(attachmentMd);
     const mention = id => { const m = memoOf(id); const o = m && chat.messages.find(x => x.id === m); return o ? `[@${(o.text || '').split('\n')[0].replace(/[\[\]()]/g, '').slice(0, 14)}](memo:${o.id})` : ''; };
     const repl = [...new Set([e.parent, ...(e.contexts || [])].filter(Boolean).map(memoOf).filter(Boolean))];   // 昔の分岐元・文脈・今の返信先 → 返信（リプライ）
     const text = (e.text || '').replace(MEMO_LINK, (_a, label, id) => mention(id) || label).trim();
