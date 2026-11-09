@@ -9,7 +9,7 @@
 | **Linux / macOS** | `curl -fsSL https://raw.githubusercontent.com/Yurii7812/YuriiNote/master/install/bootstrap.sh \| sh` |
 | **Windows**（PowerShell） | `irm https://raw.githubusercontent.com/Yurii7812/YuriiNote/master/install/bootstrap.ps1 \| iex` |
 
-GitHub からソースを取ってきて、その場で組み立てます（git と Node.js 18 以上が無ければ、自動で用意します。初回は数分）。デスクトップとアプリ一覧にショートカットができ、端末では `YuriiKasten` で開きます。もう一度同じ1行を実行すると最新になります。インストーラー（AppImage / exe / dmg）を自分で作りたいときは `npm run dist:linux` など（`release/` にできます）。
+GitHub からソースを取ってきて、その場で組み立てます（git と Node.js 18 以上が無ければ、自動で用意します。初回は数分）。デスクトップとアプリ一覧にショートカットができ、端末では `YuriiNote` で開きます。もう一度同じ1行を実行すると最新になります。インストーラー（AppImage / exe / dmg）を自分で作りたいときは `npm run dist:linux` など（`release/` にできます）。
 
 ## 更新（自動では何もしません）
 確認も更新も、**自分で押したときだけ**。
@@ -17,7 +17,7 @@ GitHub からソースを取ってきて、その場で組み立てます（git 
 - AppImage / インストーラーで入れたとき（`npm run dist` で作ったもの）は、置き換え式の更新です
 
 ## 開発
-`npm install`（初回のみ）→ `./yuriikasten.sh`。試験は `npm test`。インストーラーは `npm run dist`（動かしている OS 用）。
+`npm install`（初回のみ）→ `./yuriinote.sh`。試験は `npm test`。インストーラーは `npm run dist`（動かしている OS 用）。
 **リリースの作り方**: `npm run version:minor` でマイナーバージョンを1つ進め（例: 0.4.0 → 0.5.0）、`git tag v0.5.0 && git push --tags` → GitHub Actions が、Windows / Mac / Linux のインストーラーを作って、リリースに置く（`.github/workflows/release.yml`）。
 
 ## 画面
@@ -182,7 +182,7 @@ GitHub からソースを取ってきて、その場で組み立てます（git 
 - **トピックIndex・紙のIndexに `1a(1)`**: ID に (番号) をつけて、ノートの中のその場所を指せます（トピックIndex の行と md のリンク、紙の Index）。
 
 ## 2026-11-08（その2）の変更
-- **名前は YuriiNote**: コマンドは `YuriiNote`（昔の `YuriiKasten` も使えます）、設定は `~/.config/YuriiNote`（昔の設定は引き継ぎます）、スマホのアプリは YuriiNote（昔の版が入っていれば、そこからも取り込みます）。初めて起動したときは、vault（保存先）を選ぶ・作る画面が出ます。vault のフォルダごと別の PC にコピーすれば、メモ・日記・チャット・取り込みの記録も、全部そのまま残ります（アプリの外には、データを持ちません）。
+- **名前は YuriiNote**: コマンドは `YuriiNote`、設定は `~/.config/YuriiNote`（昔の設定は引き継ぎます）、スマホのアプリは YuriiNote（以前のAPKからのデータ取り込みも維持します）。初めて起動したときは、vault（保存先）を選ぶ・作る画面が出ます。vault のフォルダごと別の PC にコピーすれば、メモ・日記・チャット・取り込みの記録も、全部そのまま残ります（アプリの外には、データを持ちません）。
 - **md は Gnosis 風**: YAML ／ `# 題` ／ `ParentBranch:`（親）・`TopicBranch:`（このノートが入口のトピックIndex）・`Topic:`（載っているトピックIndex）／ 本文 ／ `ChildBranch:`（分岐）。空の行は出ません。前・次・一覧へのリンクは `Index.md` だけ（デジタル・紙・未整理・Index（キーワード）・日記を縦に）。デジタル・紙の一覧は、いちばん上の番号だけ（トピックIndex があればそちらへ）。
 - **一覧のキー**: `↑ ↓` と `[ ]` は、トピックIndex にも止まります（トピックIndex は、入口のノートと同じ階層。`[ ]` は同じ親の下の行）。`←` で、ノート→そのトピックIndex→親、`→` で逆。**`u`** で、自分の番号より上位の、入口になっているトピックIndex へ（押すたび、さらに上へ）。Enter で「決めた」ノートは**黄色**で示され、`o` で戻ります。動くたびに、見ているものが一覧の真ん中に来ます。`s` で似たノート、`i` で入力欄へ（なりきりチャットは、開いただけでは入力欄に入りません）。
 - **似たノート**（`s`・一覧の ≈・選択して「≈ 似たノート」）: 新しいタブに。基準は、本文の言葉・キーワード・リンク・同じトピックIndex。度数（%）と理由の札つき。複数のノートを選ぶと、全体の平均／どれかに似ている／全部に似ている。並べ替えは、総合・基準ごとの度数・番号・作成・更新。絞り込みは、種類・キーワード・期間・基準の子孫を除く・リンク済みを除く。検索結果も、番号・作成・更新で並べ替えられます。
