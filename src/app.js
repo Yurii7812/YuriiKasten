@@ -14,6 +14,7 @@ import * as SM from './similar.js';
 import * as CV from './canvas.js';
 import { dialog, popMenu, toast, renderMd } from './shared.js';
 import { installMermaidObserver } from './mermaid.js';
+import UrlLinks from '../url-links.js';
 import { setLang } from './i18n.js';
 let pendingLang = null;
 
@@ -99,10 +100,20 @@ function links(mode, space) {
         else if (t.bare) items.push([t.from, t.to, 'mk']); // 素の (1) は赤いだけ
         else items.push([t.from, t.to, { t: 'self', n: t.n, bare: t.bare }, L.selfTarget(text, t.n, t.bare) >= 0]);
       }
-      for (const m of text.matchAll(new RegExp(L.MDLINK.source, 'g'))) { // 添付・外部リンク。押すと既定のアプリで開く
-        const rel = m[0].slice(m[0].lastIndexOf('](') + 2, -1);
-        items.push([m.index, m.index + m[0].length, { t: 'file', rel }, true, 'file']);
+      const markdownLinks = [...text.matchAll(new RegExp(L.MDLINK.source, 'g'))]
+        .map(m => ({from: m.index, to: m.index + m[0].length, rel: m[0].slice(m[0].lastIndexOf('](') + 2, -1)}))
+        .filter(x => !UrlLinks.fencedRanges(text).some(([a,b]) => x.from < b && a < x.to));
+      for (const m of markdownLinks)
+        items.push([m.from, m.to, {t:'file',rel:m.rel},true,'file']);
+      // https://... や www.... のような裸のURLも本文から直接ブラウザで開く。
+      // Markdownリンクやコードブロック内は二重リンク化しない。
+      const bare = UrlLinks.bareUrls(text,markdownLinks.map(m=>[m.from,m.to]));
+      const spans = [...markdownLinks.map(m=>[m.from,m.to]),...bare.map(m=>[m.from,m.to])];
+      for (let i=items.length-1;i>=0;i--) {
+        const [from,to,item] = items[i];
+        if (item?.t !== 'file' && spans.some(([a,b])=>from<b && a<to)) items.splice(i,1);
       }
+      for (const link of bare) items.push([link.from,link.to,{t:'file',rel:link.url},true,'url']);
       // カーソルが外にあるとき、リンクは名前だけを見せる（![ や ](パス) を隠す）。カーソルを置くと元の記述が出る
       const sel = view.state.selection.main, rs = [];
       for (const [f, t, d, ok, cls] of items) {
@@ -199,6 +210,7 @@ function jump(view, pos) {
 // 本文のリンクの行き先。アプリの中のもの（なりきり会話・日記）は中で開き、それ以外は既定のアプリで開く
 function openLink(rel) {
   if (rel.startsWith('memo:')) return Chat.gotoMemo(rel.slice(5));
+  if (UrlLinks.externalUri(rel)) return api.openPath(UrlLinks.externalUri(rel)); // #フラグメントとクエリを保持
   let path = rel, hash = '';
   const i = rel.indexOf('#'); if (i >= 0) { path = rel.slice(0, i); hash = rel.slice(i + 1); }
   try { path = decodeURIComponent(path); } catch { }
