@@ -11,7 +11,7 @@ val unifiedVersion = "$majorVersion.$minorVersion.$patchVersion"
 val unifiedVersionCode = majorVersion * 1_000_000 + minorVersion * 1_000 + patchVersion
 
 android {
-    namespace = "net.yurii.kasten"
+    namespace = "net.yurii.note"
     compileSdk = 34
     defaultConfig {
         applicationId = "net.yurii.note"
