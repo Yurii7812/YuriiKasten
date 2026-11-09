@@ -3,6 +3,13 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val packageJson = rootProject.file("../package.json").readText()
+val versionParts = Regex(""""version"\\s*:\\s*"([0-9]+)\\.([0-9]+)\\.([0-9]+)"""").find(packageJson)
+    ?.groupValues?.drop(1)?.map(String::toInt) ?: error("package.json version missing")
+val (majorVersion, minorVersion, patchVersion) = versionParts
+val unifiedVersion = "$majorVersion.$minorVersion.$patchVersion"
+val unifiedVersionCode = majorVersion * 1_000_000 + minorVersion * 1_000 + patchVersion
+
 android {
     namespace = "net.yurii.kasten"
     compileSdk = 34
@@ -10,8 +17,8 @@ android {
         applicationId = "net.yurii.note"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "0.4"
+        versionCode = unifiedVersionCode
+        versionName = unifiedVersion
     }
     buildTypes {
         release {
