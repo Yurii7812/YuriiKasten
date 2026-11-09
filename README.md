@@ -18,7 +18,7 @@ GitHub からソースを取ってきて、その場で組み立てます（git 
 
 ## 開発
 `npm install`（初回のみ）→ `./yuriinote.sh`。試験は `npm test`。インストーラーは `npm run dist`（動かしている OS 用）。
-**バージョンの付け方（0.n.m）**: 更新（push）のたびに、コミットの前に `npm run version:patch` で m を 1 つ上げる（例: 0.6.0 → 0.6.1）。機能のまとまりが入ったときは `npm run version:minor` で n を上げる（0.6.1 → 0.7.0、m は 0 に戻る）。元は `package.json` だけで、スマホ（APK）の versionName / versionCode も Gradle がここから作る。更新したのにバージョンが同じ、にならないようにするための決まり。
+**バージョンの付け方（0.n.y）**: 新しい機能が入ったら n を 1 つ上げて y を 0 に戻す（`npm run version:minor`。例: 0.6.1 → 0.7.0）。機能ではない小さな更新（不具合の直し・見た目や文言の調整）は y を 1 つ上げる（`npm run version:patch`。例: 0.6.0 → 0.6.1）。上げるのは、コミットの前に 1 回。説明（README）だけの変更では上げない。元は `package.json` だけで、スマホ（APK）の versionName / versionCode も Gradle がここから作る。更新したのにバージョンが同じ、にならないようにするための決まり。
 **リリースの作り方**: `npm run version:minor` でマイナーバージョンを1つ進め（例: 0.4.0 → 0.5.0）、`git tag v0.5.0 && git push --tags` → GitHub Actions が、Windows / Mac / Linux のインストーラーを作って、リリースに置く（`.github/workflows/release.yml`）。
 
 ## 画面
