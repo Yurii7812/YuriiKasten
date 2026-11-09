@@ -3,7 +3,6 @@ import { EditorView, Decoration, ViewPlugin, WidgetType, keymap } from '@codemir
 import { Prec, RangeSetBuilder, StateField, StateEffect } from '@codemirror/state';
 import { foldService, foldGutter, foldKeymap, codeFolding, foldEffect, unfoldEffect, foldedRanges } from '@codemirror/language';
 import { indentLess } from '@codemirror/commands';
-import { mermaidPlaceholder } from './mermaid.js';
 
 const INDENT = '  ';
 const BULLET = /^(\s*)([-*+]|\d+[.)])(\s+)(\[[ xX]\]\s+)?/;
@@ -260,48 +259,8 @@ const noMiddlePaste = EditorView.domEventHandlers({
   auxclick(e) { if (e.button === 1) { e.preventDefault(); return true; } },
   paste(e) { return false; }
 });
-// Mermaidフェンスの直後にSVGを表示。ソースは引き続きCodeMirrorで編集可能。
-class MermaidPreviewWidget extends WidgetType {
-  constructor(source) { super(); this.source = source; }
-  eq(other) { return other.source === this.source; }
-  toDOM() {
-    const holder = document.createElement('div');
-    holder.innerHTML = mermaidPlaceholder(this.source);
-    return holder.firstElementChild;
-  }
-  ignoreEvent() { return true; }
-}
-function mermaidWidgets(doc) {
-  const decorations = [];
-  let source = null, marker = '', markerLength = 0, code = [];
-  for (let i=1; i<=doc.lines; i++) {
-    const line = doc.line(i), start = line.text.match(/^\s*(`{3,}|~{3,})mermaid\s*$/i);
-    if (!source) {
-      if (start) {
-        source = line; marker = start[1][0]; markerLength = start[1].length; code = [];
-      }
-      continue;
-    }
-    const trimmed = line.text.trim();
-    if (trimmed.length >= markerLength && [...trimmed].every(ch=>ch === marker)) {
-      decorations.push(Decoration.widget({
-        widget: new MermaidPreviewWidget(code.join('\n')),
-        block: true,
-        side: 1
-      }).range(line.to));
-      source = null; code = [];
-    } else code.push(line.text);
-  }
-  return Decoration.set(decorations,true);
-}
-const mermaidField = StateField.define({
-  create: state => mermaidWidgets(state.doc),
-  update(value, tr) { return tr.docChanged ? mermaidWidgets(tr.state.doc) : value; },
-  provide: field => EditorView.decorations.from(field)
-});
-
 export const mdExtensions = [noMiddlePaste, margins, 
-  linePlugin, tableField, mermaidField, codeFolding(),
+  linePlugin, tableField, codeFolding(),
   foldGutter({ markerDOM: open => { const s = document.createElement('span'); s.className = 'cm-fold-mark'; s.textContent = open ? '▾' : '▸'; return s; } }),
   outlineFold, listKeys, clickBelow, fenceClose, keymap.of(foldKeymap)
 ];
