@@ -1,12 +1,12 @@
 #!/bin/sh
 # YuriiNote 導入（Linux / macOS）。リリースは使わず、GitHub から取ってきて、その場で組み立てる
 #   curl -fsSL https://raw.githubusercontent.com/Yurii7812/YuriiNote/master/install/bootstrap.sh | sh
-# やること: git と Node.js が無ければ用意 → ~/.local/share/YuriiKasten-src に取得 → npm install → ビルド → ショートカットと YuriiKasten コマンド
+# やること: git と Node.js が無ければ用意 → ~/.local/share/YuriiNote-src に取得 → npm install → ビルド → ショートカットと YuriiNote コマンド
 # もう一度実行すると、最新に更新します（YuriiNote --update でも同じ）
 set -e
 REPO="${YURIIKASTEN_REPO:-https://github.com/Yurii7812/YuriiNote.git}"
 SRC="${YURIIKASTEN_SRC:-$HOME/.local/share/YuriiKasten-src}"
-NODEDIR="$HOME/.local/share/YuriiKasten-node"
+NODEDIR="$HOME/.local/share/YuriiNote-node"
 say() { printf '%s\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 SUDO=""; [ "$(id -u)" = 0 ] || { have sudo && SUDO=sudo; }
@@ -52,15 +52,15 @@ cd "$SRC"
 say "部品を入れています（初回は数分かかります）…"
 npm install --no-audit --no-fund
 npm run build
-chmod +x yuriikasten.sh
+chmod +x yuriinote.sh
 
 # ---- ショートカットと YuriiNote コマンド
 if [ "$OS" = Linux ]; then
-  ./yuriikasten.sh --install-shortcuts
+  ./yuriinote.sh --install-shortcuts
 else
   mkdir -p "$HOME/.local/bin"
-  printf '#!/bin/sh\nexec "%s/yuriikasten.sh" "$@"\n' "$SRC" > "$HOME/.local/bin/YuriiNote"; chmod +x "$HOME/.local/bin/YuriiNote"; cp "$HOME/.local/bin/YuriiNote" "$HOME/.local/bin/YuriiKasten"   # 昔のコマンドも残す
-  printf '#!/bin/sh\nexec "%s/yuriikasten.sh"\n' "$SRC" > "$HOME/Desktop/YuriiNote.command"; chmod +x "$HOME/Desktop/YuriiNote.command"
+  printf '#!/bin/sh\nexec "%s/yuriinote.sh" "$@"\n' "$SRC" > "$HOME/.local/bin/YuriiNote"; chmod +x "$HOME/.local/bin/YuriiNote";   # 以前のコマンド名は既存環境の互換性として削除しない
+  printf '#!/bin/sh\nexec "%s/yuriinote.sh"\n' "$SRC" > "$HOME/Desktop/YuriiNote.command"; chmod +x "$HOME/Desktop/YuriiNote.command"
   say "デスクトップに YuriiNote.command を作りました（ダブルクリックで開きます）"
 fi
 say "入れました。ターミナルで YuriiNote と打つと開きます。更新は YuriiNote --update"
