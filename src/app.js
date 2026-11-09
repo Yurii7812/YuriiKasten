@@ -760,7 +760,7 @@ function renderMeta(note) {
   const el = $('#margin'); if (!el) return;
   if (note.noid) { const par = note.parentStem && notes.find(x => x.stem === note.parentStem); el.innerHTML = (par ? `<div class="sec"><div class="l">親</div><div class="mt ch" data-s="${par.s}" data-id="${esc(par.id)}"><a class="tl" style="margin-left:0">${esc(titleOf(par) || '（無題）')}</a></div></div>` : '') + childrenHtml(note) + '<div class="hint">IDなしのノートです。<br>「IDを付ける」と、キーワードやトピックIndex、バックリンクが使えます。</div>'; return; }
   const tops = topics.map(t => ({ t, kws: L.mergeTopic(t).rows.filter(r => r[note.s].some(x => L.splitAnchor(x).id === note.id)).map(r => r.kw) })).filter(x => x.kws.length); // 自分のキーワードがあるものだけ
-  const bl = backlinks(note);
+  const bl = backlinks(note), memoReplies = Chat.noteBacklinks(note);
   el.innerHTML =
     (ownTopic(note) ? `<div class="sec">${metaLabel('📑', '自トピック')}<div class="mt topic-index-entry"><a class="tl" data-topic="${esc(ownTopic(note).name)}">${esc(topicLabel(ownTopic(note)))}</a></div></div>` : '') +
     (tops.length ? `<div class="sec">${metaLabel('🗂️', 'トピック')}${tops.map(x => `<div class="mt topic-index-entry"><a class="tl" data-topic="${esc(x.t.name)}">${esc(topicLabel(x.t))}</a><div class="topic-index-keys">${x.kws.map(kw => `<span>${esc(kw)}</span>`).join('、')}</div></div>`).join('')}</div>` : '') +
@@ -768,6 +768,7 @@ function renderMeta(note) {
     (bl.length ? `<div class="sec"><div class="l">バックリンク ${bl.length}</div>${bl.map(x => x.m
       ? `<div class="bl" data-s="${x.m.s}" data-id="${esc(x.m.id)}"><div class="bh"><b>${esc(titleOf(x.m))}</b><em>${esc(x.m.id)}</em></div><p>${x.c}</p></div>`
       : `<div class="bl" data-diary="${x.d.date}"><div class="bh"><b>${x.d.date.slice(5)}（${L.weekday(x.d.date)}）</b><em>日記</em></div><p>${x.c}</p></div>`).join('')}</div>` : '') +
+    (memoReplies.length ? `<div class="sec">${metaLabel('💬','チャットメモからの返信',memoReplies.length)}${memoReplies.map(m=>`<div class="bl" data-cmemo="${esc(m.id)}"><div class="bh"><b>${esc(m.topic||'未所属')}</b><em>${esc((m.text||'').slice(0,25))}</em></div></div>`).join('')}</div>` : '') +
     (note.keywords.length ? `<div class="sec"><div class="l">キーワード</div>${note.keywords.map(k => `<div class="mk" title="${esc(readings[k] || '')}"><span>${esc(k)}</span><b data-kwdel="${esc(k)}" title="外す">×</b></div>`).join('')}</div>` : '') +
     `<div class="madd"><a data-act="kwadd">＋ キーワード</a><span id="kw-wrap"></span><a data-act="tadd">＋ トピックIndexに入れる</a></div>`;
 }
@@ -852,7 +853,7 @@ function noteMenu(btn, note) {
   popMenu({ clientX: r.right - 190, clientY: r.bottom + 4 }, [
     ...(!note.noid ? [[`並列のノートを作る（${free(s, L.sibling(id))}）`, () => create(s, free(s, L.sibling(id)))], [`分岐のノートを作る（${free(s, L.child(id))}）`, () => create(s, free(s, L.child(id)))]] : []),
     ...(text ? [['表を入れる', () => insertTable()], ['ファイルを添付', () => pick(true, f => attach(note, f), '*')]] : []),
-    ...(s === 'd' ? [['索引・本文からIDを探す', () => giveIdDialog(note)], ...(!note.noid ? [['IDを消す（IDなしにする）', () => clearIdFlow(note)]] : [])] : []),
+    ...(s === 'd' ? [['↩ チャットメモで返信', () => Chat.replyToNote(note)], ['索引・本文からIDを探す', () => giveIdDialog(note)], ...(!note.noid ? [['IDを消す（IDなしにする）', () => clearIdFlow(note)]] : [])] : []),
     ['削除', () => deleteNotes([{ s, id }]), true]
   ]);
 }
