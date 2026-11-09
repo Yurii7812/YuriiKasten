@@ -26,7 +26,8 @@
   },
   "dependencies": {
     "force-graph": "^1.52.0",
-    "kuromoji": "^0.1.2"
+    "kuromoji": "^0.1.2",
+    "mermaid": "12.3.0"
   },
   "productName": "YuriiNote",
   "homepage": "https://github.com/Yurii7812/YuriiNote",
