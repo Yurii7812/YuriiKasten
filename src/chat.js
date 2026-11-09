@@ -275,6 +275,8 @@ export function gotoSource(ids) {
 // このメモ（ノートの出典リンクから）へ飛ぶ
 export const graphData = () => ({ topics: doc.topics, messages: doc.messages, noted: doc.noted });   // グラフビューに渡す
 export const searchMemos = q => doc.messages.filter(m => (m.text || '').toLowerCase().includes(q)).sort((a, b) => b.t - a.t);   // 検索結果に出す
+// 条件に合う本文のチャットメモ（ファイルが使われているメモを探すときなど）
+export const memosMatching = test => doc.messages.filter(m => test(m.text || ''));
 export function gotoMemo(id) {
   graphOpen = false;
   const m = msg(id); if (!m) return toast('そのチャットメモは、もうありません');

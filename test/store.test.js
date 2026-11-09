@@ -336,11 +336,13 @@ test('取り込んだファイル: 一覧にタイトル・説明を付けられ
   const [f] = v.addFiles([{ name: '表紙.png', bytes: [1, 2] }]);
   fs.writeFileSync(path.join(dir, '昔の図.html'), 'h');   // 昔の名前のままの添付も出る
   let l = v.filesInfo();
-  assert.deepStrictEqual(l.map(x => x.name).sort(), [f, '昔の図.html'].sort()); assert.ok(l.every(x => !x.title));
+  assert.deepStrictEqual(l.map(x => x.name).sort(), [f, '昔の図.html'].sort());
+  assert.strictEqual(l.find(x => x.name === f).title, '表紙'); assert.strictEqual(l.find(x => x.name === '昔の図.html').title, '昔の図');   // 取り込んだときの名前（拡張子なし）が、題の初期値
   assert.strictEqual(l.find(x => x.name === f).orig, '表紙.png');
   assert.ok(v.setFileInfo(f, { title: '本の表紙', desc: '図でわかる〜' }) && !v.setFileInfo('../x', { title: 'x' }));
   assert.strictEqual(openVault(dir).filesInfo().find(x => x.name === f).title, '本の表紙');   // 読み直しても残る
-  assert.strictEqual(openVault(dir).filesInfo().filter(x => !x.title).length, 1);            // タイトルなしだけ数えられる
+  assert.strictEqual(openVault(dir).filesInfo().filter(x => !x.title).length, 0);            // 題は、いつも入っている（日時の名前・image だけのものは空）
+  const [img] = v.addFiles([{ name: 'image.png', bytes: [9, 9, 9] }]); assert.strictEqual(v.filesInfo().find(x => x.name === img).title, '');
   fs.rmSync(dir, { recursive: true });
 });
 
@@ -588,6 +590,7 @@ test('ファイル: 同じ中身は取り込まない（既にある）・削除
   assert.deepStrictEqual(v.takeFileDups(), [{ orig: '別の名前.txt', existing: a }]);
   assert.deepStrictEqual(v.takeFileDups(), []);
   assert.strictEqual(v.filesInfo().length, 1);
+  assert.strictEqual(v.filesInfo()[0].title, 'メモ');                          // 取り込んだときの名前が、題になる
   const [c] = v.addFiles([{ name: 'x.txt', bytes: Buffer.from('違う中身') }]); assert.notStrictEqual(c, a);
   assert.strictEqual(v.filePreview(a).text, 'こんにちは\n2 行目');
   assert.strictEqual(v.filePreview('Index.md').kind, '');                    // ノートなどは、見せない・消せない

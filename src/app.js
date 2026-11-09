@@ -325,7 +325,13 @@ const topicRow = t => `<div class="item topicrow${listView === 'card' ? ' tc' : 
 let filesCache = [], fileFilter = 'all', filesBusy = false;
 const refreshFiles = async () => { if (filesBusy) return; filesBusy = true; try { const x = await api.filesInfo(); if (JSON.stringify(x) !== JSON.stringify(filesCache)) { filesCache = x; if (tab === 'f' && !$('#q').value) renderList(); } } finally { filesBusy = false; } };
 const fileIcon = e => /^\.(png|jpe?g|gif|webp|svg|bmp|avif)$/.test(e) ? '🖼' : /^\.html?$/.test(e) ? '🌐' : /^\.(csv|tsv|xlsx?)$/.test(e) ? '📊' : /^\.pdf$/.test(e) ? '📕' : '📄';
-const fileRow = (f, q = '') => `<div class="item note frow" data-file="${esc(f.name)}"><div class="nrow"><div class="nt">${fileIcon(f.ext)} ${f.title ? mk(f.title, q) : `<span class="sub">（タイトルなし）</span> ${mk(f.orig, q)}`}</div><div class="ns">${esc(f.name)}${f.title && f.orig !== f.name ? ' · ' + mk(f.orig, q) : ''}${f.desc ? ' · ' + mk(f.desc.slice(0, 40), q) : ''}</div></div></div>`;
+// ファイルが使われている、ノート・日記・チャットメモ（本文のリンク `](ファイル名` で探す）
+const fileUsage = name => {
+  const e = encRel(name), has = t => !!t && (t.includes('](' + e) || t.includes('](' + name));
+  return { notes: notes.filter(n => has(n.body)), diaries: diaries.filter(d => has(d.body)), memos: Chat.memosMatching(has) };
+};
+const fileUsedCount = name => { const u = fileUsage(name); return u.notes.length + u.diaries.length + u.memos.length; };
+const fileRow = (f, q = '') => `<div class="item note frow" data-file="${esc(f.name)}"><div class="nrow"><div class="nt">${fileIcon(f.ext)} ${f.title ? mk(f.title, q) : `<span class="sub">（タイトルなし）</span> ${mk(f.orig, q)}`}</div><div class="ns">${esc(f.name)}${f.title && f.orig !== f.name ? ' · ' + mk(f.orig, q) : ''}${f.desc ? ' · ' + mk(f.desc.slice(0, 40), q) : ''}${(() => { const n = fileUsedCount(f.name); return n ? ` · 🔗 ${n} 件で使用` : ' · 使われていません'; })()}</div></div></div>`;
 function fileDialog(name) {
   const f = filesCache.find(x => x.name === name); if (!f) return;
   const isImg = /^\.(png|jpe?g|gif|webp|svg|bmp|avif)$/.test(f.ext);
@@ -333,6 +339,7 @@ function fileDialog(name) {
     ${isImg ? `<img src="file://${esc(vault + '/' + name)}" style="max-width:100%;max-height:220px;display:block;margin:0 auto 8px;border-radius:6px">` : ''}
     <div class="sub">保存名 ${esc(name)} · ${Math.round(f.size / 1024)} KB · ${esc(f.added)}</div>
     <div id="fi-pv"></div>
+    <div id="fi-use"></div>
     <div class="sub">タイトル</div><input id="fi-t" value="${esc(f.title)}" placeholder="例: 図でわかる知識管理術の表紙">
     <div class="sub">説明（探すときに使います）</div><textarea id="fi-d" rows="3" style="width:100%;font:inherit">${esc(f.desc)}</textarea>
     <div class="row"><button id="fi-ok" class="p">💾 保存</button><button id="fi-open" title="パソコンの標準のアプリで開く">📂 開く</button><button id="fi-ins" title="いま開いているノートのカーソルに、リンクを書き込む">📌 貼る</button><span class="grow"></span><button id="fi-del" class="danger" title="ごみ箱（.trash）へ移す">🗑 削除</button><button id="fi-cancel">やめる</button></div>`;
@@ -345,8 +352,23 @@ function fileDialog(name) {
   $('#fi-cancel').onclick = close; $('#modal').onkeydown = e => { if (e.key === 'Escape') close(); };
   $('#fi-ok').onclick = async () => { await api.setFileInfo(name, { title: $('#fi-t').value, desc: $('#fi-d').value }); close(); filesCache = await api.filesInfo(); renderList(); };
   $('#fi-open').onclick = () => api.openPath(encRel(name));
+  {   // このファイルが使われているところ（押すとそこへ）
+    const u = fileUsage(name), total = u.notes.length + u.diaries.length + u.memos.length;
+    $('#fi-use').innerHTML = `<div class="sub">🔗 使われているところ${total ? `（${total} 件）` : ''}</div>` + (total ? `<div class="fi-uselist">`
+      + u.notes.map(n => `<div class="fi-u" data-un="${esc(n.s)}|${esc(n.id)}">📝 ${n.noid ? '' : esc(n.id) + ' '}${esc(titleOf(n) || '（無題）')}</div>`).join('')
+      + u.diaries.map(d => `<div class="fi-u" data-ud="${esc(d.date)}|${esc(d.kind || '日記')}">📔 ${esc(d.date)} ${esc(d.kind || '日記')}</div>`).join('')
+      + u.memos.map(m => `<div class="fi-u" data-um="${esc(m.id)}">💬 ${esc((m.text || '').split('\n')[0].replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1').slice(0, 40) || '（メモ）')} <small>${esc(L.dayOf(L.now(new Date(m.t))))}</small></div>`).join('')
+      + `</div>` : '<div class="sub" style="margin:2px 0 6px">どのノート・日記・メモからも、使われていません</div>');
+    $('#fi-use').onclick = e => {
+      const n = e.target.closest('[data-un]'), d = e.target.closest('[data-ud]'), m = e.target.closest('[data-um]');
+      if (n) { const [s, id] = n.dataset.un.split('|'); close(); openNote(s, id); }
+      else if (d) { const [date, kind] = d.dataset.ud.split('|'); close(); openDiary(date, false, kind); }
+      else if (m) { close(); Chat.gotoMemo(m.dataset.um); }
+    };
+  }
   $('#fi-del').onclick = async () => {
-    if (!confirm(`「${f.orig}」を削除しますか？\n（ごみ箱の .trash に移ります。ノートの中のこのファイルへのリンクは、見つからなくなります）`)) return;
+    const used = fileUsedCount(name);
+    if (!confirm(`「${f.orig}」を削除しますか？\n（ごみ箱の .trash に移ります。${used ? `⚠ ${used} 件のノート・日記・メモで使われていて、そのリンクは見つからなくなります` : 'どこからも使われていません'}）`)) return;
     const ok = await api.deleteFile(name); close(); filesCache = await api.filesInfo(); renderList();
     toast(ok ? `「${f.orig}」を削除しました（.trash に移しました）` : '削除できませんでした');
   };

@@ -80,6 +80,11 @@ function recoverDoc(vault, file, warnings) {
   warnings.push(`${rel} を読めませんでした。壊れたファイルは ${HIST}/${rel}/ に残してあります（上書きしません）。`); return null;
 }
 
+// 取り込んだファイルの、題の初期値: 取り込んだときの名前（拡張子なし）。日時の名前や image だけのものは、空
+function autoTitle(orig) {
+  const base = path.basename(String(orig || ''), path.extname(String(orig || ''))).trim();
+  return /^\d{14}(-\d+)?$/.test(base) || /^image\d*$/i.test(base) ? '' : base;
+}
 function uniqueName(dir, name) {
   let base = path.basename(name).replace(/[\\/:*?"<>|]/g, '_') || 'file';
   if (RESERVED.test(base)) base = 'F_' + base.replace(/^\.+/, '');
@@ -770,7 +775,7 @@ function openVault(vault) {
       const sys = /^(D_|P_|T_|C_|K_|R_|V_)|^(Index|デジタル|紙|日記|未整理|キーワード)\.md$|^\./;
       return fs.readdirSync(vault, { withFileTypes: true }).filter(d => d.isFile() && !sys.test(d.name) && !imgs.has(d.name) && !(/^\d{14}(-\d+)?\.md$/.test(d.name))).map(d => {
         const st = fs.statSync(abs(d.name)), m = meta[d.name] || {};
-        return { name: d.name, orig: m.orig || d.name, title: m.title || '', desc: m.desc || '', added: m.added || L.now(st.mtime), size: st.size, ext: path.extname(d.name).toLowerCase() };
+        return { name: d.name, orig: m.orig || d.name, title: m.title || autoTitle(m.orig || d.name), desc: m.desc || '', added: m.added || L.now(st.mtime), size: st.size, ext: path.extname(d.name).toLowerCase() };
       }).sort((a, b) => b.added.localeCompare(a.added));
     },
     setFileInfo(name, { title, desc }) {
