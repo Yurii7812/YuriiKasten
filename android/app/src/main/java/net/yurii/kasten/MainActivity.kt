@@ -674,20 +674,67 @@ fun CaptureScreen(store: Store, promptState: MutableState<Boolean>, sharedState:
                         }
                     }
                 }
-                // 表示と書き込み先を同時に切り替える。全部表示からは未所属で保存。
-                // 並べるのは 全部・未所属・日記・その他 だけ。その他を押すとトピックの一覧（探す・足す）
-                val other = topic !in listOf(ALL, UNASSIGNED, DIARY)
-                Row(Modifier.horizontalScroll(rememberScrollState()).padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(ALL, UNASSIGNED, DIARY).forEach { t ->
-                        FilterChip(selected = t == topic, onClick = { setTopic(t) }, shape = RoundedCornerShape(16.dp),
-                            label = { Text((when (t) { ALL -> "🗂 "; UNASSIGNED -> "📥 "; else -> "📔 " }) + topicLabel(t)) })
+                // 最近使ったトピックを横スクロール。全一覧ボタンだけ右に固定する。
+                Row(Modifier.fillMaxWidth().padding(bottom=4.dp),verticalAlignment=Alignment.CenterVertically,
+                    horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    LazyRow(Modifier.weight(1f),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                        items(recentTopics,key={it}) { t ->
+                            FilterChip(selected=t==topic,onClick={ if(!selecting) setTopic(t) },enabled=!selecting,
+                                label={Text(topicLabel(t),maxLines=1)},shape=RoundedCornerShape(16.dp))
+                        }
                     }
-                    FilterChip(selected = other, onClick = { topicListOpen = true }, shape = RoundedCornerShape(16.dp),
-                        label = { Text("🏷 " + if (other) topic else "その他", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp)) })
-                    val upsNow = settings.writeUps
-                    FilterChip(selected = upsNow.isNotEmpty(), onClick = { upsDialogIds = emptyList() }, shape = RoundedCornerShape(16.dp),
-                        label = { Text("↑ " + if (upsNow.isEmpty()) "上" else upsNow.joinToString("、"), maxLines = 1, overflow = TextOverflow.Ellipsis) })
+                    OutlinedButton(onClick={topicListOpen=true},enabled=!selecting,contentPadding=PaddingValues(horizontal=10.dp)) {
+                        Text("一覧表示",fontSize=12.sp)
+                    }
+                }
+                if (topic!=ALL && topic!=UNASSIGNED) {
+                    val upperChoices=(upperCandidates+upperFilter).distinct()
+                    val lowerChoices=(lowerCandidates+lowerFilter).distinct()
+                    Row(verticalAlignment=Alignment.CenterVertically) {
+                        Text("上位で絞り込む",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier=Modifier.width(100.dp))
+                        LazyRow(Modifier.weight(1f),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                            items(upperChoices,key={it}) { name ->
+                                FilterChip(selected=name in upperFilter,enabled=!selecting,onClick={
+                                    if(name in upperFilter) upperFilter.remove(name) else upperFilter.add(name)
+                                    val values=upperFilter.toList()
+                                    settings=settings.copy(writeUps=values,writeUpsByTopic=settings.writeUpsByTopic+(topic to values))
+                                    store.saveSettings(settings)
+                                },label={Text(name,maxLines=1)})
+                            }
+                        }
+                        IconButton(onClick={filterPicker="upper"},enabled=!selecting,modifier=Modifier.size(38.dp)) {
+                            Icon(Icons.Filled.Add,"上位トピックを選んで追加")
+                        }
+                    }
+                    Row(verticalAlignment=Alignment.CenterVertically) {
+                        Text("下位で絞り込む",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier=Modifier.width(100.dp))
+                        LazyRow(Modifier.weight(1f),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                            items(lowerChoices,key={it}) { name ->
+                                FilterChip(selected=name in lowerFilter,enabled=!selecting,onClick={
+                                    if(name in lowerFilter) lowerFilter.remove(name) else lowerFilter.add(name)
+                                },label={Text(name,maxLines=1)})
+                            }
+                        }
+                        IconButton(onClick={filterPicker="lower"},enabled=!selecting,modifier=Modifier.size(38.dp)) {
+                            Icon(Icons.Filled.Add,"下位トピックを選んで追加")
+                        }
+                    }
+                    val targetNames=(upperFilter+lowerFilter).distinct()
+                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,
+                        horizontalArrangement=Arrangement.End) {
+                        if(targetNames.isNotEmpty()) TextButton(onClick={
+                            upperFilter.clear();lowerFilter.clear()
+                        },enabled=!selecting) { Text("絞り込み解除") }
+                        OutlinedButton(
+                            onClick={if(targetNames.size==1) setTopic(targetNames[0]) else jumpPickerOpen=true},
+                            enabled=targetNames.isNotEmpty() && !selecting,
+                            contentPadding=PaddingValues(horizontal=12.dp,vertical=2.dp)
+                        ) { Icon(Icons.Filled.ArrowForward,null,Modifier.size(16.dp)); Text("選択先へ移動",fontSize=12.sp) }
+                    }
+                    if(lowerFilter.size>1) Text("下位トピックを複数選択中。書き込み先を1つに絞ると送信できます。",
+                        fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (pendingImages.isNotEmpty()) {
                     LazyRow(Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
