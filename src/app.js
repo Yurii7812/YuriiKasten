@@ -1505,22 +1505,18 @@ function openTopic(name, tmode = 'view', keep) {
       ${stars.map(x => `<div class="star">★ ${tchip(x)}</div>`).join('')}${chats.map(x => `<div class="star">💬 <span class="chip t" data-cchat="${esc(x)}">${esc(x)}</span></div>`).join('')}${refs.map(x => `<div class="star">★ ${esc(x.label)} ${chip(x.s, x.id)}</div>`).join('')}`;
   // 逆方向（上に出す）: この索引の親を載せている Index・このIndexを + で案内している Index（引用できるのは Index だけ）
   const back = topics.filter(o => o !== t && (L.mergeTopic(o).stars.includes(t.name) || (e && L.mergeTopic(o).rows.some(r => r[e.s].some(x => L.splitAnchor(x).id === e.id))))).sort((x, y) => x.name.localeCompare(y.name, 'ja'));
-  // 右パネル: 🌳 親（この索引の親になるノート）／⬆️ 上位の索引（この索引を載せている索引）／⬇️ 下位の索引（この索引の中に親ノートがある索引）
-  const entryNote = e && get(e.s, e.id);
-  const down = topics.filter(o => o !== t && o.entry && (stars.includes(o.name) || rows.some(r => r[o.entry.s].some(x => L.splitAnchor(x).id === o.entry.id)))).sort((x, y) => x.name.localeCompare(y.name, 'ja'));
-  const tl = o => `<div class="mt topic-index-entry"><a class="tl" data-topic="${esc(o.name)}">${esc(topicLabel(o))}</a></div>`;
-  const side = `<div class="sec">${metaLabel('🌳', '親')}${e ? `<div class="mt ch" data-s="${e.s}" data-id="${esc(e.id)}"><a class="tl" style="margin-left:0">${entryNote ? esc(titleOf(entryNote) || '（無題）') : '（まだ取り込んでいません）'} <small>${e.s === 'p' ? '紙 ' : ''}${esc(e.id)}</small></a></div>` : '<div class="msub">なし</div>'}</div>`
-    + `<div class="sec">${metaLabel('⬆️', '上位の索引', back.length || '')}${back.length ? back.map(tl).join('') : '<div class="msub">なし</div>'}</div>`
-    + `<div class="sec">${metaLabel('⬇️', '下位の索引', down.length || '')}${down.length ? down.map(tl).join('') : '<div class="msub">なし</div>'}</div>`;
-  $('#pane').innerHTML = `<div class="stage"><div class="col wide">
+  // 索引の画面は、右パネルなし。全部、上に: 題 → 🌳 親・⬆️ 索引されているトピック → 索引の中身
+  $('#pane').innerHTML = `
     <div class="row thead">
       <span class="ti-ic">📑</span><h2>${esc(stripId(name))}</h2>
-      <span class="sub">🌳 親</span>${e ? chip(e.s, e.id) : '<span class="sub">なし</span>'}
       <span class="grow"></span>
       ${tmode === 'conf' ? '' : `<button class="tbtn" data-act="tconf" title="名前・親・点のキーワードを変える">⚙️ 名前・親</button>
       <button class="tbtn ${tmode === 'edit' ? 'p' : ''}" data-act="tedit">${tmode === 'edit' ? '✅ 完了' : '✏️ 編集'}</button>`}
-    </div>${body}</div><aside class="mgn" id="margin">${side}</aside></div>`;
-  applyMgn();
+    </div>
+    <div class="row tmeta">
+      <span class="tm"><span class="sub">🌳 親</span>${e ? chip(e.s, e.id) : '<span class="sub">なし</span>'}</span>
+      <span class="tm"><span class="sub">⬆️ 索引されているトピック</span>${back.length ? back.map(o => tchip(o.name)).join('') : '<span class="sub">なし</span>'}</span>
+    </div>${body}`;
   if (tmode === 'edit') { // 1 つの欄。紙は ID(p)、デジタルは ID（親が紙の索引 なら、紙が ID、デジタルが ID(d)）
     const def = L.defOf(t), v = editor($('#ed-t'), L.topicText(t), 'topic', def, x => { t.text = x; saveTopic(t); }, `PKM 1a 3(p)`);
     v.focus();
