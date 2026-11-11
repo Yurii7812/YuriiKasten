@@ -688,8 +688,8 @@ body{-webkit-user-select:none;user-select:none}
 <main>
   <nav id="rail"><button data-mode="notes" title="ノート">📝</button><button data-mode="diary" title="日記">📔</button><button data-mode="chat" title="チャットメモ">💬</button><button data-mode="pindex" title="紙のIndex（並べ替え）">🗂</button><button data-mode="graph" title="グラフ">🕸</button><button data-mode="mandala" title="曼荼羅">❖</button><button data-mode="cards" title="カード（Google Keep 風・画面いっぱい）">🗒️</button><button id="settings-btn" title="設定">⚙️</button></nav>
   <aside>
-    <div id="tabs"><button data-tab="d" title="デジタル"><span class="te">💻</span></button><button data-tab="p" title="紙"><span class="te">📜</span></button><button data-tab="u" title="未整理（IDなし）"><span class="te">📥</span></button><button data-tab="f" title="ファイル（画像・html・csv など）"><span class="te">📎</span></button><button data-tab="i" title="Index（キーワード）"><span class="te">🔖</span></button></div>
-    <div id="selbar"></div>
+    <div id="tabs"><button data-tab="a" title="すべてのノート">すべて</button><button data-tab="d" title="デジタル"><span class="te">💻</span></button><button data-tab="p" title="紙"><span class="te">📜</span></button><button data-tab="u" title="未整理（IDなし）"><span class="te">📥</span></button><button data-tab="f" title="ファイル（画像・html・csv など）"><span class="te">📎</span></button><button data-tab="i" title="Index（キーワード）"><span class="te">🔖</span></button></div>
+    <div id="scopebar" style="padding:5px 12px;border-bottom:1px solid var(--line);font-size:12px"><label for="scope-filter">表示・検索: </label><select id="scope-filter" aria-label="表示・検索対象"><option value="all">すべて</option><option value="p">紙のみ</option><option value="d">デジタルのみ</option></select></div><div id="selbar"></div>
     <div id="list"></div>
   </aside>
   <section id="right">

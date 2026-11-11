@@ -28,6 +28,8 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 const SP = { d: 'デジタル', p: '紙' };
 
 let notes = [], topics = [], readings = {}, tab = 'd', cur = null, vault = '';
+let scopeFilter = 'all';
+const inScope = s => scopeFilter === 'all' || s === scopeFilter;
 // 開いているタブ（Obsidian 風）。cur は今のタブ
 let tabs = [], active = -1, newTab = false, bgOpen = false;
 let mode = 'notes', diaries = [], records = [{ name: '日記', parent: '' }], lastNote = null, curKind = (() => { try { return localStorage.getItem('pkm-kind') || '日記'; } catch { return '日記'; } })(); // 左の列で選んでいる種類（ノート・日記…）
@@ -47,7 +49,7 @@ let sortBy = prefs.by || 'fz', sortDir = prefs.dir || 'asc', listView = prefs.vi
 let diarySortDir = prefs.diaryDir || prefs.dir || 'asc';   // 日記の並び（ノートの並びとは別。日記は日付順なので、向きだけ）
 const savePrefs = () => { try { localStorage.setItem('pkm-list-prefs', JSON.stringify({ by: sortBy, dir: sortDir, view: listView, diaryDir: diarySortDir })); } catch { } };
 let ixEdit = false;   // グローバルIndexの編集モード（赤い点を付けるIDを選ぶ）
-const pickChips = (k, v, t) => { const dd = t && dotOf(t, k); return [['d', v.d], ['p', v.p]].map(([s, l]) => l.map(id => { const on = dd && dd.s === s && dd.id === id; return `<span class="chip ${s} pick${on ? ' on' : ''}" data-pk="${esc(k)}" data-ps="${s}" data-pid="${esc(id)}" title="${on ? '点を外す' : 'ここに赤い点を付ける'}">${on ? '<i class="dotabove">●</i>' : ''}${s === 'p' ? '紙' : ''}${esc(id)}</span>`; }).join('')).join(''); };
+const pickChips = (k, v, t) => { const dd = t && dotOf(t, k); return [['d', v.d], ['p', v.p]].filter(([s])=>inScope(s)).map(([s, l]) => l.map(id => { const on = dd && dd.s === s && dd.id === id; return `<span class="chip ${s} pick${on ? ' on' : ''}" data-pk="${esc(k)}" data-ps="${s}" data-pid="${esc(id)}" title="${on ? '点を外す' : 'ここに赤い点を付ける'}">${on ? '<i class="dotabove">●</i>' : ''}${s === 'p' ? '紙' : ''}${esc(id)}</span>`; }).join('')).join(''); };
 // 「キーワード ID ID(p) …」の 1 行。親の側と違う ID には、(p) か (d) を付ける
 const idsText = (k, v, def) => { const toks = [...v.d.map(x => def === 'd' ? x : x + '(d)'), ...v.p.map(x => def === 'p' ? x : x + '(p)')]; return toks.length ? k + ' ' + toks.join(' ') : ''; };
 // 赤い点を k の ID（s, id）に付ける。そのIDに索引があればそれを、無ければ新しく作る
@@ -324,7 +326,7 @@ function editor(parent, doc, mode, space, onChange, ph, read) {
   const binding = { read, syncing: false };
   const view = lastView = new EditorView({
     parent, state: EditorState.create({
-      doc, extensions: [history(), ...(mode === 'note' ? ReferencePicker.extension(space) : []), keymap.of([...defaultKeymap, ...historyKeymap]), EditorView.lineWrapping, ...(mode === 'note' ? [urlPasteTitle] : []),
+      doc, extensions: [history(), ...(['note','topic'].includes(mode) ? ReferencePicker.extension(space,mode) : []), keymap.of([...defaultKeymap, ...historyKeymap]), EditorView.lineWrapping, ...(mode === 'note' ? [urlPasteTitle] : []),
         placeholder(ph), ...(mode === 'note' ? [...mdExtensions, searchExt] : []), links(mode, space), ...(mode === 'note' ? [images(space), LC.decorations(cur?.k === 'note' ? 'note:' + get(cur.s, cur.id)?.stem : cur?.k === 'diary' ? 'day:' + cur.kind + ':' + cur.date : 'embedded', space)] : []), EditorView.updateListener.of(u => { if (u.docChanged && !binding.syncing) onChange(u.state.doc.toString()); })]
     })
   });
@@ -380,8 +382,8 @@ const chip = (s, raw, topic) => { const { id, n } = L.splitAnchor(raw); return `
 // t があれば、その親のIDだけ点を付ける
 const dotOf = (t, kw) => { const r = t && L.mergeTopic(t).rows.find(x => x.kw === (kw !== undefined ? kw : t.keyword) && x.dot); return r ? r.dot : t && t.entry; }; // * の印があればそのID、なければ親
 // 索引 の中の行: ID の前の * の印のIDの上に赤い点（そのIDが親の索引があれば、押すとそこへ）
-const rowChips = r => [['d', r.d], ['p', r.p]].map(([s, l]) => l.map(x => chip(s, x, r.dot && r.dot.s === s && r.dot.id === L.splitAnchor(x).id ? (topicOf(s, x) || { name: '' }) : null)).join('')).join('');
-const chips = (v, t, kw) => { const dd = t && dotOf(t, kw); return [['d', v.d], ['p', v.p]].map(([s, l]) => l.map(x => chip(s, x, dd && dd.s === s && dd.id === L.splitAnchor(x).id ? t : null)).join('')).join(''); };
+const rowChips = r => [['d', r.d], ['p', r.p]].filter(([s])=>inScope(s)).map(([s, l]) => l.map(x => chip(s, x, r.dot && r.dot.s === s && r.dot.id === L.splitAnchor(x).id ? (topicOf(s, x) || { name: '' }) : null)).join('')).join('');
+const chips = (v, t, kw) => { const dd = t && dotOf(t, kw); return [['d', v.d], ['p', v.p]].filter(([s])=>inScope(s)).map(([s, l]) => l.map(x => chip(s, x, dd && dd.s === s && dd.id === L.splitAnchor(x).id ? t : null)).join('')).join(''); };
 const stripId = name => name.replace(/^[0-9][0-9a-z]*-/, '') || name;
 const topicLabel = t => stripId(t.name);
 const tchip = name => `<span class="chip t" data-topic="${esc(name)}">${esc(stripId(name))}</span>`;
@@ -505,21 +507,21 @@ function renderList() {
     // 1. Index  2. 索引  3. ノート
     const rank = k => (k.toLowerCase() === q ? 0 : k.toLowerCase().startsWith(q) ? 1 : 2);
     const hq = L.toHira(q), rk = k => Math.min(rank(k), readings[k] ? rank(readings[k]) : 9);
-    const gi = globalIndex().filter(([k]) => k.toLowerCase().includes(q) || (readings[k] || '').includes(hq)).sort((a, b) => rk(a[0]) - rk(b[0]));
+    const gi = globalIndex().map(([k,v])=>[k,{d:inScope('d')?v.d:[],p:inScope('p')?v.p:[]}]).filter(([,v])=>v.d.length||v.p.length).filter(([k]) => k.toLowerCase().includes(q) || (readings[k] || '').includes(hq)).sort((a, b) => rk(a[0]) - rk(b[0]));
     if (gi.length) out.push('<h4>Index</h4>', ...gi.map(ixRow));
     const ti = [];
-    for (const t of topics) {
+    for (const t of topics.filter(t=>!t.entry||inScope(t.entry.s))) {
       if (t.name.toLowerCase().includes(q)) ti.push([-1, `<div class="ix">${tchip(t.name)}</div>`]);
-      for (const r of L.mergeTopic(t).rows) if (r.kw.toLowerCase().includes(q)) ti.push([rank(r.kw), `<div class="ix"><b>${esc(r.kw)}</b> ${chips(r)} <small>← ${tchip(t.name)}</small></div>`]);
+      for (const r of L.mergeTopic(t).rows.filter(r=>(inScope('d')&&r.d.length)||(inScope('p')&&r.p.length))) if (r.kw.toLowerCase().includes(q)) ti.push([rank(r.kw), `<div class="ix"><b>${esc(r.kw)}</b> ${chips(r)} <small>← ${tchip(t.name)}</small></div>`]);
     }
     if (ti.length) out.push('<h4>索引</h4>', ...ti.sort((a, b) => a[0] - b[0]).map(x => x[1]));
-    const hit = sortNotes(notes.filter(n => [n.id, n.title || '', n.body, n.keywords.join(' '), n.keywords.map(k => readings[k] || '').join(' ')].join('\n').toLowerCase().includes(q)), 'd');   // 並べ替え（番号・作成・更新 × 昇降）は、ノートの部分だけ
+    const hit = sortNotes(notes.filter(n => inScope(n.s)).filter(n => [n.id, n.title || '', n.body, n.keywords.join(' '), n.keywords.map(k => readings[k] || '').join(' ')].join('\n').toLowerCase().includes(q)), 'd');   // 並べ替え（番号・作成・更新 × 昇降）は、ノートの部分だけ
     if (hit.length) out.push('<h4>ノート</h4>', sortBar(false), ...hit.map(n => noteRow(n, true, q)));
-    const fh = filesCache.filter(f => [f.title, f.desc, f.orig, f.name].join('\n').toLowerCase().includes(q));
+    const fh = (scopeFilter === 'all' ? filesCache : []).filter(f => [f.title, f.desc, f.orig, f.name].join('\n').toLowerCase().includes(q));
     if (fh.length) out.push('<h4>ファイル</h4>', ...fh.map(f => fileRow(f, q)));
-    const dh = diaries.filter(d => [d.date, d.title, d.body].join('\n').toLowerCase().includes(q)).sort((a, b) => b.date.localeCompare(a.date));
+    const dh = (scopeFilter === 'all' ? diaries : []).filter(d => [d.date, d.title, d.body].join('\n').toLowerCase().includes(q)).sort((a, b) => b.date.localeCompare(a.date));
     if (dh.length) out.push('<h4>日記</h4>', ...dh.map(d => `<div class="item note" data-diary="${d.date}" data-kind="${esc(d.kind || '日記')}"><div class="nrow"><div class="nt">${mk(d.title || d.date, q)}</div><div class="ns">${esc(d.kind || '日記')} · ${d.date}</div>${snippet(d.body, q) ? `<div class="sn">${snippet(d.body, q)}</div>` : ''}</div></div>`));
-    const ch = Chat.searchMemos(q);   // チャットメモも
+    const ch = scopeFilter === 'all' ? Chat.searchMemos(q) : [];   // チャットメモも
     if (ch.length) out.push('<h4>チャットメモ</h4>', ...ch.slice(0, 80).map(m => `<div class="item note" data-cmemo="${esc(m.id)}"><div class="nrow"><div class="nt">${mk((m.text || '').split('\n')[0].slice(0, 80), q)}</div><div class="ns">${esc(Chat.label(m.topic))} · ${new Date(m.t).toLocaleString()}</div></div></div>`));
     if (!out.length) out.push('<div class="none">見つかりません</div>');
   } else if (tab === 'f') {
@@ -531,14 +533,16 @@ function renderList() {
   } else if (tab === 'i') {
     out.push(`<div class="ixbar"><span class="sub">🔴 赤い点は、ID を右クリックで付け外し</span></div>`);
     let row = null;
-    for (const e of globalIndex()) {
+    for (const [k,v] of globalIndex()) {
+      const e = [k,{d:inScope('d')?v.d:[],p:inScope('p')?v.p:[]}];
+      if (!e[1].d.length && !e[1].p.length) continue;
       const r = L.kanaRow(readings[e[0]] || e[0]);
       if (r !== row) { out.push(`<h4>${r}</h4>`); row = r; }
       out.push(ixRow(e));
     }
     if (out.length === 1) out.push('<div class="none">ノートにキーワードを書くと、ここに並びます</div>');
   } else {
-    const list = sortNotes((tab === 'u' ? notes.filter(n => n.noid) : notes.filter(n => n.s === tab && !n.noid)).filter(n=>!Chat.isImportedRoleplay(n)), tab);
+    const list = sortNotes((tab === 'u' ? notes.filter(n => n.noid && inScope(n.s)) : tab === 'a' ? notes.filter(n => !n.noid && inScope(n.s)) : notes.filter(n => n.s === tab && inScope(n.s) && !n.noid)).filter(n=>!Chat.isImportedRoleplay(n)), tab);
     out.push(sortBar(false));
     const byFz = sortBy === 'fz' && tab !== 'u';
     if (byFz && (tab === 'd' || tab === 'p')) for (const t of topics.filter(x => (!x.entry || !get(x.entry.s, x.entry.id)) && (x.entry ? x.entry.s : 'd') === tab).sort((a, b) => a.name.localeCompare(b.name, 'ja'))) out.push(topicRow(t)); // 親のノートがまだないもの（取り込み前の紙の番号など）は、その側の先頭
@@ -602,6 +606,7 @@ $('#list').addEventListener('change', e => { if (e.target.id === 'sb-by') { sort
 $('#cardtoggle').onclick = () => { listView = listView === 'card' ? 'list' : 'card'; savePrefs(); $('#cardtoggle').classList.toggle('on', listView === 'card'); if (mode === 'notes') renderList(); };
 $('#cardtoggle').classList.toggle('on', listView === 'card');
 $('#tabs').onclick = e => { const b = e.target.closest('button'); if (b) { tab = b.dataset.tab; $('#q').value = ''; renderList(); } };
+$('#scope-filter').onchange = e => { scopeFilter = e.target.value; if (scopeFilter !== 'all' && tab !== scopeFilter && tab !== 'i') tab = scopeFilter; if (cur?.k === 'topic') openTopic(cur.name,'view',true); else renderList(); };
 $('#q').oninput = renderList;
 $('#q').onkeydown = e => { if (e.key === 'Escape') { $('#q').value = ''; $('#q').blur(); renderList(); if (lastView && cur && cur.k === 'note') lastView.focus(); searchMark(); } };
 document.addEventListener('keydown', e => {
@@ -1637,9 +1642,11 @@ function openTopic(name, tmode = 'view', keep) {
   cur = place({ k: 'topic', name, mode: tmode }, keep); cur.mode = tmode; mode = 'notes';
   if (!inPreview) decided = { k: 'topic', name };
   if (!inPreview && !$('#q').value && t.entry) tab = t.entry.s === 'p' ? 'p' : 'd';   // 一覧を、その索引 のあるタブに
-  const { rows, stars, refs, chats } = L.mergeTopic(t), e = t.entry;
+  const mergedTopic = L.mergeTopic(t);
+  const rows = mergedTopic.rows.map(r => ({ ...r, d: inScope('d') ? r.d : [], p: inScope('p') ? r.p : [] })).filter(r => r.d.length || r.p.length);
+  const stars = mergedTopic.stars, refs = mergedTopic.refs.filter(r=>!r.s||inScope(r.s)), chats = scopeFilter === 'all' ? mergedTopic.chats : [], e = t.entry;
   let body;
-  if (tmode === 'edit') body = `<div class="tedit-hint">✏️ 1 行に「キーワード ID ID …」 ・ 紙は 1a(p) ・ ID の前の * は赤い点 ・ +名前 は別の索引へ ・ @名前 はチャットメモのトピックへ</div>
+  if (tmode === 'edit') body = `<div class="tedit-hint">1 行に「キーワード ID ID …」。参照行にカーソルを置き、種類を選択できます。紙は 1a(p)、ID の前の * は赤い点。</div><div class="tc-row"><label for="topic-mark">参照の種類</label><select id="topic-mark"><option value="">通常（印なし）</option><option value="^">↑ 上位概念（^）</option><option value="+">★ トピックインデックス</option><option value="=">● まとめ・進捗（=）</option></select><button type="button" id="topic-mark-apply">カーソル行に適用</button></div>
       <div class="ed" id="ed-t"></div>`;
   else if (tmode === 'conf') body = `<div class="tconf">
       <div class="tc-row"><span class="tc-l">📝 名前</span><input id="t-name" value="${esc(t.name)}"></div>
@@ -1648,7 +1655,7 @@ function openTopic(name, tmode = 'view', keep) {
       <div class="tc-bar"><button class="tbtn p" data-act="tsave">✅ 決定</button><button class="tbtn" data-act="tcancel">やめる</button>
         <span class="grow"></span><button class="tbtn danger" data-act="tdel">🗑 この索引を削除</button></div></div>`;
   else body = `<table class="ti">${rows.map(r => `<tr data-kw="${esc(r.kw)}"><td>${esc(r.kw)}</td><td>${rowChips(r)}</td></tr>`).join('') || '<tr><td class="none">まだ空です。「編集」で書きます</td></tr>'}
-      ${stars.map(x => `<tr><td>🗂️ ${esc(stripId(x))}</td><td>${tchip(x)}</td></tr>`).join('')}${chats.map(x => `<tr><td>💬 ${esc(x)}</td><td><span class="chip t" data-cchat="${esc(x)}">${esc(x)}</span></td></tr>`).join('')}${refs.map(x => `<tr><td>⭐ ${esc(x.label)}</td><td>${chip(x.s, x.id)}</td></tr>`).join('')}</table>`;
+      ${stars.map(x => `<tr><td>🗂️ ${esc(stripId(x))}</td><td>${tchip(x)}</td></tr>`).join('')}${chats.map(x => `<tr><td>💬 ${esc(x)}</td><td><span class="chip t" data-cchat="${esc(x)}">${esc(x)}</span></td></tr>`).join('')}${refs.map(x => `<tr><td>${esc(x.mark || "★")} ${esc(x.label)}</td><td>${chip(x.s, x.id)}</td></tr>`).join('')}</table>`;
   // 逆方向（上に出す）: この索引の親を載せている Index・このIndexを + で案内している Index（引用できるのは Index だけ）
   const back = topics.filter(o => o !== t && (L.mergeTopic(o).stars.includes(t.name) || (e && L.mergeTopic(o).rows.some(r => r[e.s].some(x => L.splitAnchor(x).id === e.id))))).sort((x, y) => x.name.localeCompare(y.name, 'ja'));
   // 索引の画面は、右パネルなし。全部、上に: 題 → 🌳 親・⬆️ 索引されているトピック → 索引の中身
@@ -1665,6 +1672,27 @@ function openTopic(name, tmode = 'view', keep) {
     </div>${body}`;
   if (tmode === 'edit') { // 1 つの欄。紙は ID(p)、デジタルは ID（親が紙の索引 なら、紙が ID、デジタルが ID(d)）
     const def = L.defOf(t), v = editor($('#ed-t'), L.topicText(t), 'topic', def, x => { t.text = x; saveTopic(t); }, `PKM 1a 3(p)`, () => L.topicText(t));
+    const markSelect = $('#topic-mark'), markApply = $('#topic-mark-apply');
+    const selectedLine = () => v.state.doc.lineAt(v.state.selection.main.head);
+    const readMark = () => {
+      const line = selectedLine().text;
+      const prefix = line.match(/^\\s*([★☆+＋↑●^=])/);
+      markSelect.value = prefix ? (/[★☆+＋]/.test(prefix[1]) ? '+' : /[↑^]/.test(prefix[1]) ? '^' : /[●=]/.test(prefix[1]) ? '=' : '') : '';
+    };
+    v.dom.addEventListener('keyup', readMark);
+    v.dom.addEventListener('mouseup', readMark);
+    markApply.addEventListener('click', () => {
+      const line = selectedLine();
+      const oldPrefix = line.text.match(/^(\\s*)[★☆+＋↑●^=]\\s*/);
+      const indent = (line.text.match(/^\\s*/) || [''])[0];
+      const rest = oldPrefix ? line.text.slice(oldPrefix[0].length) : line.text.slice(indent.length);
+      if (!rest.trim()) return;
+      const marker = markSelect.value;
+      const next = indent + (marker ? marker + ' ' : '') + rest;
+      v.dispatch({ changes: { from: line.from, to: line.to, insert: next } });
+      v.focus();
+    });
+    readMark();
     v.focus();
   }
   if (tmode === 'conf') $('#t-id').focus();
