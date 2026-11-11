@@ -49,7 +49,7 @@ let sortBy = prefs.by || 'fz', sortDir = prefs.dir || 'asc', listView = prefs.vi
 let diarySortDir = prefs.diaryDir || prefs.dir || 'asc';   // 日記の並び（ノートの並びとは別。日記は日付順なので、向きだけ）
 const savePrefs = () => { try { localStorage.setItem('pkm-list-prefs', JSON.stringify({ by: sortBy, dir: sortDir, view: listView, diaryDir: diarySortDir })); } catch { } };
 let ixEdit = false;   // グローバルIndexの編集モード（赤い点を付けるIDを選ぶ）
-const pickChips = (k, v, t) => { const dd = t && dotOf(t, k); return [['d', v.d], ['p', v.p]].map(([s, l]) => l.map(id => { const on = dd && dd.s === s && dd.id === id; return `<span class="chip ${s} pick${on ? ' on' : ''}" data-pk="${esc(k)}" data-ps="${s}" data-pid="${esc(id)}" title="${on ? '点を外す' : 'ここに赤い点を付ける'}">${on ? '<i class="dotabove">●</i>' : ''}${s === 'p' ? '紙' : ''}${esc(id)}</span>`; }).join('')).join(''); };
+const pickChips = (k, v, t) => { const dd = t && dotOf(t, k); return [['d', v.d], ['p', v.p]].filter(([s])=>inScope(s)).map(([s, l]) => l.map(id => { const on = dd && dd.s === s && dd.id === id; return `<span class="chip ${s} pick${on ? ' on' : ''}" data-pk="${esc(k)}" data-ps="${s}" data-pid="${esc(id)}" title="${on ? '点を外す' : 'ここに赤い点を付ける'}">${on ? '<i class="dotabove">●</i>' : ''}${s === 'p' ? '紙' : ''}${esc(id)}</span>`; }).join('')).join(''); };
 // 「キーワード ID ID(p) …」の 1 行。親の側と違う ID には、(p) か (d) を付ける
 const idsText = (k, v, def) => { const toks = [...v.d.map(x => def === 'd' ? x : x + '(d)'), ...v.p.map(x => def === 'p' ? x : x + '(p)')]; return toks.length ? k + ' ' + toks.join(' ') : ''; };
 // 赤い点を k の ID（s, id）に付ける。そのIDに索引があればそれを、無ければ新しく作る
@@ -382,8 +382,8 @@ const chip = (s, raw, topic) => { const { id, n } = L.splitAnchor(raw); return `
 // t があれば、その親のIDだけ点を付ける
 const dotOf = (t, kw) => { const r = t && L.mergeTopic(t).rows.find(x => x.kw === (kw !== undefined ? kw : t.keyword) && x.dot); return r ? r.dot : t && t.entry; }; // * の印があればそのID、なければ親
 // 索引 の中の行: ID の前の * の印のIDの上に赤い点（そのIDが親の索引があれば、押すとそこへ）
-const rowChips = r => [['d', r.d], ['p', r.p]].map(([s, l]) => l.map(x => chip(s, x, r.dot && r.dot.s === s && r.dot.id === L.splitAnchor(x).id ? (topicOf(s, x) || { name: '' }) : null)).join('')).join('');
-const chips = (v, t, kw) => { const dd = t && dotOf(t, kw); return [['d', v.d], ['p', v.p]].map(([s, l]) => l.map(x => chip(s, x, dd && dd.s === s && dd.id === L.splitAnchor(x).id ? t : null)).join('')).join(''); };
+const rowChips = r => [['d', r.d], ['p', r.p]].filter(([s])=>inScope(s)).map(([s, l]) => l.map(x => chip(s, x, r.dot && r.dot.s === s && r.dot.id === L.splitAnchor(x).id ? (topicOf(s, x) || { name: '' }) : null)).join('')).join('');
+const chips = (v, t, kw) => { const dd = t && dotOf(t, kw); return [['d', v.d], ['p', v.p]].filter(([s])=>inScope(s)).map(([s, l]) => l.map(x => chip(s, x, dd && dd.s === s && dd.id === L.splitAnchor(x).id ? t : null)).join('')).join(''); };
 const stripId = name => name.replace(/^[0-9][0-9a-z]*-/, '') || name;
 const topicLabel = t => stripId(t.name);
 const tchip = name => `<span class="chip t" data-topic="${esc(name)}">${esc(stripId(name))}</span>`;
@@ -512,7 +512,7 @@ function renderList() {
     const ti = [];
     for (const t of topics.filter(t=>!t.entry||inScope(t.entry.s))) {
       if (t.name.toLowerCase().includes(q)) ti.push([-1, `<div class="ix">${tchip(t.name)}</div>`]);
-      for (const r of L.mergeTopic(t).rows) if (r.kw.toLowerCase().includes(q)) ti.push([rank(r.kw), `<div class="ix"><b>${esc(r.kw)}</b> ${chips(r)} <small>← ${tchip(t.name)}</small></div>`]);
+      for (const r of L.mergeTopic(t).rows.filter(r=>(inScope('d')&&r.d.length)||(inScope('p')&&r.p.length))) if (r.kw.toLowerCase().includes(q)) ti.push([rank(r.kw), `<div class="ix"><b>${esc(r.kw)}</b> ${chips(r)} <small>← ${tchip(t.name)}</small></div>`]);
     }
     if (ti.length) out.push('<h4>索引</h4>', ...ti.sort((a, b) => a[0] - b[0]).map(x => x[1]));
     const hit = sortNotes(notes.filter(n => inScope(n.s)).filter(n => [n.id, n.title || '', n.body, n.keywords.join(' '), n.keywords.map(k => readings[k] || '').join(' ')].join('\n').toLowerCase().includes(q)), 'd');   // 並べ替え（番号・作成・更新 × 昇降）は、ノートの部分だけ
@@ -606,7 +606,7 @@ $('#list').addEventListener('change', e => { if (e.target.id === 'sb-by') { sort
 $('#cardtoggle').onclick = () => { listView = listView === 'card' ? 'list' : 'card'; savePrefs(); $('#cardtoggle').classList.toggle('on', listView === 'card'); if (mode === 'notes') renderList(); };
 $('#cardtoggle').classList.toggle('on', listView === 'card');
 $('#tabs').onclick = e => { const b = e.target.closest('button'); if (b) { tab = b.dataset.tab; $('#q').value = ''; renderList(); } };
-$('#scope-filter').onchange = e => { scopeFilter = e.target.value; if (scopeFilter !== 'all' && tab !== scopeFilter && tab !== 'i') tab = scopeFilter; renderList(); };
+$('#scope-filter').onchange = e => { scopeFilter = e.target.value; if (scopeFilter !== 'all' && tab !== scopeFilter && tab !== 'i') tab = scopeFilter; if (cur?.k === 'topic') openTopic(cur.name,'view',true); else renderList(); };
 $('#q').oninput = renderList;
 $('#q').onkeydown = e => { if (e.key === 'Escape') { $('#q').value = ''; $('#q').blur(); renderList(); if (lastView && cur && cur.k === 'note') lastView.focus(); searchMark(); } };
 document.addEventListener('keydown', e => {
@@ -1642,7 +1642,9 @@ function openTopic(name, tmode = 'view', keep) {
   cur = place({ k: 'topic', name, mode: tmode }, keep); cur.mode = tmode; mode = 'notes';
   if (!inPreview) decided = { k: 'topic', name };
   if (!inPreview && !$('#q').value && t.entry) tab = t.entry.s === 'p' ? 'p' : 'd';   // 一覧を、その索引 のあるタブに
-  const { rows, stars, refs, chats } = L.mergeTopic(t), e = t.entry;
+  const mergedTopic = L.mergeTopic(t);
+  const rows = mergedTopic.rows.map(r => ({ ...r, d: inScope('d') ? r.d : [], p: inScope('p') ? r.p : [] })).filter(r => r.d.length || r.p.length);
+  const stars = mergedTopic.stars, refs = mergedTopic.refs.filter(r=>!r.s||inScope(r.s)), chats = scopeFilter === 'all' ? mergedTopic.chats : [], e = t.entry;
   let body;
   if (tmode === 'edit') body = `<div class="tedit-hint">1 行に「キーワード ID ID …」。参照行にカーソルを置き、種類を選択できます。紙は 1a(p)、ID の前の * は赤い点。</div><div class="tc-row"><label for="topic-mark">参照の種類</label><select id="topic-mark"><option value="">通常（印なし）</option><option value="^">↑ 上位概念（^）</option><option value="+">★ トピックインデックス</option><option value="=">● まとめ・進捗（=）</option></select><button type="button" id="topic-mark-apply">カーソル行に適用</button></div>
       <div class="ed" id="ed-t"></div>`;
