@@ -324,7 +324,7 @@ function editor(parent, doc, mode, space, onChange, ph, read) {
   const binding = { read, syncing: false };
   const view = lastView = new EditorView({
     parent, state: EditorState.create({
-      doc, extensions: [history(), ...(mode === 'note' ? ReferencePicker.extension(space) : []), keymap.of([...defaultKeymap, ...historyKeymap]), EditorView.lineWrapping, ...(mode === 'note' ? [urlPasteTitle] : []),
+      doc, extensions: [history(), ...(['note','topic'].includes(mode) ? ReferencePicker.extension(space,mode) : []), keymap.of([...defaultKeymap, ...historyKeymap]), EditorView.lineWrapping, ...(mode === 'note' ? [urlPasteTitle] : []),
         placeholder(ph), ...(mode === 'note' ? [...mdExtensions, searchExt] : []), links(mode, space), ...(mode === 'note' ? [images(space), LC.decorations(cur?.k === 'note' ? 'note:' + get(cur.s, cur.id)?.stem : cur?.k === 'diary' ? 'day:' + cur.kind + ':' + cur.date : 'embedded', space)] : []), EditorView.updateListener.of(u => { if (u.docChanged && !binding.syncing) onChange(u.state.doc.toString()); })]
     })
   });
