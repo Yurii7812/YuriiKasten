@@ -444,7 +444,7 @@ function openVault(vault) {
     }
     if (stars.length) out.push('', ...stars.map(s => `★ [${esc(s)}](${topicHref(s)})  `));
     if (chats.length) out.push('', ...chats.map(c => `💬 ${esc(c)}  `));   // チャットメモのトピック（案内だけ。メモは、C_YYYY-MM-DD.md に）
-    if (refs.length) out.push('', ...refs.map(r => `★ ${esc(r.label)} [${label(r.s, r.id)}](${noteHref(r.s, r.id)})  `));
+    if (refs.length) out.push('', ...refs.map(r => `${r.mark || "★"} ${esc(r.label)} [${label(r.s, r.id)}](${noteHref(r.s, r.id)})  `));
     return out.join('\n') + '\n';
   }
 
@@ -790,7 +790,7 @@ function openVault(vault) {
       return fs.readdirSync(dir).map(f => { const m = f.match(/^(\d+)-(\d{14}(?:-\d+)?)\.md$/); if (!m) return null;
         const text = fs.readFileSync(path.join(dir, f), 'utf8'), fm = L.fmParse(text), y = fm.meta || {}; if (y.record !== undefined) return null;
         const i = text.indexOf(BODY), j = text.indexOf(NAV), body = L.mdToBody(i >= 0 ? text.slice(i + BODY.length, j > i ? j : undefined) : fm.rest);
-        return { file: f, deleted: L.now(new Date(+m[1])), title: y.title || '', id: y.folgezettel !== undefined ? String(y.folgezettel) : '', body: body.slice(0, 600), keywords: Array.isArray(y.keywords) ? y.keywords : [] };
+        return { file: f, s: y.source === 'paper' ? 'p' : 'd', deleted: L.now(new Date(+m[1])), title: y.title || '', id: y.folgezettel !== undefined ? String(y.folgezettel) : '', body: body.slice(0, 600), keywords: Array.isArray(y.keywords) ? y.keywords : [] };
       }).filter(Boolean).sort((a, b) => b.file.localeCompare(a.file, 'en', { numeric: true }));
     },
     trashRestore(file) {

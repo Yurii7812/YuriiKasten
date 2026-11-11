@@ -131,7 +131,7 @@ test('トピックIndex: +hoge 1 は 1 がリンクの星。+GUI だけなら案
   const r = L.topicLine('+hoge 1');
   assert.deepStrictEqual(r.ref, { label: 'hoge', id: '1', sp: undefined, from: 6, to: 7 }); assert.strictEqual(r.star, '');
   const m = L.mergeTopic({ d: '+hoge 1\n+GUI\nPKM 1', p: '★ 紙 2a' });
-  assert.deepStrictEqual(m.refs, [{ s: 'd', label: 'hoge', id: '1' }, { s: 'p', label: '紙', id: '2a' }]);
+  assert.deepStrictEqual(m.refs, [{ s: 'd', label: 'hoge', id: '1', mark: '★' }, { s: 'p', label: '紙', id: '2a', mark: '★' }]);
   assert.deepStrictEqual(m.stars, ['GUI']); assert.strictEqual(m.rows.length, 1);
 });
 
@@ -144,7 +144,7 @@ test('紙とデジタルの書き分け: :ID(p)・(d)・(番号) の順は自由
 });
 test('トピックIndex: 1 つの文字に、印つきで。入口が紙なら、印なしは紙', () => {
   const m = L.mergeTopic({ entry: { s: 'd', id: '1' }, text: 'デジタルと紙の書き分け 1g(1) 2(p) *3(2)(p)\n+hoge 5(p)' });
-  assert.deepStrictEqual([m.rows[0].d, m.rows[0].p, m.rows[0].dot], [['1g(1)'], ['2', '3(2)'], { s: 'p', id: '3' }]); assert.deepStrictEqual(m.refs, [{ s: 'p', label: 'hoge', id: '5' }]);
+  assert.deepStrictEqual([m.rows[0].d, m.rows[0].p, m.rows[0].dot], [['1g(1)'], ['2', '3(2)'], { s: 'p', id: '3' }]); assert.deepStrictEqual(m.refs, [{ s: 'p', label: 'hoge', id: '5', mark: '★' }]);
   const p = L.mergeTopic({ entry: { s: 'p', id: '9' }, text: 'x 1 2(d)' });   // 紙のトピックIndex
   assert.deepStrictEqual([p.rows[0].p, p.rows[0].d], [['1'], ['2']]);
   assert.strictEqual(L.removeFromTopic('x 1 2(p)', [{ s: 'p', id: '2' }], 'd'), 'x 1'); assert.strictEqual(L.addToTopic('x 1', 'x', '2(p)'), 'x 1 2(p)');

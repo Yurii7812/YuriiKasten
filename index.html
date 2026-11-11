@@ -682,14 +682,16 @@ body{-webkit-user-select:none;user-select:none}
 .topic-settings section{margin:10px 0}.topic-settings label{display:block;font-weight:600}.topic-settings input{width:100%}.topic-settings>.row,.topic-bulk>.row{position:sticky;bottom:0;background:var(--bg);padding:8px 0}.topic-danger{border-top:1px solid var(--line);padding-top:8px;margin-top:12px}.topic-danger summary{color:var(--red);cursor:pointer}.topic-bulk fieldset{border:1px solid var(--line);border-radius:5px}.topic-bulk fieldset label{display:block}.topic-bulk #sd-q{width:100%;margin:8px 0}.topic-bulk #sd-u label{display:flex;gap:6px;align-items:center}.topic-bulk #sd-u small{margin-left:auto;color:var(--sub)}.topic-bulk #sd-primary{max-width:100%;margin-left:8px}#sd-preview{max-height:160px;overflow:auto;font-size:12px}
 @media(max-width:700px){.link-target{flex-wrap:wrap}.linked-head{gap:4px}.reference-picker{max-width:95vw}.topic-bulk .row{flex-wrap:wrap}}
 
+
+.scope-diary-image{display:block;max-width:100%;height:auto;margin:16px auto}.scope-hidden{display:none!important}#scope-notice{padding:24px;color:var(--muted)}.ixbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}#scopebar{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.index-results{max-height:210px;overflow:auto;display:grid;gap:4px}.index-results button{text-align:left}.index-form{display:grid;gap:10px}.index-form input{max-width:100%;box-sizing:border-box}.index-preview{font-size:12px;color:var(--muted)}
 </style>
 </head>
 <body>
 <main>
-  <nav id="rail"><button data-mode="notes" title="ノート">📝</button><button data-mode="diary" title="日記">📔</button><button data-mode="chat" title="チャットメモ">💬</button><button data-mode="pindex" title="紙のIndex（並べ替え）">🗂</button><button data-mode="graph" title="グラフ">🕸</button><button data-mode="mandala" title="曼荼羅">❖</button><button data-mode="cards" title="カード（Google Keep 風・画面いっぱい）">🗒️</button><button id="settings-btn" title="設定">⚙️</button></nav>
+  <nav id="rail"><button data-mode="notes" title="ノート">📝</button><button data-mode="diary" title="日記">📔</button><button data-mode="chat" title="チャットメモ">💬</button><button data-mode="pindex" title="共通Index">🗂</button><button data-mode="graph" title="グラフ">🕸</button><button data-mode="mandala" title="曼荼羅">❖</button><button data-mode="cards" title="カード（Google Keep 風・画面いっぱい）">🗒️</button><button id="settings-btn" title="設定">⚙️</button></nav>
   <aside>
-    <div id="tabs"><button data-tab="d" title="デジタル"><span class="te">💻</span></button><button data-tab="p" title="紙"><span class="te">📜</span></button><button data-tab="u" title="未整理（IDなし）"><span class="te">📥</span></button><button data-tab="f" title="ファイル（画像・html・csv など）"><span class="te">📎</span></button><button data-tab="i" title="Index（キーワード）"><span class="te">🔖</span></button></div>
-    <div id="selbar"></div>
+    <div id="tabs"><button data-tab="a" title="すべてのノート">すべて</button><button data-tab="d" title="デジタル"><span class="te">💻</span></button><button data-tab="p" title="紙"><span class="te">📜</span></button><button data-tab="u" title="未整理（IDなし）"><span class="te">📥</span></button><button data-tab="f" title="ファイル（画像・html・csv など）"><span class="te">📎</span></button><button data-tab="i" title="Index（キーワード）"><span class="te">🔖</span></button></div>
+    <div id="scopebar" style="padding:5px 12px;border-bottom:1px solid var(--line);font-size:12px"><label for="scope-filter">表示フィルター: </label><select id="scope-filter" aria-label="表示フィルター"><option value="all">すべて</option><option value="p">紙のみ</option><option value="d">デジタルのみ</option></select></div><div id="selbar"></div>
     <div id="list"></div>
   </aside>
   <section id="right">

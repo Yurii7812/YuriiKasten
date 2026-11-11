@@ -174,15 +174,15 @@ const defOf = t => t && t.entry && t.entry.s === 'p' ? 'p' : 'd';   // 索引 �
 function topicLine(line) {
   const c = line.match(/^(\s*[@＠]\s*)(.+?)\s*$/);   // @夢 → チャットメモのトピック「夢」への案内（メモ自体は書かない）
   if (c) return { chat: c[2], from: c[1].length, to: c[1].length + c[2].length, ids: [] };
-  const s = line.match(/^(\s*[★☆+＋]\s*)(.*?)\s*$/);
+  const s = line.match(/^(\s*[★☆+＋↑●^=]\s*)(.*?)\s*$/);
   if (s) {
     // +hoge 1 → 「★ hoge 1」（1 がリンク。そのIDの索引 があってもなくても）。+GUI だけなら、索引 への案内
     const ps = [...s[2].matchAll(/\S+/g)], last = ps[ps.length - 1], pt = last && parseIdTok(last[0]);
     if (ps.length >= 2 && pt) {
       const at = s[1].length + last.index;
-      return { star: '', ref: { label: s[2].slice(0, last.index).trim(), id: pt.id, sp: pt.sp, from: at, to: at + last[0].length }, from: s[1].length, to: s[1].length + s[2].length, ids: [] };
+      return { star: '', mark: /^[↑^]/.test(s[1].trim()) ? '↑' : /^[●=]/.test(s[1].trim()) ? '●' : '★', ref: { label: s[2].slice(0, last.index).trim(), id: pt.id, sp: pt.sp, from: at, to: at + last[0].length }, from: s[1].length, to: s[1].length + s[2].length, ids: [] };
     }
-    return { star: s[2], from: s[1].length, to: s[1].length + s[2].length, ids: [] };
+    return { star: s[2], mark: /^[↑^]/.test(s[1].trim()) ? '↑' : /^[●=]/.test(s[1].trim()) ? '●' : '★', from: s[1].length, to: s[1].length + s[2].length, ids: [] };
   }
   const parts = [...line.matchAll(/[^\s,、，]+/g)], ids = [], bare = x => x.replace(/^[*＊]/, '');
   let i = parts.length - 1, pt;
@@ -211,7 +211,7 @@ function mergeTopic(t) {
   for (const line of topicText(t).split('\n')) {
     const r = topicLine(line);
     if (r.chat) { if (!chats.includes(r.chat)) chats.push(r.chat); continue; }
-    if (r.ref) { const s = r.ref.sp || def; if (!refs.some(x => x.s === s && x.id === r.ref.id && x.label === r.ref.label)) refs.push({ s, label: r.ref.label, id: r.ref.id }); continue; }
+    if (r.ref) { const s = r.ref.sp || def; if (!refs.some(x => x.s === s && x.id === r.ref.id && x.label === r.ref.label && x.mark === (r.mark || '★'))) refs.push({ s, label: r.ref.label, id: r.ref.id, mark: r.mark || '★' }); continue; }
     if (r.star !== undefined) { if (r.star && !stars.includes(r.star)) stars.push(r.star); continue; }
     if (!r.kw && !r.ids.length) continue;
     const k = r.kw || '';

@@ -76,5 +76,7 @@ export function dialog(html, setup) {
   $('#modal .box').innerHTML = html; $('#modal').style.display = 'flex';
   const close = () => { $('#modal').style.display = 'none'; };
   $('#modal').onkeydown = e => { if (e.key === 'Escape') close(); };
-  setup(close); return close;
+  setup(close);
+  if (!$('#modal').contains(document.activeElement)) $('#modal').querySelector('input,textarea,select,button')?.focus();
+  return close;
 }

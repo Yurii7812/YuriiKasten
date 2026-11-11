@@ -197,11 +197,11 @@ function quoteDialog() {
     const draw = () => {
       const q = $('#q-q').value.trim().toLowerCase(), box = $('#q-list');
       if (kind === 'note') {
-        const ns = ctx.notes().filter(n => !q || (n.id + '\n' + n.body).toLowerCase().includes(q)).sort((a, b) => a.s.localeCompare(b.s) || L.cmpId(a.id, b.id)).slice(0, 60);
+        const ns = (ctx.visibleNotes?.() || ctx.notes()).filter(n => !q || (n.id + '\n' + n.body).toLowerCase().includes(q)).sort((a, b) => a.s.localeCompare(b.s) || L.cmpId(a.id, b.id)).slice(0, 60);
         box.innerHTML = ns.map(n => `<div class="ta-row" data-s="${n.s}" data-id="${esc(n.id)}"><b>${n.s === 'p' ? '紙 ' : ''}${esc(n.id)}</b> <small>${esc(n.body.split('\n').find(x => x.trim()) || '').slice(0, 40)}</small></div>`).join('') || '<div class="sub" style="padding:6px">ありません</div>';
       } else {
         const rows = [];
-        for (const n2 of ctx.notes().filter(x => x.kind === 'rp' && x !== note && x.data)) for (const m of n2.data.messages) {
+        for (const n2 of (ctx.visibleNotes?.() || ctx.notes()).filter(x => x.kind === 'rp' && x !== note && x.data)) for (const m of n2.data.messages) {
           if (!m.text || (q && !(m.text + n2.data.title).toLowerCase().includes(q))) continue;
           rows.push(`<div class="ta-row" data-k="${n2.s}:${esc(n2.id)}" data-m="${m.id}"><b>${esc(n2.data.title)}</b> <small>${esc((n2.data.cast.find(r => r.id === m.role) || {}).name || '')}: ${esc(m.text.split('\n')[0].slice(0, 40))}</small></div>`);
         }

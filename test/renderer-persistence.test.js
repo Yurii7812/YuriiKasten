@@ -303,3 +303,93 @@ test('renderer: prose can surround internal embeds; inline code and ordinary ima
     assert.match(c.text(),/前の文章.*後の文章/);await c.callbacks.onFlush();assert.deepEqual(c.errors,[]);
   }finally{c.close();f.cleanup();}
 });
+
+test('renderer: global scope keeps draft/history, projects Index/cards/search and survives restart', async () => {
+  const f=fixture();
+  f.store.saveNote({s:'p',id:'1',title:'紙のA',body:'紙の本文',keywords:['共通']});
+  f.store.saveNote({s:'d',id:'1',title:'電子のA',body:'電子の本文',keywords:['共通']});
+  f.store.addPaperIndex({kw:'未スキャン',reading:'みすきゃん',ids:['9a']});
+  let c=await client(f.store);
+  const scope = value => { const select=c.w.document.querySelector('#scope-filter');select.value=value;select.dispatchEvent(new c.w.Event('change')); };
+  try {
+    c.open('1'); c.edit('保持する編集中の文章'); const editor=c.w.__pkm.view;
+    scope('p'); assert.equal(c.w.__pkm.view,editor); assert.ok(c.w.document.querySelector('#pane').classList.contains('scope-hidden'));
+    assert.equal(c.text(),'保持する編集中の文章');
+    scope('d'); assert.equal(c.w.__pkm.view,editor); assert.ok(!c.w.document.querySelector('#pane').classList.contains('scope-hidden'));
+    c.click('[data-tab="i"]'); scope('p');
+    assert.match(c.w.document.querySelector('#list').textContent,/未スキャン/);
+    assert.equal(c.w.document.querySelectorAll('#list .chip.d').length,0);
+    assert.ok(c.w.document.querySelector('#list .chip.p[data-id="1"]'));
+    scope('d'); assert.doesNotMatch(c.w.document.querySelector('#list').textContent,/未スキャン/);
+    assert.equal(c.w.document.querySelectorAll('#list .chip.p').length,0);
+    const q=c.w.document.querySelector('#q');q.value='A';q.dispatchEvent(new c.w.Event('input'));
+    assert.doesNotMatch(c.w.document.querySelector('#list').textContent,/紙のA/);
+    q.value='';q.dispatchEvent(new c.w.Event('input'));
+    c.click('[data-mode="cards"]');
+    assert.equal(c.w.document.querySelectorAll('#k-board .kcard[data-s="p"]').length,0);
+    scope('p'); assert.ok(c.w.document.querySelector('#k-board .kcard[data-s="p"]'));
+    await c.callbacks.onFlush();const storage=c.storage();c.close();c=await client(f.store,storage);
+    assert.equal(c.w.document.querySelector('#scope-filter').value,'p');
+    assert.equal(f.store.state().notes.find(n=>n.s==='d'&&n.id==='1').body,'保持する編集中の文章');
+    assert.deepEqual(c.errors,[]);
+  } finally {c.close();f.cleanup();}
+});
+
+test('renderer: unified Index registers unscanned paper and existing digital ID, edits and reloads', async () => {
+  const f=fixture();let c=await client(f.store);
+  try {
+    c.click('[data-tab="i"]');c.click('#ix-add');
+    const $=s=>c.w.document.querySelector(s);
+    $('#ix-kw').value='両方';$('#ix-reading').value='りょうほう';$('#ix-ids').value='9a(p) 1(d)';
+    c.click('#ix-ok');await tick();await tick();
+    assert.match($('#list').textContent,/両方/);
+    assert.ok($('#list .chip.p[data-id="9a"]'));assert.ok($('#list .chip.d[data-id="1"]'));
+    const state=f.store.state();assert.ok(state.notes.find(n=>n.s==='d'&&n.id==='1').keywords.includes('両方'));
+    const reopened=openVault(f.dir).state();assert.ok(reopened.docs.K_paperindex.entries.some(e=>e.kw==='両方'&&e.ids.includes('9a')));
+    assert.deepEqual(c.errors,[]);
+  } finally {c.close();f.cleanup();}
+});
+
+test('renderer: topic markers replace legacy prefixes and one undo restores the line', async () => {
+  const f=fixture();f.store.saveTopic({name:'1-試験',entry:{s:'d',id:'1'},text:'  ★ 名前 2'});const c=await client(f.store);
+  try {
+    c.click('[data-topic="1-試験"]');c.click('[data-act="tedit"]');
+    const select=c.w.document.querySelector('#topic-mark');select.value='^';c.click('#topic-mark-apply');
+    assert.equal(c.text(),'  ^ 名前 2');
+    c.w.__pkm.view.contentDOM.dispatchEvent(new c.w.KeyboardEvent('keydown',{key:'z',ctrlKey:true,bubbles:true}));
+    assert.equal(c.text(),'  ★ 名前 2');
+    const view=c.w.__pkm.view; const filter=c.w.document.querySelector('#scope-filter');filter.value='p';filter.dispatchEvent(new c.w.Event('change'));
+    assert.equal(c.w.__pkm.view,view);filter.value='all';filter.dispatchEvent(new c.w.Event('change'));assert.equal(c.text(),'  ★ 名前 2');
+    await c.callbacks.onFlush();assert.deepEqual(c.errors,[]);
+  } finally {c.close();f.cleanup();}
+});
+
+test('renderer: topic colon search inserts a paper-qualified row, undo/redo and Escape retain input',async()=>{
+  const f=fixture();f.store.saveNote({s:'p',id:'1',title:'紙候補',body:'本文'});
+  f.store.saveTopic({name:'1-検索',entry:{s:'d',id:'1'},text:''});const c=await client(f.store);
+  try {
+    c.click('[data-topic="1-検索"]');c.click('[data-act="tedit"]');const v=c.w.__pkm.view;
+    const key=(key,ctrlKey=false)=>v.contentDOM.dispatchEvent(new c.w.KeyboardEvent('keydown',{key,ctrlKey,bubbles:true,cancelable:true}));
+    v.dispatch({changes:{from:0,insert:':'},selection:{anchor:1},userEvent:'input'});
+    v.dispatch({changes:{from:1,insert:'紙候補'},selection:{anchor:4},userEvent:'input'});
+    assert.match(c.w.document.querySelector('.reference-picker').textContent,/紙候補/);
+    key('Enter');assert.equal(c.text(),'紙候補 1(p) ');
+    key('z',true);assert.equal(c.text(),':紙候補');assert.equal(c.w.document.querySelector('.reference-picker'),null);
+    key('y',true);assert.equal(c.text(),'紙候補 1(p) ');
+    v.dispatch({changes:{from:0,to:v.state.doc.length,insert:':'},selection:{anchor:1}});
+    key('Escape');assert.equal(c.text(),':');assert.equal(c.w.document.querySelector('.reference-picker'),null);
+    await c.callbacks.onFlush();assert.deepEqual(c.errors,[]);
+  } finally {c.close();f.cleanup();}
+});
+
+test('renderer: paper diary scope shows scan pages and keeps the full digital draft hidden',async()=>{
+ const f=fixture();f.store.openDiary('2026-11-11');f.store.saveDiary({date:'2026-11-11',body:'デジタル本文は紙だけでは見せない'});f.store.addDiaryScan('2026-11-11',Buffer.from('scan fixture'));const c=await client(f.store);
+ try {
+  c.click('[data-mode="diary"]');c.click('#list [data-diary="2026-11-11"]');await tick();const v=c.w.__pkm.view;
+  const filter=c.w.document.querySelector('#scope-filter');filter.value='p';filter.dispatchEvent(new c.w.Event('change'));
+  assert.equal(c.w.__pkm.view,v);assert.ok(c.w.document.querySelector('#scope-notice .scope-diary-image'));
+  assert.doesNotMatch(c.w.document.querySelector('#scope-notice').textContent,/デジタル本文/);
+  filter.value='d';filter.dispatchEvent(new c.w.Event('change'));assert.equal(c.w.__pkm.view,v);
+  assert.match(c.text(),/デジタル本文/);await c.callbacks.onFlush();assert.deepEqual(c.errors,[]);
+ }finally{c.close();f.cleanup();}
+});

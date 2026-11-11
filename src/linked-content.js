@@ -23,7 +23,7 @@ export function targetNote(n, selection) { return Core.targetOf({...n,kind:'note
 export function targetMemo(m, selection) { return Core.targetOf({...m,kind:'memo'},selection?.from,selection?.to); }
 export function search(query) {
   const q=query.trim().toLowerCase();
-  return sources().filter(x=>x.kind!=='diary').map(x=>{
+  return sources().filter(x=>x.kind!=='diary' && (!ctx.inScope || ctx.inScope(x.s || 'd'))).map(x=>{
     const fields=[x.id,x.title,x.text,...(x.keywords||[]),x.topic,...(x.ups||[])].filter(Boolean).map(v=>String(v).toLowerCase());
     return {x,score:!q?0:fields.some(v=>v===q)?3:fields.some(v=>v.startsWith(q))?2:fields.some(v=>v.includes(q))?1:-1};
   }).filter(x=>x.score>=0).sort((a,b)=>b.score-a.score||(b.x.t||L.parseTime(b.x.created)?.getTime()||0)-(a.x.t||L.parseTime(a.x.created)?.getTime()||0)||String(a.x.id).localeCompare(String(b.x.id))).map(x=>x.x);
@@ -84,10 +84,10 @@ export function detail(id) {
     $('#ln-copy').onclick=async()=>{await navigator.clipboard.writeText(href(link));toast('リンクをコピーしました');};
     $('#ln-note').onclick=async()=>{try{await ctx.flush();const n=await ctx.api.createNote({kind:'text',title:link.title,body:'!'+href(link)+'\n'});ctx.addNote(n);await ctx.refreshDiaries();close();ctx.openNote(n.s,n.id);}catch{toast('ノートを保存できませんでした');}};
     $('#ln-edit').onclick=()=>{close();edit([],link);};$('#ln-close').onclick=close;
-    $('#ln-uses').append(...Core.backlinks(id,sources()).map(sourceLink));
+    $('#ln-uses').append(...Core.backlinks(id,sources().filter(x => !ctx.inScope || ctx.inScope(x.s || 'd'))).map(sourceLink));
   });
 }
-export function browse() {dialog('<h3>リンク</h3><button id="ln-new">リンクを作成</button><div id="ln-library"></div>',()=>{const box=$('#ln-library');for(const l of links.items){const b=document.createElement('button');b.textContent=l.title;b.onclick=()=>detail(l.id);box.append(b);}$('#ln-new').onclick=()=>edit();});}
+export function browse() {dialog('<h3>リンク</h3><button id="ln-new">リンクを作成</button><div id="ln-library"></div>',()=>{const box=$('#ln-library');for(const l of links.items.filter(l => l.targets.some(t => !ctx.inScope || ctx.inScope(t.s || 'd')))){const b=document.createElement('button');b.textContent=l.title;b.onclick=()=>detail(l.id);box.append(b);}$('#ln-new').onclick=()=>edit();});}
 export function chooseMemo(onChoose) {
   dialog('<h3>チャットメモを選ぶ</h3><input id="ln-memo-query" placeholder="本文・トピックを検索"><div id="ln-memo-results" class="link-results"></div>', close => {
     let count = 40;
@@ -117,7 +117,7 @@ export function embed(uri,path=[],occurrence='',label='',virtualLink=null,existi
   const data=link?Core.ordered(link,ctx.notes(),memos(),prefs.order||link.order):kind==='memo'?[Core.resolve({kind:'memo',id},ctx.notes(),memos())]:note?[Core.resolve(Core.targetOf({...note,kind:'note'}),ctx.notes(),memos())]:[];
   root.innerHTML=`<header class="linked-head"><button class="linked-fold" aria-expanded="${!prefs.collapsed}">${prefs.collapsed?'▸':'▾'}</button><a data-file="${esc(uri)}" class="linked-title">${esc(link?.title||label||data[0]?.title||'参照先が見つかりません')}</a>${data.some(x=>x.kind==='memo')?`<label><input type="checkbox" class="linked-time"${prefs.time?' checked':''}>日時</label>`:''}${link?`<select class="linked-order" aria-label="展開の表示順">${[['newest','日付：新しい順'],['oldest','日付：古い順'],['kind','種別順'],...(!link.id.startsWith('legacy-')?[['manual',link.manual?'指定順':'順序を指定']]:[])].map(([v,l])=>`<option value="${v}"${(prefs.order||link.order)===v?' selected':''}>${l}</option>`).join('')}</select>`:''}</header><div class="linked-prose"${prefs.collapsed?' hidden':''}></div>`;
   const body=root.querySelector('.linked-prose');
-  for(const r of data){const section=document.createElement('div');section.className='linked-source';
+  for(const r of data.filter(r => !ctx.inScope || ctx.inScope(r.source?.s || r.target?.s || 'd'))){const section=document.createElement('div');section.className='linked-source';
     const title=document.createElement('a');title.className='linked-source-title';title.textContent=r.title;title.onclick=e=>{e.preventDefault();e.stopPropagation();openTarget(r.target);};section.append(title);
     if(prefs.time&&r.date){const time=document.createElement('time');time.textContent=new Date(r.date).toLocaleString();section.append(time);}
     const content=document.createElement('div');

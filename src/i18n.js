@@ -2,6 +2,17 @@
 // Languages: 'en' (default) and 'ja'. To add a language, add a table like EN and register it in TABLES.
 // User content (note bodies, titles, memos) is never translated: see SKIP.
 const EN = {
+  '表示フィルター': 'Display filter', '紙のみ': 'Paper only', 'デジタルのみ': 'Digital only',
+  '共通Index': 'Unified Index', 'Indexに追加': 'Add to Index', 'Indexを編集': 'Edit Index',
+  '読み仮名': 'Reading', 'ノートを検索': 'Find a note', '対応するID': 'Associated IDs',
+  '紙は未取り込みのIDも登録できます。区分を省略したIDは紙として登録します。': 'Paper IDs may be registered before scanning. IDs without a namespace are treated as paper.',
+  '🔴 赤い点＝トピックIndexの入口。キーワードの右クリックで編集': '🔴 Red dot: Topic Index entry. Right-click a keyword to edit.',
+  '表示フィルターの対象外です。表示を戻すと編集中の内容を再表示します。': 'Outside the display filter. Change the filter back to see your draft.',
+  '参照の種類': 'Reference type', '通常（印なし）': 'Normal (no marker)',
+  '↑ 上位概念（^）': '↑ Broader concept (^)', '★ トピックインデックス': '★ Topic Index',
+  '● まとめ・進捗（=）': '● Summary / progress (=)', 'カーソル行に適用': 'Apply to current line',
+  'キーワードを削除': 'Remove keyword', '表示対象がありません': 'Nothing in this scope',
+
   '所属・上位トピックを変える': 'Change assigned and upper topics',
   '所属トピックで絞り込み': 'Filter by assigned topic',
   '上位トピック（いくつでも）': 'Upper topics (multiple)',
@@ -85,9 +96,9 @@ const EN = {
 'トピック未選択': 'No topic', '未選択': 'Unselected', '未選択 / 日記 / トピック名': 'Unselected / Diary / topic name',
 '＋ トピック': '+ Topic', '＋ 索引に入れる': '+ Add to topic Index', 'を索引に追加': ' added to topic Index',
 'この索引を削除': 'Delete this topic Index', 'このトピックを消す': 'Delete this topic',
-'このノートの索引': 'Topic Index of this note', '索引されている索引': 'Indexed in topic Index', '自トピック': 'Own topic', 'トピック': 'Topic', '索引': 'Index',
+'このノートの索引': 'Topic Index of this note', '索引されている索引': 'Indexed in topic Index', '自トピック': 'Own topic', 'トピック': 'Topic',
 '新しい索引を作る（このノートが親）': 'Create a new topic Index (this note is the entry)',
-'親': 'Entry', '親・名前': 'Entry / name', 'を親にします': ' becomes the entry', 'を作ります': ' will be created',
+'親・名前': 'Entry / name', 'を親にします': ' becomes the entry', 'を作ります': ' will be created',
 '親のノート（赤い点を付けるID）。無いIDなら、新しいノートを作ります。キーワードのIDの中から選べます': 'Entry note (ID that gets the red dot). If it does not exist, a new note is created. You can choose from the keyword IDs.',
 '紙のノートは、まだ作らない（取り込む前の番号。取り込んだら、つながります）': 'Do not create the paper note yet (a number before import; it links once imported)',
 '紙のIndexはまだありません。上のキーワードとIDを書いて、追加します': 'No paper Index yet. Write a keyword and IDs above, then add.',
@@ -137,7 +148,7 @@ const EN = {
 'このメモから作ったノート': 'Notes made from this memo', 'いま開いているノートのカーソルに、リンクを書き込む': 'Write a link at the cursor of the open note',
 'いま開いているノートへ飛ぶ (o)': 'Jump to the open note (o)', '先にノートを開いてください': 'Open a note first',
 '件を、ノートにする': ' item(s) → make note', '件を、ノートに引用': ' item(s) → quote in note', '件を選択': ' selected',
-'すべて': 'All', '全部表示': 'Show all', 'そのメモは、いまの表示にありません（「全部表示」で探せます）': 'That memo is not in the current view (use "Show all")',
+'全部表示': 'Show all', 'そのメモは、いまの表示にありません（「全部表示」で探せます）': 'That memo is not in the current view (use "Show all")',
 'その日のメモはありません': 'No memos on that day', 'そのチャットメモは、もうありません': 'That chat memo no longer exists',
 '日付を入れてください': 'Enter a date', '日付を入れると、その日へ': 'Enter a date to jump to that day', '前の日': 'Previous day', '次の日': 'Next day', '今日の': "Today's",
 '元のチャットメモ: [': 'Original chat memo: [', '出典:': 'Source:',

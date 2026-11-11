@@ -436,7 +436,7 @@ test('紙のトピックIndex: 入口の紙のノートが、まだ無くても�
   assert.ok(v.saveTopic({ name: '12-紙の索引', entry: { s: 'p', id: '12' }, keyword: '', text: '書き分け 3 1(d)\n+hoge 3' }));   // 紙の 12 は、まだ取り込んでいない
   const st = openVault(dir).state(), t = st.topics.find(x => x.name === '12-紙の索引');
   assert.deepStrictEqual(t.entry, { s: 'p', id: '12' }); const m = require('../lib').mergeTopic(t);
-  assert.deepStrictEqual([m.rows[0].p, m.rows[0].d, m.refs], [['3'], ['1'], [{ s: 'p', label: 'hoge', id: '3' }]]);   // 入口が紙なので、印なしは紙。(d) はデジタル
+  assert.deepStrictEqual([m.rows[0].p, m.rows[0].d, m.refs], [['3'], ['1'], [{ s: 'p', label: 'hoge', id: '3', mark: '★' }]]);   // 入口が紙なので、印なしは紙。(d) はデジタル
   const md = r('T_12-紙の索引.md');
   assert.match(md, /\| 書き分け \| \[1\]\([^)]*\.md\) \[紙3\]\([^)]*\.md\) \|/);
   // 紙のノートの md: 印なしの :1 は紙の 1（まだ無いので # のリンク）、:1(d) はデジタルの 1
