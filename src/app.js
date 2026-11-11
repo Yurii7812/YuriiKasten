@@ -28,6 +28,8 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 const SP = { d: 'デジタル', p: '紙' };
 
 let notes = [], topics = [], readings = {}, tab = 'd', cur = null, vault = '';
+let scopeFilter = 'all';
+const inScope = s => scopeFilter === 'all' || s === scopeFilter;
 // 開いているタブ（Obsidian 風）。cur は今のタブ
 let tabs = [], active = -1, newTab = false, bgOpen = false;
 let mode = 'notes', diaries = [], records = [{ name: '日記', parent: '' }], lastNote = null, curKind = (() => { try { return localStorage.getItem('pkm-kind') || '日記'; } catch { return '日記'; } })(); // 左の列で選んでいる種類（ノート・日記…）
@@ -505,21 +507,21 @@ function renderList() {
     // 1. Index  2. 索引  3. ノート
     const rank = k => (k.toLowerCase() === q ? 0 : k.toLowerCase().startsWith(q) ? 1 : 2);
     const hq = L.toHira(q), rk = k => Math.min(rank(k), readings[k] ? rank(readings[k]) : 9);
-    const gi = globalIndex().filter(([k]) => k.toLowerCase().includes(q) || (readings[k] || '').includes(hq)).sort((a, b) => rk(a[0]) - rk(b[0]));
+    const gi = globalIndex().map(([k,v])=>[k,{d:inScope('d')?v.d:[],p:inScope('p')?v.p:[]}]).filter(([,v])=>v.d.length||v.p.length).filter(([k]) => k.toLowerCase().includes(q) || (readings[k] || '').includes(hq)).sort((a, b) => rk(a[0]) - rk(b[0]));
     if (gi.length) out.push('<h4>Index</h4>', ...gi.map(ixRow));
     const ti = [];
-    for (const t of topics) {
+    for (const t of topics.filter(t=>!t.entry||inScope(t.entry.s))) {
       if (t.name.toLowerCase().includes(q)) ti.push([-1, `<div class="ix">${tchip(t.name)}</div>`]);
       for (const r of L.mergeTopic(t).rows) if (r.kw.toLowerCase().includes(q)) ti.push([rank(r.kw), `<div class="ix"><b>${esc(r.kw)}</b> ${chips(r)} <small>← ${tchip(t.name)}</small></div>`]);
     }
     if (ti.length) out.push('<h4>索引</h4>', ...ti.sort((a, b) => a[0] - b[0]).map(x => x[1]));
-    const hit = sortNotes(notes.filter(n => [n.id, n.title || '', n.body, n.keywords.join(' '), n.keywords.map(k => readings[k] || '').join(' ')].join('\n').toLowerCase().includes(q)), 'd');   // 並べ替え（番号・作成・更新 × 昇降）は、ノートの部分だけ
+    const hit = sortNotes(notes.filter(n => inScope(n.s)).filter(n => [n.id, n.title || '', n.body, n.keywords.join(' '), n.keywords.map(k => readings[k] || '').join(' ')].join('\n').toLowerCase().includes(q)), 'd');   // 並べ替え（番号・作成・更新 × 昇降）は、ノートの部分だけ
     if (hit.length) out.push('<h4>ノート</h4>', sortBar(false), ...hit.map(n => noteRow(n, true, q)));
-    const fh = filesCache.filter(f => [f.title, f.desc, f.orig, f.name].join('\n').toLowerCase().includes(q));
+    const fh = (scopeFilter === 'all' ? filesCache : []).filter(f => [f.title, f.desc, f.orig, f.name].join('\n').toLowerCase().includes(q));
     if (fh.length) out.push('<h4>ファイル</h4>', ...fh.map(f => fileRow(f, q)));
-    const dh = diaries.filter(d => [d.date, d.title, d.body].join('\n').toLowerCase().includes(q)).sort((a, b) => b.date.localeCompare(a.date));
+    const dh = (scopeFilter === 'all' ? diaries : []).filter(d => [d.date, d.title, d.body].join('\n').toLowerCase().includes(q)).sort((a, b) => b.date.localeCompare(a.date));
     if (dh.length) out.push('<h4>日記</h4>', ...dh.map(d => `<div class="item note" data-diary="${d.date}" data-kind="${esc(d.kind || '日記')}"><div class="nrow"><div class="nt">${mk(d.title || d.date, q)}</div><div class="ns">${esc(d.kind || '日記')} · ${d.date}</div>${snippet(d.body, q) ? `<div class="sn">${snippet(d.body, q)}</div>` : ''}</div></div>`));
-    const ch = Chat.searchMemos(q);   // チャットメモも
+    const ch = scopeFilter === 'all' ? Chat.searchMemos(q) : [];   // チャットメモも
     if (ch.length) out.push('<h4>チャットメモ</h4>', ...ch.slice(0, 80).map(m => `<div class="item note" data-cmemo="${esc(m.id)}"><div class="nrow"><div class="nt">${mk((m.text || '').split('\n')[0].slice(0, 80), q)}</div><div class="ns">${esc(Chat.label(m.topic))} · ${new Date(m.t).toLocaleString()}</div></div></div>`));
     if (!out.length) out.push('<div class="none">見つかりません</div>');
   } else if (tab === 'f') {
@@ -531,14 +533,16 @@ function renderList() {
   } else if (tab === 'i') {
     out.push(`<div class="ixbar"><span class="sub">🔴 赤い点は、ID を右クリックで付け外し</span></div>`);
     let row = null;
-    for (const e of globalIndex()) {
+    for (const [k,v] of globalIndex()) {
+      const e = [k,{d:inScope('d')?v.d:[],p:inScope('p')?v.p:[]}];
+      if (!e[1].d.length && !e[1].p.length) continue;
       const r = L.kanaRow(readings[e[0]] || e[0]);
       if (r !== row) { out.push(`<h4>${r}</h4>`); row = r; }
       out.push(ixRow(e));
     }
     if (out.length === 1) out.push('<div class="none">ノートにキーワードを書くと、ここに並びます</div>');
   } else {
-    const list = sortNotes((tab === 'u' ? notes.filter(n => n.noid) : notes.filter(n => n.s === tab && !n.noid)).filter(n=>!Chat.isImportedRoleplay(n)), tab);
+    const list = sortNotes((tab === 'u' ? notes.filter(n => n.noid && inScope(n.s)) : tab === 'a' ? notes.filter(n => !n.noid && inScope(n.s)) : notes.filter(n => n.s === tab && inScope(n.s) && !n.noid)).filter(n=>!Chat.isImportedRoleplay(n)), tab);
     out.push(sortBar(false));
     const byFz = sortBy === 'fz' && tab !== 'u';
     if (byFz && (tab === 'd' || tab === 'p')) for (const t of topics.filter(x => (!x.entry || !get(x.entry.s, x.entry.id)) && (x.entry ? x.entry.s : 'd') === tab).sort((a, b) => a.name.localeCompare(b.name, 'ja'))) out.push(topicRow(t)); // 親のノートがまだないもの（取り込み前の紙の番号など）は、その側の先頭
@@ -602,6 +606,7 @@ $('#list').addEventListener('change', e => { if (e.target.id === 'sb-by') { sort
 $('#cardtoggle').onclick = () => { listView = listView === 'card' ? 'list' : 'card'; savePrefs(); $('#cardtoggle').classList.toggle('on', listView === 'card'); if (mode === 'notes') renderList(); };
 $('#cardtoggle').classList.toggle('on', listView === 'card');
 $('#tabs').onclick = e => { const b = e.target.closest('button'); if (b) { tab = b.dataset.tab; $('#q').value = ''; renderList(); } };
+$('#scope-filter').onchange = e => { scopeFilter = e.target.value; if (scopeFilter !== 'all' && tab !== scopeFilter && tab !== 'i') tab = scopeFilter; renderList(); };
 $('#q').oninput = renderList;
 $('#q').onkeydown = e => { if (e.key === 'Escape') { $('#q').value = ''; $('#q').blur(); renderList(); if (lastView && cur && cur.k === 'note') lastView.focus(); searchMark(); } };
 document.addEventListener('keydown', e => {
