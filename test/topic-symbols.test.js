@@ -28,3 +28,8 @@ test('same target can have different semantic markers', () => {
   const m = L.mergeTopic({ entry: { s: 'p', id: '1' }, text: '↑ 概念 1a\n● 概念 1a' });
   assert.deepEqual(m.refs.map(r => r.mark), ['↑', '●']);
 });
+
+test('ASCII keyboard shortcuts ^ + = map to ↑ ★ ●', () => {
+  const m = L.mergeTopic({ entry: { s: 'p', id: '1' }, text: '^ 上位 1a\n+ 別索引 1b\n= まとめ 1c' });
+  assert.deepEqual(m.refs.map(r => r.mark), ['↑', '★', '●']);
+});
