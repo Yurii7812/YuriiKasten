@@ -211,7 +211,7 @@ function mergeTopic(t) {
   for (const line of topicText(t).split('\n')) {
     const r = topicLine(line);
     if (r.chat) { if (!chats.includes(r.chat)) chats.push(r.chat); continue; }
-    if (r.ref) { const s = r.ref.sp || def; if (!refs.some(x => x.s === s && x.id === r.ref.id && x.label === r.ref.label)) refs.push({ s, label: r.ref.label, id: r.ref.id, mark: r.mark || '★' }); continue; }
+    if (r.ref) { const s = r.ref.sp || def; if (!refs.some(x => x.s === s && x.id === r.ref.id && x.label === r.ref.label && x.mark === (r.mark || '★'))) refs.push({ s, label: r.ref.label, id: r.ref.id, mark: r.mark || '★' }); continue; }
     if (r.star !== undefined) { if (r.star && !stars.includes(r.star)) stars.push(r.star); continue; }
     if (!r.kw && !r.ids.length) continue;
     const k = r.kw || '';
