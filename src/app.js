@@ -1639,7 +1639,7 @@ function openTopic(name, tmode = 'view', keep) {
   if (!inPreview && !$('#q').value && t.entry) tab = t.entry.s === 'p' ? 'p' : 'd';   // 一覧を、その索引 のあるタブに
   const { rows, stars, refs, chats } = L.mergeTopic(t), e = t.entry;
   let body;
-  if (tmode === 'edit') body = `<div class="tedit-hint">✏️ 1 行に「キーワード ID ID …」 ・ 紙は 1a(p) ・ ID の前の * は赤い点 ・ +名前 は別の索引へ ・ @名前 はチャットメモのトピックへ</div>
+  if (tmode === 'edit') body = `<div class="tedit-hint">1 行に「キーワード ID ID …」。参照行にカーソルを置き、種類を選択できます。紙は 1a(p)、ID の前の * は赤い点。</div><div class="tc-row"><label for="topic-mark">参照の種類</label><select id="topic-mark"><option value="">通常（印なし）</option><option value="↑">↑ 上位概念</option><option value="+">★ トピックインデックス</option><option value="●">● まとめ・進捗</option></select><button type="button" id="topic-mark-apply">カーソル行に適用</button></div>
       <div class="ed" id="ed-t"></div>`;
   else if (tmode === 'conf') body = `<div class="tconf">
       <div class="tc-row"><span class="tc-l">📝 名前</span><input id="t-name" value="${esc(t.name)}"></div>
@@ -1665,6 +1665,27 @@ function openTopic(name, tmode = 'view', keep) {
     </div>${body}`;
   if (tmode === 'edit') { // 1 つの欄。紙は ID(p)、デジタルは ID（親が紙の索引 なら、紙が ID、デジタルが ID(d)）
     const def = L.defOf(t), v = editor($('#ed-t'), L.topicText(t), 'topic', def, x => { t.text = x; saveTopic(t); }, `PKM 1a 3(p)`, () => L.topicText(t));
+    const markSelect = $('#topic-mark'), markApply = $('#topic-mark-apply');
+    const selectedLine = () => v.state.doc.lineAt(v.state.selection.main.head);
+    const readMark = () => {
+      const line = selectedLine().text;
+      const prefix = line.match(/^\\s*([★☆+＋↑●])/);
+      markSelect.value = prefix ? (/[★☆+＋]/.test(prefix[1]) ? '+' : prefix[1]) : '';
+    };
+    v.dom.addEventListener('keyup', readMark);
+    v.dom.addEventListener('mouseup', readMark);
+    markApply.addEventListener('click', () => {
+      const line = selectedLine();
+      const oldPrefix = line.text.match(/^(\\s*)[★☆+＋↑●]\\s*/);
+      const indent = (line.text.match(/^\\s*/) || [''])[0];
+      const rest = oldPrefix ? line.text.slice(oldPrefix[0].length) : line.text.slice(indent.length);
+      if (!rest.trim()) return;
+      const marker = markSelect.value;
+      const next = indent + (marker ? marker + ' ' : '') + rest;
+      v.dispatch({ changes: { from: line.from, to: line.to, insert: next } });
+      v.focus();
+    });
+    readMark();
     v.focus();
   }
   if (tmode === 'conf') $('#t-id').focus();
