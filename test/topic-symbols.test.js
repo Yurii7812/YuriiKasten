@@ -23,3 +23,8 @@ test('legacy star notation remains compatible', () => {
   const m = L.mergeTopic({ entry: { s: 'd', id: '1' }, text: '+ 競技 1a\n★ 文献 1b' });
   assert.deepEqual(m.refs.map(r => r.mark), ['★', '★']);
 });
+
+test('same target can have different semantic markers', () => {
+  const m = L.mergeTopic({ entry: { s: 'p', id: '1' }, text: '↑ 概念 1a\n● 概念 1a' });
+  assert.deepEqual(m.refs.map(r => r.mark), ['↑', '●']);
+});
