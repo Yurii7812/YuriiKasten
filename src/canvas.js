@@ -37,7 +37,7 @@ function applyView() {
   w.style.transform = `translate(${v.x}px,${v.y}px) scale(${v.z})`;
   $('#cv-zoom').textContent = Math.round(v.z * 100) + '%';
 }
-function drawAll() { drawCards(); drawEdges(); }
+function drawAll() { drawCards(); drawEdges(); refreshScope(); }
 function cardHtml(n) {
   let inner;
   if (n.type === 'image') inner = `<img draggable="false" src="${new URL(encodeURI(n.file), vaultUrl()).href}">`;
@@ -90,7 +90,7 @@ function addNoteDialog(at) {
   dialog(`<h3>ノートを引用する</h3><input id="cn-q" placeholder="さがす（ID・本文）"><div id="cn-list" class="ta-list"></div><div class="row"><button id="cn-no">やめる</button></div>`, close => {
     const draw = () => {
       const q = $('#cn-q').value.trim().toLowerCase();
-      const ns = ctx.notes().filter(n => !q || (n.id + '\n' + n.body).toLowerCase().includes(q)).sort((a, b) => a.s.localeCompare(b.s) || L.cmpId(a.id, b.id)).slice(0, 80);
+      const ns = (ctx.visibleNotes?.() || ctx.notes()).filter(n => !q || (n.id + '\n' + n.body).toLowerCase().includes(q)).sort((a, b) => a.s.localeCompare(b.s) || L.cmpId(a.id, b.id)).slice(0, 80);
       $('#cn-list').innerHTML = ns.map(n => `<div class="ta-row" data-s="${n.s}" data-id="${esc(n.id)}"><b>${n.s === 'p' ? '紙 ' : ''}${esc(n.id)}</b> <small>${esc(n.body.split('\n').find(x => x.trim()) || '').slice(0, 40)}</small></div>`).join('') || '<div class="sub" style="padding:6px">ありません</div>';
     };
     $('#cn-q').oninput = draw; $('#cn-no').onclick = close; $('#cn-q').focus(); draw();
@@ -242,3 +242,11 @@ document.addEventListener('click', e => {
 });
 // ドロップ・貼り付けで画像カード
 export function dropImages(e) { const [x, y] = toWorld(e.clientX, e.clientY); addImages([...e.dataTransfer.files], [x, y]); }
+
+// Hide projections in place so an open text box keeps its unsaved draft.
+export function refreshScope() {
+  if (!note || !$('#cv-cards')) return;
+  const visible = n => n.type !== 'note' || !ctx.inScope || ctx.inScope(n.s);
+  for (const n of cv().nodes) { const el = document.querySelector(`.cv-card[data-n="${n.id}"]`); if (el) el.hidden = !visible(n); }
+  for (const e of cv().edges) { const el = document.querySelector(`#cv-svg [data-e="${e.id}"]`); if (el) el.style.display = [node(e.from),node(e.to)].every(n => n && visible(n)) ? '' : 'none'; }
+}
