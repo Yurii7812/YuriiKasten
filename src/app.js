@@ -1648,7 +1648,7 @@ function openTopic(name, tmode = 'view', keep) {
       <div class="tc-bar"><button class="tbtn p" data-act="tsave">✅ 決定</button><button class="tbtn" data-act="tcancel">やめる</button>
         <span class="grow"></span><button class="tbtn danger" data-act="tdel">🗑 この索引を削除</button></div></div>`;
   else body = `<table class="ti">${rows.map(r => `<tr data-kw="${esc(r.kw)}"><td>${esc(r.kw)}</td><td>${rowChips(r)}</td></tr>`).join('') || '<tr><td class="none">まだ空です。「編集」で書きます</td></tr>'}
-      ${stars.map(x => `<tr><td>🗂️ ${esc(stripId(x))}</td><td>${tchip(x)}</td></tr>`).join('')}${chats.map(x => `<tr><td>💬 ${esc(x)}</td><td><span class="chip t" data-cchat="${esc(x)}">${esc(x)}</span></td></tr>`).join('')}${refs.map(x => `<tr><td>⭐ ${esc(x.label)}</td><td>${chip(x.s, x.id)}</td></tr>`).join('')}</table>`;
+      ${stars.map(x => `<tr><td>🗂️ ${esc(stripId(x))}</td><td>${tchip(x)}</td></tr>`).join('')}${chats.map(x => `<tr><td>💬 ${esc(x)}</td><td><span class="chip t" data-cchat="${esc(x)}">${esc(x)}</span></td></tr>`).join('')}${refs.map(x => `<tr><td>${esc(x.mark || "★")} ${esc(x.label)}</td><td>${chip(x.s, x.id)}</td></tr>`).join('')}</table>`;
   // 逆方向（上に出す）: この索引の親を載せている Index・このIndexを + で案内している Index（引用できるのは Index だけ）
   const back = topics.filter(o => o !== t && (L.mergeTopic(o).stars.includes(t.name) || (e && L.mergeTopic(o).rows.some(r => r[e.s].some(x => L.splitAnchor(x).id === e.id))))).sort((x, y) => x.name.localeCompare(y.name, 'ja'));
   // 索引の画面は、右パネルなし。全部、上に: 題 → 🌳 親・⬆️ 索引されているトピック → 索引の中身
