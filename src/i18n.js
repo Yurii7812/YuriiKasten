@@ -2,6 +2,8 @@
 // Languages: 'en' (default) and 'ja'. To add a language, add a table like EN and register it in TABLES.
 // User content (note bodies, titles, memos) is never translated: see SKIP.
 const EN = {
+  '0 Index（親IDの索引）': '0 Index (root Topic Indexes)',
+  '親ID（1、2…）のトピックIndexが、ここに並びます': 'Topic Indexes for root IDs (1, 2, …) appear here.',
   '所属・上位トピックを変える': 'Change assigned and upper topics',
   '所属トピックで絞り込み': 'Filter by assigned topic',
   '上位トピック（いくつでも）': 'Upper topics (multiple)',

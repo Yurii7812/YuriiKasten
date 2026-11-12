@@ -303,3 +303,63 @@ test('renderer: prose can surround internal embeds; inline code and ordinary ima
     assert.match(c.text(),/前の文章.*後の文章/);await c.callbacks.onFlush();assert.deepEqual(c.errors,[]);
   }finally{c.close();f.cleanup();}
 });
+
+test('renderer: 0 Index lists only root Topic Indexes in ID order and keeps the list when opening one', async () => {
+  const f = fixture();
+  f.store.saveNote({ s: 'd', id: '10', body: '十番目' });
+  f.store.saveNote({ s: 'd', id: '1a', body: '分岐の本文' });
+  f.store.saveNote({ s: 'p', id: '1', body: '紙の本文' });
+  const draft = f.store.createNote({ body: 'ID未設定の考え' });
+  for (const t of [
+    { name: '十番目の索引', entry: { s: 'd', id: '10' } },
+    { name: '別の親', entry: { s: 'd', id: '2' } },
+    { name: '紙の入口', entry: { s: 'p', id: '1' } },
+    { name: '紙を取り込む前', entry: { s: 'p', id: '8' } },
+    { name: '読書の入口', entry: { s: 'd', id: '1' } },
+    { name: '分岐の索引', entry: { s: 'd', id: '1a' } },
+    { name: '親なし', entry: null },
+    { name: 'まだIDのないノートの索引', entry: { s: 'd', id: draft.id } }
+  ]) assert.ok(f.store.saveTopic({ ...t, text: '項目 1 2' }));
+  const before = structuredClone(f.store.state().topics);
+  const c = await client(f.store), $ = s => c.w.document.querySelector(s);
+  try {
+    c.open('1'); c.edit('0 Indexへ移っても保持する');
+    c.click('[data-tab="0"]');
+    const rows = [...c.w.document.querySelectorAll('#list .topicrow')];
+    assert.deepEqual(rows.map(el => el.dataset.topic), ['読書の入口', '紙の入口', '別の親', '紙を取り込む前', '十番目の索引']);
+    assert.deepEqual(rows.map(el => el.querySelector('.ns').textContent), ['デジタル 1', '紙 1', 'デジタル 2', '紙 8', 'デジタル 10']);
+    assert.equal(c.text(), '0 Indexへ移っても保持する');
+    c.click('#list [data-topic="読書の入口"]');
+    assert.ok($('[data-tab="0"].on'));
+    assert.ok($('#list [data-topic="読書の入口"].on'));
+    assert.match($('#pane .ti').textContent, /項目/);
+    c.click('#list [data-topic="十番目の索引"]');
+    assert.ok($('[data-tab="0"].on'));
+    assert.ok($('#list [data-topic="十番目の索引"].on'));
+    await c.callbacks.onFlush();
+    assert.equal(f.store.state().notes.find(n => n.s === 'd' && n.id === '1').body, '0 Indexへ移っても保持する');
+    assert.deepEqual(f.store.state().topics, before); // Opening 0 Index never rewrites existing indexes.
+    c.click('[data-tab="d"]');
+    assert.ok($('#list [data-id="1"][data-s="d"]'));
+    assert.ok($('#list [data-topic="分岐の索引"]'));
+    assert.deepEqual(c.errors, []);
+  } finally { c.close(); f.cleanup(); }
+});
+
+test('renderer: 0 Index handles an empty vault and updates when existing Topic Indexes change', async () => {
+  const f = fixture(), c = await client(f.store), $ = s => c.w.document.querySelector(s);
+  try {
+    c.click('[data-tab="0"]');
+    assert.match($('#list .none').textContent, /親ID/);
+    assert.equal($('#list .topicrow'), null);
+    f.store.saveTopic({ name: '追加した索引', entry: { s: 'd', id: '2' }, text: '考え 2' });
+    await c.callbacks.onPhoneAuto({ ok: true, state: f.store.state() });
+    assert.ok($('#list [data-topic="追加した索引"]'));
+    assert.ok($('[data-tab="0"].on'));
+    f.store.deleteTopic('追加した索引');
+    await c.callbacks.onPhoneAuto({ ok: true, state: f.store.state() });
+    assert.equal($('#list .topicrow'), null);
+    assert.match($('#list .none').textContent, /親ID/);
+    assert.deepEqual(c.errors, []);
+  } finally { c.close(); f.cleanup(); }
+});

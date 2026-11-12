@@ -407,7 +407,7 @@ const noteRow = (n, label = false, q = '') =>
   `<div class="nt">${label && n.s === 'p' ? `<span class="sp ${n.s}">${SP[n.s]}</span>` : ''}${icon(n) ? icon(n) + ' ' : ''}${n.image ? '📷 ' : ''}${mk(titleOf(n), q)}</div>` +
   `<div class="ns">${n.noid ? `IDなし · ${shortTime(n.created)}` : `${n.s === 'p' ? '紙 ' : ''}${mk(n.id, q)}`}${n.keywords.length ? ` · ${n.keywords.map(k => mk(k, q)).join('・')}` : ''}</div>${q && snippet(n.body, q) ? `<div class="sn">${snippet(n.body, q)}</div>` : ''}</div></div>`;
 // 索引 の行（その親のノートの手前に出す）
-const topicRow = t => `<div class="item topicrow${listView === 'card' ? ' tc' : ''}${cur && cur.k === 'topic' && cur.name === t.name ? ' on' : ''}${decided && decided.k === 'topic' && decided.name === t.name ? ' decided' : ''}" data-topic="${esc(t.name)}"><div class="nrow"><div class="nt">${esc(topicLabel(t))}</div><div class="ns">索引</div></div></div>`;
+const topicRow = (t, zero = false) => `<div class="item topicrow${listView === 'card' ? ' tc' : ''}${cur && cur.k === 'topic' && cur.name === t.name ? ' on' : ''}${decided && decided.k === 'topic' && decided.name === t.name ? ' decided' : ''}" data-topic="${esc(t.name)}"><div class="nrow"><div class="nt">${esc(topicLabel(t))}</div><div class="ns">${zero ? `${SP[t.entry.s]} ${esc(t.entry.id)}` : '索引'}</div></div></div>`;
 
 // ===== 取り込んだファイル（画像・html・csv など）。タイトルと説明を付けて、探せるようにする =====
 let filesCache = [], fileFilter = 'all', filesBusy = false;
@@ -528,6 +528,12 @@ function renderList() {
     out.push(`<div class="sortbar"><select id="ff-sel"><option value="all"${fileFilter === 'all' ? ' selected' : ''}>すべて（${filesCache.length}）</option><option value="untitled"${fileFilter === 'untitled' ? ' selected' : ''}>タイトルなし（${filesCache.filter(f => !f.title).length}）</option></select><span class="grow"></span><button class="mini" id="ff-add" title="ファイルを取り込む">＋ 取り込む</button></div>`);
     out.push(...fl.map(f => fileRow(f)));   // map にそのまま渡すと、行の番号が検索語の欄に入って落ちる
     if (!fl.length) out.push(`<div class="none">${fileFilter === 'untitled' ? 'タイトルのないファイルはありません' : '取り込んだ画像・html・csv などが、ここに並びます。ノートにドラッグしても取り込めます'}</div>`);
+  } else if (tab === '0') {
+    // 0 Index is a live entrance to root Topic Indexes; names and stored data stay unchanged.
+    const roots = topics.filter(t => t.entry && /^[1-9]\d*$/.test(t.entry.id) && ['d', 'p'].includes(t.entry.s) && !get(t.entry.s, t.entry.id)?.noid)
+      .sort((a, b) => L.cmpId(a.entry.id, b.entry.id) || a.entry.s.localeCompare(b.entry.s) || a.name.localeCompare(b.name, 'ja'));
+    out.push('<h4>0 Index</h4>', ...roots.map(t => topicRow(t, true)));
+    if (!roots.length) out.push('<div class="none">親ID（1、2…）のトピックIndexが、ここに並びます</div>');
   } else if (tab === 'i') {
     out.push(`<div class="ixbar"><span class="sub">🔴 赤い点は、ID を右クリックで付け外し</span></div>`);
     let row = null;
@@ -1636,7 +1642,7 @@ function openTopic(name, tmode = 'view', keep) {
   if (bgOpen) { place({ k: 'topic', name, mode: tmode }, false); return; }   // ホイールクリック: 背景の新しいタブで開く。いまのタブは動かない
   cur = place({ k: 'topic', name, mode: tmode }, keep); cur.mode = tmode; mode = 'notes';
   if (!inPreview) decided = { k: 'topic', name };
-  if (!inPreview && !$('#q').value && t.entry) tab = t.entry.s === 'p' ? 'p' : 'd';   // 一覧を、その索引 のあるタブに
+  if (!inPreview && !$('#q').value && t.entry && tab !== '0') tab = t.entry.s === 'p' ? 'p' : 'd';   // 一覧を、その索引 のあるタブに
   const { rows, stars, refs, chats } = L.mergeTopic(t), e = t.entry;
   let body;
   if (tmode === 'edit') body = `<div class="tedit-hint">✏️ 1 行に「キーワード ID ID …」 ・ 紙は 1a(p) ・ ID の前の * は赤い点 ・ +名前 は別の索引へ ・ @名前 はチャットメモのトピックへ</div>
